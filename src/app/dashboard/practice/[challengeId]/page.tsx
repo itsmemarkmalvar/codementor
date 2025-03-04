@@ -1,75 +1,48 @@
 "use client";
 
-import { useParams } from "next/navigation";
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { motion } from "framer-motion";
+import { PlayCircle, Book, Clock, CheckCircle, ArrowLeft, ArrowRight, Timer, Star, Users, Brain, LightbulbIcon, Code } from "lucide-react";
 import Editor from "@monaco-editor/react";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Separator } from "@/components/ui/separator";
+import { useState } from "react";
+import Link from "next/link";
 
 // Mock challenge data
 const challengeData = {
   id: 1,
-  title: "Variables Challenge",
-  description: `# Variables in Java
-
-Create variables to store personal information and print them to the console.
-
-## Requirements:
-1. Create an integer variable for age
-2. Create a double variable for height
-3. Create a boolean variable for student status
-4. Print all variables with appropriate labels
-
-## Tips:
-- Use appropriate data types for each variable
-- Follow Java naming conventions
-- Remember to initialize all variables
-`,
+  title: "Variables in Java",
+  description: "Create variables to store personal information and print them to the console",
   difficulty: "Easy",
-  timeLimit: 900, // 15 minutes in seconds
   points: 100,
+  timeLimit: "30 minutes",
+  requirements: [
+    "Create an integer variable for age",
+    "Create a double variable for height",
+    "Create a boolean variable for student status",
+    "Print all variables with appropriate labels"
+  ],
+  tips: [
+    "Use appropriate data types for each variable",
+    "Follow Java naming conventions",
+    "Remember to initialize all variables"
+  ],
   testCases: [
     {
-      id: 1,
-      description: "Variables should be properly declared",
-      input: "",
-      expectedOutput: "",
-      isHidden: false,
-    },
-    {
-      id: 2,
-      description: "Output should contain age information",
-      input: "",
-      expectedOutput: "My age is:",
-      isHidden: false,
-    },
-    {
-      id: 3,
-      description: "Output should contain height information",
-      input: "",
-      expectedOutput: "My height is:",
-      isHidden: false,
-    },
+      input: "Default test case",
+      expectedOutput: [
+        "My age is: 25",
+        "My height is: 5.9",
+        "I am a student: true"
+      ]
+    }
   ],
   hints: [
-    "Remember to use 'int' for whole numbers",
-    "Use 'double' for decimal numbers",
-    "Boolean variables can only be true or false",
+    "Remember that integer values don't need decimal points",
+    "Double values can store decimal numbers",
+    "Boolean values can only be true or false"
   ],
-  template: `public class Variables {
+  starterCode: `public class Variables {
     public static void main(String[] args) {
         // Create your variables here
         
@@ -78,259 +51,241 @@ Create variables to store personal information and print them to the console.
         System.out.println("My height is: ");
         System.out.println("I am a student: ");
     }
-}`,
-  solution: `public class Variables {
-    public static void main(String[] args) {
-        int age = 20;
-        double height = 5.9;
-        boolean isStudent = true;
-        
-        System.out.println("My age is: " + age);
-        System.out.println("My height is: " + height);
-        System.out.println("I am a student: " + isStudent);
-    }
-}`,
+}`
 };
 
 export default function ChallengePage() {
-  const [code, setCode] = useState(challengeData.template);
-  const [theme, setTheme] = useState("vs-dark");
-  const [timeLeft, setTimeLeft] = useState(challengeData.timeLimit);
-  const [isRunning, setIsRunning] = useState(false);
-  const [activeTab, setActiveTab] = useState("instructions");
+  const [code, setCode] = useState(challengeData.starterCode);
   const [output, setOutput] = useState("");
+  const [activeTab, setActiveTab] = useState("instructions");
+  const [activeRightTab, setActiveRightTab] = useState("output");
+  const [theme, setTheme] = useState("vs-dark");
+  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes in seconds
+  const [isRunning, setIsRunning] = useState(false);
+  const [currentHint, setCurrentHint] = useState(0);
   const [showHint, setShowHint] = useState(false);
-  const [currentHintIndex, setCurrentHintIndex] = useState(0);
-  const [testResults, setTestResults] = useState<Array<{ passed: boolean; message: string }>>([]);
-
-  // Timer effect
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isRunning && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft((time) => time - 1);
-      }, 1000);
-    } else if (timeLeft === 0) {
-      setIsRunning(false);
-      // Handle time up
-    }
-    return () => clearInterval(interval);
-  }, [isRunning, timeLeft]);
-
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const handleEditorChange = (value: string | undefined) => {
-    if (value) {
-      setCode(value);
-    }
-  };
-
-  const handleStartChallenge = () => {
-    setIsRunning(true);
-  };
 
   const handleRunCode = () => {
-    setOutput("Running code...");
-    // Simulate code execution
-    setTimeout(() => {
-      setOutput("My age is: 20\nMy height is: 5.9\nI am a student: true");
-      // Simulate test results
-      setTestResults([
-        { passed: true, message: "Variables declared correctly" },
-        { passed: true, message: "Age output format is correct" },
-        { passed: false, message: "Height output format needs correction" },
-      ]);
-      setActiveTab("output");
-    }, 1000);
+    // Mock code execution
+    setOutput("Running test cases...\n\nTest Case 1:\nExpected Output:\nMy age is: 25\nMy height is: 5.9\nI am a student: true\n\nYour Output:\n" + code);
   };
 
-  const handleShowHint = () => {
-    setShowHint(true);
-    if (currentHintIndex < challengeData.hints.length - 1) {
-      setCurrentHintIndex(currentHintIndex + 1);
-    }
-  };
-
-  const handleSubmit = () => {
-    // Implement submission logic
-    console.log("Submitting solution...");
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white border-b">
-        <div className="container mx-auto p-4">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold">{challengeData.title}</h1>
-              <div className="flex items-center space-x-2 text-sm text-gray-500">
-                <span className={`px-2 py-1 rounded ${
-                  challengeData.difficulty === "Easy" 
-                    ? "bg-green-100 text-green-700"
-                    : "bg-yellow-100 text-yellow-700"
-                }`}>
-                  {challengeData.difficulty}
-                </span>
-                <span>•</span>
-                <span>{challengeData.points} points</span>
-              </div>
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <div className="flex items-center space-x-3">
+            <span className="px-2 py-1 text-xs rounded bg-emerald-500/20 text-emerald-400">
+              {challengeData.difficulty}
+            </span>
+            <div className="flex items-center space-x-2 text-gray-400">
+              <Timer className="h-4 w-4" />
+              <span>{challengeData.timeLimit}</span>
             </div>
-            <div className="flex items-center space-x-4">
-              <div className="text-2xl font-mono">
-                {formatTime(timeLeft)}
-              </div>
-              {!isRunning ? (
-                <Button onClick={handleStartChallenge}>Start Challenge</Button>
-              ) : (
-                <Button variant="destructive">End Challenge</Button>
-              )}
+            <div className="flex items-center space-x-2 text-gray-400">
+              <Star className="h-4 w-4 text-[#2E5BFF]" />
+              <span>{challengeData.points} points</span>
             </div>
           </div>
+          <h1 className="text-2xl font-bold text-white">{challengeData.title}</h1>
+          <p className="text-gray-400">{challengeData.description}</p>
         </div>
+        <Button 
+          className="bg-[#2E5BFF] hover:bg-[#2E5BFF]/80 text-white"
+          onClick={() => setIsRunning(true)}
+        >
+          Start Challenge
+        </Button>
       </div>
 
       {/* Main Content */}
-      <div className="container mx-auto p-4">
-        <ResizablePanelGroup direction="horizontal" className="min-h-[calc(100vh-12rem)]">
-          {/* Left Panel */}
-          <ResizablePanel defaultSize={40}>
-            <Card className="h-full">
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <CardHeader>
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="instructions">Instructions</TabsTrigger>
-                    <TabsTrigger value="testCases">Test Cases</TabsTrigger>
-                  </TabsList>
-                </CardHeader>
-                <CardContent>
-                  <TabsContent value="instructions" className="prose max-w-none">
-                    <div dangerouslySetInnerHTML={{ __html: challengeData.description }} />
-                    {showHint && (
-                      <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                        <h3 className="text-sm font-medium text-blue-800">Hint {currentHintIndex + 1}:</h3>
-                        <p className="text-sm text-blue-700">{challengeData.hints[currentHintIndex]}</p>
-                      </div>
-                    )}
-                    <Button
-                      variant="outline"
-                      className="mt-4"
-                      onClick={handleShowHint}
-                      disabled={currentHintIndex >= challengeData.hints.length}
-                    >
-                      {showHint ? "Next Hint" : "Show Hint"}
-                    </Button>
-                  </TabsContent>
-                  <TabsContent value="testCases">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left Panel - Instructions and Test Cases */}
+        <motion.div
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+        >
+          <Card className="relative overflow-hidden border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm h-[calc(100vh-12rem)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-[#2E5BFF]/20 to-purple-500/20 opacity-10" />
+            <div className="relative p-6 space-y-4 h-full flex flex-col">
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant={activeTab === "instructions" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setActiveTab("instructions")}
+                  className={activeTab === "instructions" ? "bg-[#2E5BFF] text-white" : "text-gray-400"}
+                >
+                  Instructions
+                </Button>
+                <Button
+                  variant={activeTab === "testCases" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setActiveTab("testCases")}
+                  className={activeTab === "testCases" ? "bg-[#2E5BFF] text-white" : "text-gray-400"}
+                >
+                  Test Cases
+                </Button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {activeTab === "instructions" ? (
+                  <div className="space-y-6">
                     <div className="space-y-4">
-                      {challengeData.testCases.map((testCase, index) => (
-                        <div
-                          key={testCase.id}
-                          className="p-4 rounded-lg border"
-                        >
-                          <div className="flex items-center justify-between">
-                            <h3 className="font-medium">Test Case {index + 1}</h3>
-                            {testResults[index] && (
-                              <div className={`text-sm ${
-                                testResults[index].passed ? "text-green-600" : "text-red-600"
-                              }`}>
-                                {testResults[index].passed ? "Passed" : "Failed"}
-                              </div>
-                            )}
-                          </div>
-                          <p className="text-sm text-gray-600 mt-1">
-                            {testCase.description}
-                          </p>
-                          {testResults[index] && (
-                            <p className="text-sm text-gray-600 mt-2">
-                              {testResults[index].message}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                      <h3 className="text-lg font-semibold text-white">Requirements:</h3>
+                      <ul className="space-y-2">
+                        {challengeData.requirements.map((req, index) => (
+                          <li key={index} className="flex items-start space-x-2 text-gray-300">
+                            <CheckCircle className="h-5 w-5 text-[#2E5BFF] mt-0.5" />
+                            <span>{req}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </TabsContent>
-                </CardContent>
-              </Tabs>
-            </Card>
-          </ResizablePanel>
-
-          <ResizableHandle />
-
-          {/* Right Panel */}
-          <ResizablePanel defaultSize={60}>
-            <Card className="h-full">
-              <CardHeader className="border-b">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm">Theme</Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => setTheme("vs-dark")}>
-                          Dark
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setTheme("light")}>
-                          Light
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <div className="space-y-4">
+                      <h3 className="text-lg font-semibold text-white">Tips:</h3>
+                      <ul className="space-y-2">
+                        {challengeData.tips.map((tip, index) => (
+                          <li key={index} className="flex items-start space-x-2 text-gray-300">
+                            <Brain className="h-5 w-5 text-[#2E5BFF] mt-0.5" />
+                            <span>{tip}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="outline" onClick={handleRunCode}>
-                      Run Tests
-                    </Button>
-                    <Button onClick={handleSubmit}>Submit Solution</Button>
+                ) : (
+                  <div className="space-y-4">
+                    {challengeData.testCases.map((testCase, index) => (
+                      <div key={index} className="space-y-2">
+                        <h3 className="text-lg font-semibold text-white">Test Case {index + 1}</h3>
+                        <div className="bg-black/30 rounded p-4">
+                          <p className="text-gray-400 mb-2">Expected Output:</p>
+                          <pre className="text-sm text-gray-300">
+                            {testCase.expectedOutput.join('\n')}
+                          </pre>
+                        </div>
+                      </div>
+                    ))}
                   </div>
+                )}
+              </div>
+
+              {showHint && (
+                <div className="mt-4 p-4 bg-[#2E5BFF]/10 rounded-lg">
+                  <p className="text-gray-300">
+                    <LightbulbIcon className="h-5 w-5 text-[#2E5BFF] inline mr-2" />
+                    {challengeData.hints[currentHint]}
+                  </p>
                 </div>
-              </CardHeader>
-              <CardContent className="p-0 flex flex-col h-[calc(100%-4rem)]">
-                <div className="flex-1">
-                  <Editor
-                    height="100%"
-                    defaultLanguage="java"
-                    value={code}
-                    onChange={handleEditorChange}
-                    theme={theme}
-                    options={{
-                      minimap: { enabled: false },
-                      fontSize: 14,
-                      lineNumbers: "on",
-                      automaticLayout: true,
-                      scrollBeyondLastLine: false,
-                      suggestOnTriggerCharacters: true,
-                      formatOnPaste: true,
-                      formatOnType: true,
-                    }}
-                  />
+              )}
+
+              <div className="flex justify-between items-center pt-4">
+                <Button
+                  variant="outline"
+                  className="border-[#2E5BFF] text-[#2E5BFF] hover:bg-[#2E5BFF] hover:text-white transition-colors"
+                  onClick={() => {
+                    setShowHint(true);
+                    setCurrentHint((prev) => (prev + 1) % challengeData.hints.length);
+                  }}
+                >
+                  <LightbulbIcon className="h-4 w-4 mr-2" />
+                  Show Hint
+                </Button>
+                <div className="text-xl font-mono text-[#2E5BFF]">
+                  {formatTime(timeLeft)}
                 </div>
-                <div className="h-[200px] border-t">
-                  <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="px-4 border-b">
-                      <TabsTrigger value="output">Output</TabsTrigger>
-                      <TabsTrigger value="console">Console</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="output" className="p-4">
-                      <pre className="font-mono text-sm whitespace-pre-wrap">
-                        {output}
-                      </pre>
-                    </TabsContent>
-                    <TabsContent value="console" className="p-4">
-                      <pre className="font-mono text-sm text-gray-500">
-                        Console output will appear here...
-                      </pre>
-                    </TabsContent>
-                  </Tabs>
+              </div>
+            </div>
+          </Card>
+        </motion.div>
+
+        {/* Right Panel - Code Editor */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+        >
+          <Card className="relative overflow-hidden border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm h-[calc(100vh-12rem)]">
+            <div className="absolute inset-0 bg-gradient-to-br from-[#2E5BFF]/20 to-purple-500/20 opacity-10" />
+            <div className="relative p-6 space-y-4 h-full flex flex-col">
+              {/* Editor Controls */}
+              <div className="flex items-center justify-between">
+                <select
+                  value={theme}
+                  onChange={(e) => setTheme(e.target.value)}
+                  className="bg-white/10 border-0 rounded text-sm text-gray-300 focus:ring-[#2E5BFF]"
+                >
+                  <option value="vs-dark">Dark Theme</option>
+                  <option value="light">Light Theme</option>
+                </select>
+                <div className="flex space-x-2">
+                  <Button
+                    onClick={handleRunCode}
+                    className="bg-[#2E5BFF] hover:bg-[#2E5BFF]/80 text-white"
+                  >
+                    <PlayCircle className="h-4 w-4 mr-2" />
+                    Run Tests
+                  </Button>
+                  <Button
+                    className="bg-green-600 hover:bg-green-700 text-white"
+                  >
+                    <Code className="h-4 w-4 mr-2" />
+                    Submit Solution
+                  </Button>
                 </div>
-              </CardContent>
-            </Card>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+              </div>
+
+              {/* Code Editor */}
+              <div className="flex-1 overflow-hidden rounded border border-white/10">
+                <Editor
+                  height="100%"
+                  defaultLanguage="java"
+                  theme={theme}
+                  value={code}
+                  onChange={(value) => setCode(value || "")}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 14,
+                    lineNumbers: "on",
+                    scrollBeyondLastLine: false,
+                    automaticLayout: true,
+                  }}
+                />
+              </div>
+
+              {/* Output Section */}
+              <div className="h-32">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Button
+                    variant={activeRightTab === "output" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setActiveRightTab("output")}
+                    className={activeRightTab === "output" ? "bg-[#2E5BFF] text-white" : "text-gray-400"}
+                  >
+                    Output
+                  </Button>
+                  <Button
+                    variant={activeRightTab === "console" ? "default" : "ghost"}
+                    size="sm"
+                    onClick={() => setActiveRightTab("console")}
+                    className={activeRightTab === "console" ? "bg-[#2E5BFF] text-white" : "text-gray-400"}
+                  >
+                    Console
+                  </Button>
+                </div>
+                <div className="bg-black/30 rounded p-4 h-full overflow-y-auto">
+                  <pre className="text-sm text-gray-300">{output}</pre>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </motion.div>
       </div>
     </div>
   );
