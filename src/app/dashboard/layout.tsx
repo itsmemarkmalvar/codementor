@@ -13,6 +13,7 @@ import {
   Menu,
   Settings,
   X,
+  Code,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -21,6 +22,7 @@ const navItems = [
   { href: "/dashboard/courses", label: "Courses", icon: Book },
   { href: "/dashboard/practice", label: "Practice", icon: GraduationCap },
   { href: "/dashboard/progress", label: "Progress", icon: LineChart },
+  { href: "/dashboard/solo-room", label: "Solo Room", icon: Code },
 ];
 
 export default function DashboardLayout({
