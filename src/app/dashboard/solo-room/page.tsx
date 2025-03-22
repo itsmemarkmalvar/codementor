@@ -754,30 +754,37 @@ const SoloRoomPage = () => {
           </button>
         </div>
         
-        <div className="flex flex-col md:flex-row h-[60vh]">
-          {/* Left Panel - Changes based on active tab */}
-          <section className="w-full md:w-2/5 p-4 border-b md:border-b-0 md:border-r border-white/10 flex flex-col overflow-hidden">
-            {activeTab === 'chat' && (
-              <>
-                <h2 className="text-xl font-semibold mb-4 flex items-center">
-                  <Bot className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                  {selectedTopic ? selectedTopic.title : 'Chat with AI Tutor'}
-                </h2>
-                {selectedTopic && (
-                  <div className="mb-4 bg-white/5 rounded-lg p-3">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm text-gray-400">Progress</span>
-                      <span className="text-sm font-medium">{selectedTopic.progress}%</span>
+        <div className="flex flex-col">
+          {/* Content area - Changes based on active tab */}
+          {activeTab === 'chat' && (
+            <div className="flex flex-col">
+              {/* Chat Section */}
+              <section className="p-4 border-b border-white/10">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold flex items-center">
+                    <Bot className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                    {selectedTopic ? selectedTopic.title : 'Chat with AI Tutor'}
+                  </h2>
+                  
+                  {selectedTopic && (
+                    <div className="flex items-center bg-white/5 rounded-lg p-2 min-w-[180px]">
+                      <div className="flex-1">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-xs text-gray-400">Progress</span>
+                          <span className="text-xs font-medium">{selectedTopic.progress}%</span>
+                        </div>
+                        <div className="w-full bg-white/10 rounded-full h-1.5">
+                          <div 
+                            className="bg-[#2E5BFF] h-1.5 rounded-full" 
+                            style={{ width: `${selectedTopic.progress}%` }}
+                          ></div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="w-full bg-white/10 rounded-full h-2">
-                      <div 
-                        className="bg-[#2E5BFF] h-2 rounded-full" 
-                        style={{ width: `${selectedTopic.progress}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                )}
-                <div className="flex-1 bg-white/5 rounded-lg p-4 overflow-y-auto mb-4">
+                  )}
+                </div>
+                
+                <div className="bg-white/5 rounded-lg p-4 overflow-y-auto mb-4" style={{ height: '40vh' }}>
                   <div className="space-y-4">
                     {messages.length === 0 && (
                       <div className="text-center text-gray-400 py-8">
@@ -795,8 +802,8 @@ const SoloRoomPage = () => {
                           message.sender === 'user' ? 'justify-end' : 'justify-start'
                         }`}
                       >
-                        {message.sender === 'bot' && (
-                          <div className="w-8 h-8 rounded-full bg-[#2E5BFF] flex items-center justify-center">
+                        {message.sender !== 'user' && (
+                          <div className="w-8 h-8 rounded-full bg-[#2E5BFF] flex items-center justify-center flex-shrink-0">
                             <Bot className="w-5 h-5" />
                           </div>
                         )}
@@ -820,7 +827,7 @@ const SoloRoomPage = () => {
                           </span>
                         </div>
                         {message.sender === 'user' && (
-                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
+                          <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">
                             <User className="w-5 h-5" />
                           </div>
                         )}
@@ -848,6 +855,7 @@ const SoloRoomPage = () => {
                     )}
                   </div>
                 </div>
+                
                 <div className="flex space-x-2 min-h-[42px]">
                   <input
                     type="text"
@@ -880,271 +888,264 @@ const SoloRoomPage = () => {
                     )}
                   </button>
                 </div>
-              </>
-            )}
-            
-            {activeTab === 'topics' && (
-              <>
+              </section>
+              
+              {/* Code Editor Section - Now below the chat */}
+              <section className="p-4">
                 <h2 className="text-xl font-semibold mb-4 flex items-center">
-                  <BookOpen className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                  Learning Topics
+                  <Code className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                  Code Editor
                 </h2>
-                <div className="flex-1 overflow-y-auto">
-                  <div className="space-y-3">
-                    {topics.map((topic) => (
-                      <motion.div
-                        key={topic.id}
-                        whileHover={{ x: 5 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => handleTopicSelect(topic)}
-                        className="bg-white/5 rounded-lg p-3 cursor-pointer hover:bg-white/10 transition"
-                      >
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center space-x-3">
-                            {topic.icon}
-                            <span>{topic.title}</span>
-                          </div>
-                          <ChevronRight className="h-5 w-5 text-gray-400" />
+                <div className="bg-white/5 rounded-lg p-4 overflow-hidden flex flex-col">
+                  <div className="font-mono text-sm overflow-y-auto">
+                    <textarea
+                      value={codeInput}
+                      onChange={(e) => setCodeInput(e.target.value)}
+                      className="w-full h-[25vh] bg-[#1A2E42]/80 text-gray-300 p-4 rounded-lg font-mono text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[#2E5BFF]"
+                      placeholder="// Write your Java code here"
+                    />
+                    
+                    {/* Code output */}
+                    {codeOutput && (
+                      <div className="mt-4 bg-[#1a1a1a] rounded-lg p-4 text-sm">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-gray-400">Output (executed in {codeOutput.executionTime}ms)</span>
                         </div>
-                        <div className="mt-2">
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-xs text-gray-400">Progress</span>
-                            <span className="text-xs font-medium">{topic.progress}%</span>
+                        {codeOutput.stdout && (
+                          <div className="mb-2">
+                            <p className="text-green-400 mb-1">Standard Output:</p>
+                            <pre className="text-white whitespace-pre-wrap">{codeOutput.stdout}</pre>
                           </div>
-                          <div className="w-full bg-white/10 rounded-full h-1.5">
-                            <div 
-                              className="bg-[#2E5BFF] h-1.5 rounded-full" 
-                              style={{ width: `${topic.progress}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-            
-            {activeTab === 'sessions' && (
-              <>
-                <h2 className="text-xl font-semibold mb-4 flex items-center">
-                  <Clock className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                  Previous Sessions
-                </h2>
-                <div className="flex-1 overflow-y-auto">
-                  <div className="space-y-3">
-                    {previousSessions.map((session) => (
-                      <motion.div
-                        key={session.id}
-                        whileHover={{ x: 5 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => handleSessionSelect(session)}
-                        className="bg-white/5 rounded-lg p-3 cursor-pointer hover:bg-white/10 transition"
-                      >
-                        <div className="flex justify-between items-center">
+                        )}
+                        {codeOutput.stderr && (
                           <div>
-                            <p className="font-medium">{session.topic}</p>
-                            <p className="text-sm text-gray-400">{session.date} • {session.duration}</p>
+                            <p className="text-red-400 mb-1">Standard Error:</p>
+                            <pre className="text-white whitespace-pre-wrap">{codeOutput.stderr}</pre>
                           </div>
-                          <ChevronRight className="h-5 w-5 text-gray-400" />
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-            
-            {activeTab === 'settings' && (
-              <>
-                <h2 className="text-xl font-semibold mb-4 flex items-center">
-                  <SettingsIcon className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                  AI Tutor Preferences
-                </h2>
-                <div className="flex-1 overflow-y-auto">
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Response Length</label>
-                      <select 
-                        value={tutorPreferences.responseLength}
-                        onChange={(e) => handlePreferenceChange('responseLength', e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
-                        style={{ color: 'white', backgroundColor: '#1a2e42' }}
-                      >
-                        <option value="brief" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Brief</option>
-                        <option value="medium" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Medium</option>
-                        <option value="detailed" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Detailed</option>
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Include Code Examples</label>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handlePreferenceChange('codeExamples', true)}
-                          className={`px-3 py-1 rounded-lg ${
-                            tutorPreferences.codeExamples 
-                              ? 'bg-[#2E5BFF] text-white' 
-                              : 'bg-white/5 text-gray-400'
-                          }`}
-                        >
-                          Yes
-                        </button>
-                        <button
-                          onClick={() => handlePreferenceChange('codeExamples', false)}
-                          className={`px-3 py-1 rounded-lg ${
-                            !tutorPreferences.codeExamples 
-                              ? 'bg-[#2E5BFF] text-white' 
-                              : 'bg-white/5 text-gray-400'
-                          }`}
-                        >
-                          No
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Explanation Detail</label>
-                      <select 
-                        value={tutorPreferences.explanationDetail}
-                        onChange={(e) => handlePreferenceChange('explanationDetail', e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
-                        style={{ color: 'white', backgroundColor: '#1a2e42' }}
-                      >
-                        <option value="basic" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Basic</option>
-                        <option value="intermediate" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Intermediate</option>
-                        <option value="detailed" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Detailed</option>
-                      </select>
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium mb-2">Challenge Difficulty</label>
-                      <select 
-                        value={tutorPreferences.challengeDifficulty}
-                        onChange={(e) => handlePreferenceChange('challengeDifficulty', e.target.value)}
-                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
-                        style={{ color: 'white', backgroundColor: '#1a2e42' }}
-                      >
-                        <option value="easy" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Easy</option>
-                        <option value="medium" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Medium</option>
-                        <option value="hard" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Hard</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </>
-            )}
-          </section>
-          
-          {/* Right Panel - Code Editor */}
-          <section className="w-full md:w-3/5 p-4 flex flex-col">
-            <h2 className="text-xl font-semibold mb-4 flex items-center">
-              <Code className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-              Code Editor
-            </h2>
-            <div className="flex-1 bg-white/5 rounded-lg p-4 overflow-hidden flex flex-col">
-              <div className="flex-1 font-mono text-sm overflow-y-auto">
-                <textarea
-                  value={codeInput}
-                  onChange={(e) => setCodeInput(e.target.value)}
-                  className="w-full h-3/4 bg-[#1A2E42]/80 text-gray-300 p-4 rounded-lg font-mono text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[#2E5BFF]"
-                  placeholder="// Write your Java code here"
-                />
-                
-                {/* Code output */}
-                {codeOutput && (
-                  <div className="mt-4 bg-[#1a1a1a] rounded-lg p-4 text-sm">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-gray-400">Output (executed in {codeOutput.executionTime}ms)</span>
-                    </div>
-                    {codeOutput.stdout && (
-                      <div className="mb-2">
-                        <p className="text-green-400 mb-1">Standard Output:</p>
-                        <pre className="text-white whitespace-pre-wrap">{codeOutput.stdout}</pre>
-                      </div>
-                    )}
-                    {codeOutput.stderr && (
-                      <div>
-                        <p className="text-red-400 mb-1">Standard Error:</p>
-                        <pre className="text-white whitespace-pre-wrap">{codeOutput.stderr}</pre>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-              <div className="mt-4 flex items-center justify-between">
-                <button
-                  onClick={handleRunCode}
-                  className="bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition flex items-center space-x-2"
-                  disabled={isExecuting}
-                >
-                  {isExecuting ? (
-                    <>
-                      <Loader className="h-5 w-5 animate-spin" />
-                      <span>Running...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Code className="h-5 w-5" />
-                      <span>Run Code</span>
-                    </>
-                  )}
-                </button>
-                
-                <button
-                  onClick={async () => {
-                    if (!codeInput.trim()) {
-                      toast.error('Please write some code first');
-                      return;
-                    }
+                  <div className="mt-4 flex items-center justify-between">
+                    <button
+                      onClick={handleRunCode}
+                      className="bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition flex items-center space-x-2"
+                      disabled={isExecuting}
+                    >
+                      {isExecuting ? (
+                        <>
+                          <Loader className="h-5 w-5 animate-spin" />
+                          <span>Running...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Code className="h-5 w-5" />
+                          <span>Run Code</span>
+                        </>
+                      )}
+                    </button>
                     
-                    setIsLoading(true);
-                    
-                    try {
-                      const response = await getTutorResponse({
-                        question: `Please evaluate this Java code and provide feedback: \n\n${codeInput}`,
-                        conversationHistory: [],
-                        preferences: tutorPreferences,
-                        topic: selectedTopic?.title,
-                        topic_id: selectedTopic?.id,
-                        session_id: currentSessionId !== null ? currentSessionId : undefined
-                      });
-                      
-                      const botMessage: Message = {
-                        id: Date.now(),
-                        text: response.response,
-                        sender: 'bot',
-                        timestamp: new Date(),
-                        code: codeInput
-                      };
-                      
-                      setActiveTab('chat');
-                      setMessages(prev => [...prev, botMessage]);
-                    } catch (error) {
-                      console.error('Error evaluating code:', error);
-                      toast.error('Failed to evaluate code');
-                    } finally {
-                      setIsLoading(false);
-                    }
-                  }}
-                  className="bg-white/10 text-white px-4 py-2 rounded-lg hover:bg-white/20 transition flex items-center space-x-2"
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader className="h-5 w-5 animate-spin" />
-                      <span>Analyzing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="h-5 w-5" />
-                      <span>Get Feedback</span>
-                    </>
-                  )}
-                </button>
-              </div>
+                    <button
+                      onClick={async () => {
+                        if (!codeInput.trim()) {
+                          toast.error('Please write some code first');
+                          return;
+                        }
+                        
+                        setIsLoading(true);
+                        
+                        try {
+                          const response = await getTutorResponse({
+                            question: `Please evaluate this Java code and provide feedback: \n\n${codeInput}`,
+                            conversationHistory: [],
+                            preferences: tutorPreferences,
+                            topic: selectedTopic?.title,
+                            topic_id: selectedTopic?.id,
+                            session_id: currentSessionId !== null ? currentSessionId : undefined
+                          });
+                          
+                          const botMessage: Message = {
+                            id: Date.now(),
+                            text: response.response,
+                            sender: 'bot',
+                            timestamp: new Date(),
+                            code: codeInput
+                          };
+                          
+                          setMessages(prev => [...prev, botMessage]);
+                        } catch (error) {
+                          console.error('Error evaluating code:', error);
+                          toast.error('Failed to evaluate code');
+                        } finally {
+                          setIsLoading(false);
+                        }
+                      }}
+                      className="bg-white/10 text-white px-4 py-2 rounded-lg hover:bg-white/20 transition flex items-center space-x-2"
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader className="h-5 w-5 animate-spin" />
+                          <span>Analyzing...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="h-5 w-5" />
+                          <span>Get Feedback</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </section>
             </div>
-          </section>
+          )}
+          
+          {activeTab === 'topics' && (
+            <section className="p-4">
+              <h2 className="text-xl font-semibold mb-4 flex items-center">
+                <BookOpen className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                Learning Topics
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[70vh] overflow-y-auto">
+                {topics.map((topic) => (
+                  <motion.div
+                    key={topic.id}
+                    whileHover={{ x: 5 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleTopicSelect(topic)}
+                    className="bg-white/5 rounded-lg p-3 cursor-pointer hover:bg-white/10 transition"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center space-x-3">
+                        {topic.icon}
+                        <span>{topic.title}</span>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <div className="mt-2">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs text-gray-400">Progress</span>
+                        <span className="text-xs font-medium">{topic.progress}%</span>
+                      </div>
+                      <div className="w-full bg-white/10 rounded-full h-1.5">
+                        <div 
+                          className="bg-[#2E5BFF] h-1.5 rounded-full" 
+                          style={{ width: `${topic.progress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </section>
+          )}
+          
+          {activeTab === 'sessions' && (
+            <section className="p-4">
+              <h2 className="text-xl font-semibold mb-4 flex items-center">
+                <Clock className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                Previous Sessions
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[70vh] overflow-y-auto">
+                {previousSessions.map((session) => (
+                  <motion.div
+                    key={session.id}
+                    whileHover={{ x: 5 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={() => handleSessionSelect(session)}
+                    className="bg-white/5 rounded-lg p-3 cursor-pointer hover:bg-white/10 transition"
+                  >
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium">{session.topic}</p>
+                        <p className="text-sm text-gray-400">{session.date} • {session.duration}</p>
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-gray-400" />
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </section>
+          )}
+          
+          {activeTab === 'settings' && (
+            <section className="p-4">
+              <h2 className="text-xl font-semibold mb-4 flex items-center">
+                <SettingsIcon className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                AI Tutor Preferences
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[70vh] overflow-y-auto">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Response Length</label>
+                  <select 
+                    value={tutorPreferences.responseLength}
+                    onChange={(e) => handlePreferenceChange('responseLength', e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
+                    style={{ color: 'white', backgroundColor: '#1a2e42' }}
+                  >
+                    <option value="brief" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Brief</option>
+                    <option value="medium" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Medium</option>
+                    <option value="detailed" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Detailed</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Include Code Examples</label>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => handlePreferenceChange('codeExamples', true)}
+                      className={`px-3 py-1 rounded-lg ${
+                        tutorPreferences.codeExamples 
+                          ? 'bg-[#2E5BFF] text-white' 
+                          : 'bg-white/5 text-gray-400'
+                      }`}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      onClick={() => handlePreferenceChange('codeExamples', false)}
+                      className={`px-3 py-1 rounded-lg ${
+                        !tutorPreferences.codeExamples 
+                          ? 'bg-[#2E5BFF] text-white' 
+                          : 'bg-white/5 text-gray-400'
+                      }`}
+                    >
+                      No
+                    </button>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Explanation Detail</label>
+                  <select 
+                    value={tutorPreferences.explanationDetail}
+                    onChange={(e) => handlePreferenceChange('explanationDetail', e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
+                    style={{ color: 'white', backgroundColor: '#1a2e42' }}
+                  >
+                    <option value="basic" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Basic</option>
+                    <option value="intermediate" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Intermediate</option>
+                    <option value="detailed" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Detailed</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Challenge Difficulty</label>
+                  <select 
+                    value={tutorPreferences.challengeDifficulty}
+                    onChange={(e) => handlePreferenceChange('challengeDifficulty', e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
+                    style={{ color: 'white', backgroundColor: '#1a2e42' }}
+                  >
+                    <option value="easy" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Easy</option>
+                    <option value="medium" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Medium</option>
+                    <option value="hard" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Hard</option>
+                  </select>
+                </div>
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </div>
