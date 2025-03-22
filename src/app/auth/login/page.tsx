@@ -8,6 +8,9 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { auth } from "@/lib/api";
+import { toast } from "sonner";
+import { setToken } from "@/lib/auth-utils";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -15,14 +18,32 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    // Navigate to dashboard after "login"
-    router.push("/dashboard");
+    setError("");
+    
+    try {
+      // Call the login API endpoint
+      const response = await auth.login({ email, password });
+      
+      // Store the token using our auth utility
+      setToken(response.token);
+      
+      // Show success message
+      toast.success("Logged in successfully");
+      
+      // Navigate to dashboard
+      router.push("/dashboard");
+    } catch (error: any) {
+      console.error("Login error:", error);
+      setError(error.message || "Login failed. Please check your credentials.");
+      toast.error(error.message || "Login failed. Please check your credentials.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -62,6 +83,11 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {error && (
+              <div className="mb-4 p-2 bg-red-500/10 border border-red-500/30 rounded text-red-500 text-sm">
+                {error}
+              </div>
+            )}
             <form onSubmit={handleSubmit}>
               <div className="space-y-4">
                 <div className="space-y-2">

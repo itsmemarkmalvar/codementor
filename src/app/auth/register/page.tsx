@@ -8,6 +8,9 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { auth } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -18,14 +21,43 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [showTermsDialog, setShowTermsDialog] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!agreedToTerms) {
+      setError("You must agree to the Terms and Agreement to create an account.");
+      return;
+    }
+    
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    
     setIsLoading(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    // Navigate to dashboard after "registration"
-    router.push("/dashboard");
+    setError("");
+    
+    try {
+      // Call the register API endpoint
+      await auth.register({
+        name,
+        email,
+        password,
+        password_confirmation: confirmPassword
+      });
+      
+      // Navigate to login page after successful registration
+      router.push("/auth/login?registered=true");
+    } catch (error: any) {
+      console.error("Registration error:", error);
+      setError(error.message || "Registration failed. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -65,6 +97,11 @@ export default function RegisterPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {error && (
+              <div className="mb-4 p-2 bg-red-500/10 border border-red-500/30 rounded text-red-500 text-sm">
+                {error}
+              </div>
+            )}
             <form onSubmit={handleSubmit}>
               <div className="space-y-4">
                 <div className="space-y-2">
@@ -141,14 +178,96 @@ export default function RegisterPage() {
                     </button>
                   </div>
                 </div>
+
+                {/* Terms and Agreement Checkbox */}
+                <div className="flex items-center space-x-2">
+                  <Checkbox 
+                    id="terms" 
+                    checked={agreedToTerms} 
+                    onCheckedChange={(checked) => setAgreedToTerms(checked === true)} 
+                  />
+                  <label 
+                    htmlFor="terms"
+                    className="text-sm font-medium leading-none text-gray-400 peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    I agree to the{" "}
+                    <Dialog open={showTermsDialog} onOpenChange={setShowTermsDialog}>
+                      <DialogTrigger asChild>
+                        <button 
+                          type="button" 
+                          className="text-[#2E5BFF] hover:text-blue-400 hover:underline"
+                          onClick={() => setShowTermsDialog(true)}
+                        >
+                          Terms and Agreement
+                        </button>
+                      </DialogTrigger>
+                      <DialogContent className="max-h-[90vh] overflow-auto">
+                        <DialogHeader>
+                          <DialogTitle>Terms and Agreement</DialogTitle>
+                          <DialogDescription>
+                            Please read our terms and agreement carefully.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="mt-4 text-sm text-gray-200 space-y-4">
+                          <h3 className="text-lg font-semibold">1. Introduction</h3>
+                          <p>
+                            Welcome to CodeMentor! These Terms of Service ("Terms") govern your use of our platform, 
+                            including our website, services, and tools for learning Java programming ("Services"). 
+                            By accessing or using our Services, you agree to be bound by these Terms.
+                          </p>
+                          
+                          <h3 className="text-lg font-semibold">2. Account Registration</h3>
+                          <p>
+                            To access certain features of our platform, you may need to register for an account. 
+                            You agree to provide accurate, current, and complete information during the registration process 
+                            and to update such information to keep it accurate, current, and complete.
+                          </p>
+                          
+                          <h3 className="text-lg font-semibold">3. User Conduct</h3>
+                          <p>
+                            You agree not to:
+                          </p>
+                          <ul className="list-disc pl-5 space-y-1">
+                            <li>Use our Services for any illegal purpose or in violation of any laws</li>
+                            <li>Share your account credentials with others</li>
+                            <li>Copy or distribute content from our platform without permission</li>
+                            <li>Upload or transmit viruses, malware, or other malicious code</li>
+                            <li>Harass, intimidate, or threaten other users</li>
+                          </ul>
+                          
+                          <Link 
+                            href="/terms" 
+                            className="text-[#2E5BFF] hover:text-blue-400 inline-block mt-4"
+                            target="_blank"
+                          >
+                            View Full Terms
+                          </Link>
+                          
+                          <div className="pt-4 flex justify-end">
+                            <Button 
+                              onClick={() => {
+                                setAgreedToTerms(true);
+                                setShowTermsDialog(false);
+                              }}
+                              className="bg-[#2E5BFF] hover:bg-blue-600"
+                            >
+                              I Agree
+                            </Button>
+                          </div>
+                        </div>
+                      </DialogContent>
+                    </Dialog>
+                  </label>
+                </div>
+                
                 <motion.div
-                  whileHover={{ scale: 1.01 }}
-                  whileTap={{ scale: 0.99 }}
+                  whileHover={{ scale: agreedToTerms ? 1.01 : 1 }}
+                  whileTap={{ scale: agreedToTerms ? 0.99 : 1 }}
                 >
                   <Button
                     type="submit"
-                    className="w-full bg-[#2E5BFF] hover:bg-blue-600 text-white"
-                    disabled={isLoading}
+                    className={`w-full ${agreedToTerms ? 'bg-[#2E5BFF] hover:bg-blue-600' : 'bg-[#2E5BFF]/50 cursor-not-allowed'} text-white`}
+                    disabled={isLoading || !agreedToTerms}
                   >
                     {isLoading ? (
                       <motion.div
@@ -157,7 +276,7 @@ export default function RegisterPage() {
                         className="w-5 h-5 border-2 border-white border-t-transparent rounded-full"
                       />
                     ) : (
-                      "Create Account"
+                      "Sign Up"
                     )}
                   </Button>
                 </motion.div>
