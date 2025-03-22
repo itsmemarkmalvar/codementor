@@ -11,6 +11,8 @@ import { useRouter } from "next/navigation";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { auth } from "@/lib/api";
+import { setToken } from "@/lib/auth-utils";
+import { toast } from "sonner";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -43,18 +45,33 @@ export default function RegisterPage() {
     
     try {
       // Call the register API endpoint
-      await auth.register({
+      const registerResponse = await auth.register({
         name,
         email,
         password,
         password_confirmation: confirmPassword
       });
       
-      // Navigate to login page after successful registration
-      router.push("/auth/login?registered=true");
+      // Registration successful, let's automatically log the user in
+      try {
+        // Store the token from registration response
+        setToken(registerResponse.token);
+        
+        // Show success message
+        toast.success("Account created successfully! Welcome to CodeMentor.");
+        
+        // Navigate directly to dashboard
+        router.push("/dashboard");
+      } catch (loginError) {
+        console.error("Auto-login error after registration:", loginError);
+        // If auto-login fails, redirect to login page as fallback
+        toast.info("Please log in with your new account");
+        router.push("/auth/login?registered=true");
+      }
     } catch (error: any) {
       console.error("Registration error:", error);
       setError(error.message || "Registration failed. Please try again.");
+      toast.error(error.message || "Registration failed. Please try again.");
     } finally {
       setIsLoading(false);
     }
