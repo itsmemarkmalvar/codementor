@@ -19,7 +19,7 @@ import { useState } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import { auth } from "@/lib/api";
 import { removeToken } from "@/lib/auth-utils";
-import { toast } from "sonner";
+import { toast, Toaster } from "sonner";
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: Home },
@@ -64,6 +64,7 @@ export default function DashboardLayout({
   return (
     <AuthGuard>
       <div className="min-h-screen bg-[#0A1929] text-white">
+        <Toaster position="top-right" theme="dark" />
         {/* Sidebar */}
         <motion.aside
           initial={{ x: -300 }}

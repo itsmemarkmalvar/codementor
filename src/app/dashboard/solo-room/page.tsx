@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Send, 
@@ -14,14 +14,18 @@ import {
   BarChart, 
   CheckCircle, 
   Star,
-  Zap
+  Zap,
+  Loader
 } from 'lucide-react';
+import { getTutorResponse, executeJavaCode, evaluateCode } from '@/services/api';
+import { toast } from 'sonner';
 
 interface Message {
   id: number;
   text: string;
   sender: 'user' | 'bot';
   timestamp: Date;
+  code?: string;  // Optional code snippet that might be included in the message
 }
 
 interface Topic {
@@ -38,11 +42,26 @@ interface Session {
   duration: string;
 }
 
+// For API communication
+interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 const SoloRoomPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
   const [activeTab, setActiveTab] = useState<'chat' | 'topics' | 'sessions' | 'settings'>('chat');
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [codeInput, setCodeInput] = useState(`public class HelloWorld {
+    public static void main(String[] args) {
+        // Your code here
+        System.out.println("Hello, Java!");
+    }
+}`);
+  const [codeOutput, setCodeOutput] = useState<{stdout: string, stderr: string, executionTime: number} | null>(null);
+  const [isExecuting, setIsExecuting] = useState(false);
   
   // Sample topics data
   const topics: Topic[] = [
@@ -87,7 +106,7 @@ const SoloRoomPage = () => {
     challengeDifficulty: 'medium',
   });
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
     const newMessage: Message = {
@@ -97,19 +116,75 @@ const SoloRoomPage = () => {
       timestamp: new Date(),
     };
 
+    // Add user's message to the chat
     setMessages([...messages, newMessage]);
     setInputMessage('');
+    setIsLoading(true);
 
-    // Simulate bot response
-    setTimeout(() => {
+    try {
+      // Format conversation history for the AI API - ensure proper format for Gemini
+      // Only take the last 10 messages to avoid too large requests
+      const conversationHistory = messages
+        .slice(-10)
+        .map(msg => ({
+          role: msg.sender === 'user' ? 'user' : 'assistant',
+          content: msg.text
+        }));
+
+      console.log('Sending request to AI API:', {
+        question: inputMessage,
+        conversationHistory: conversationHistory.length,
+        preferences: tutorPreferences,
+        topic: selectedTopic?.title
+      });
+
+      // Get response from AI tutor
+      const response = await getTutorResponse({
+        question: inputMessage,
+        conversationHistory,
+        preferences: tutorPreferences,
+        topic: selectedTopic?.title
+      });
+
+      console.log('Received response from AI API:', response);
+
+      if (!response || !response.response) {
+        throw new Error('Invalid response format received from API');
+      }
+
+      // Add bot's response to the chat
       const botResponse: Message = {
         id: Date.now(),
-        text: "I'm here to help you learn Java programming. What would you like to know?",
+        text: response.response,
         sender: 'bot',
         timestamp: new Date(),
       };
+      
       setMessages(prev => [...prev, botResponse]);
-    }, 1000);
+    } catch (error) {
+      console.error('Error getting AI response:', error);
+      let errorMsg = 'Unknown error';
+      
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'string') {
+        errorMsg = error;
+      }
+      
+      toast.error(`Failed to get response from AI tutor: ${errorMsg}`);
+      
+      // Add fallback message
+      const fallbackMessage: Message = {
+        id: Date.now(),
+        text: "I'm sorry, I'm having trouble connecting to my knowledge base. Please try again later.",
+        sender: 'bot',
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, fallbackMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -119,31 +194,127 @@ const SoloRoomPage = () => {
     }
   };
   
-  const handleTopicSelect = (topic: Topic) => {
+  const handleTopicSelect = async (topic: Topic) => {
     setSelectedTopic(topic);
     setActiveTab('chat');
+    setIsLoading(true);
     
-    // Simulate a message about the selected topic
-    const botResponse: Message = {
-      id: Date.now(),
-      text: `Let's learn about ${topic.title}. What specific aspect would you like to explore?`,
-      sender: 'bot',
-      timestamp: new Date(),
-    };
-    setMessages([botResponse]);
+    try {
+      // Get response from AI tutor about the selected topic
+      console.log('Requesting topic introduction:', {
+        question: `I'd like to learn about ${topic.title}`,
+        conversationHistory: [],
+        preferences: tutorPreferences,
+        topic: topic.title
+      });
+
+      const response = await getTutorResponse({
+        question: `I'd like to learn about ${topic.title}`,
+        conversationHistory: [], // Empty array for new topic
+        preferences: tutorPreferences,
+        topic: topic.title
+      });
+      
+      console.log('Received topic introduction response:', response);
+      
+      if (!response || !response.response) {
+        throw new Error('Invalid response format received from API');
+      }
+      
+      // Add bot's response to the chat
+      const botResponse: Message = {
+        id: Date.now(),
+        text: response.response,
+        sender: 'bot',
+        timestamp: new Date(),
+      };
+      
+      setMessages([botResponse]);
+    } catch (error) {
+      console.error('Error getting AI response for topic:', error);
+      let errorMsg = 'Unknown error';
+      
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'string') {
+        errorMsg = error;
+      }
+      
+      toast.error(`Failed to get topic introduction: ${errorMsg}`);
+      
+      // Add fallback message
+      const fallbackMessage: Message = {
+        id: Date.now(),
+        text: `Let's learn about ${topic.title}. What specific aspect would you like to explore?`,
+        sender: 'bot',
+        timestamp: new Date(),
+      };
+      
+      setMessages([fallbackMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
   
-  const handleSessionSelect = (session: Session) => {
+  const handleSessionSelect = async (session: Session) => {
     setActiveTab('chat');
+    setIsLoading(true);
     
-    // Simulate loading a previous session
-    const botResponse: Message = {
-      id: Date.now(),
-      text: `Welcome back to our session on ${session.topic}. Would you like to continue where we left off?`,
-      sender: 'bot',
-      timestamp: new Date(),
-    };
-    setMessages([botResponse]);
+    try {
+      // Get response from AI tutor about the selected session
+      console.log('Requesting session resumption:', {
+        question: `I want to continue our previous session on ${session.topic}`,
+        conversationHistory: [],
+        preferences: tutorPreferences,
+        topic: session.topic
+      });
+
+      const response = await getTutorResponse({
+        question: `I want to continue our previous session on ${session.topic}`,
+        conversationHistory: [], // Empty array for new session
+        preferences: tutorPreferences,
+        topic: session.topic
+      });
+      
+      console.log('Received session resumption response:', response);
+      
+      if (!response || !response.response) {
+        throw new Error('Invalid response format received from API');
+      }
+      
+      // Add bot's response to the chat
+      const botResponse: Message = {
+        id: Date.now(),
+        text: response.response,
+        sender: 'bot',
+        timestamp: new Date(),
+      };
+      
+      setMessages([botResponse]);
+    } catch (error) {
+      console.error('Error getting AI response for session:', error);
+      let errorMsg = 'Unknown error';
+      
+      if (error instanceof Error) {
+        errorMsg = error.message;
+      } else if (typeof error === 'string') {
+        errorMsg = error;
+      }
+      
+      toast.error(`Failed to resume session: ${errorMsg}`);
+      
+      // Add fallback message
+      const fallbackMessage: Message = {
+        id: Date.now(),
+        text: `Welcome back to our session on ${session.topic}. Would you like to continue where we left off?`,
+        sender: 'bot',
+        timestamp: new Date(),
+      };
+      
+      setMessages([fallbackMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
   
   const handlePreferenceChange = (key: string, value: any) => {
@@ -271,7 +442,8 @@ const SoloRoomPage = () => {
                     {messages.length === 0 && (
                       <div className="text-center text-gray-400 py-8">
                         <Bot className="h-12 w-12 mx-auto mb-3 text-[#2E5BFF]" />
-                        <p>Start chatting with your AI tutor to learn Java programming</p>
+                        <p>Start chatting with your Gemini-powered AI tutor to learn Java programming</p>
+                        <p className="text-xs mt-2">Powered by Google's Gemini AI</p>
                       </div>
                     )}
                     {messages.map((message) => (
@@ -289,13 +461,20 @@ const SoloRoomPage = () => {
                           </div>
                         )}
                         <div
-                          className={`max-w-[70%] rounded-lg p-3 ${
+                          className={`max-w-[80%] rounded-lg p-3 ${
                             message.sender === 'user'
                               ? 'bg-[#2E5BFF] text-white'
                               : 'bg-white/10 text-white'
                           }`}
                         >
-                          <p className="text-sm">{message.text}</p>
+                          <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                          
+                          {message.code && (
+                            <div className="mt-2 bg-[#1a1a1a] rounded-lg p-3 font-mono text-xs overflow-x-auto">
+                              <pre>{message.code}</pre>
+                            </div>
+                          )}
+                          
                           <span className="text-xs opacity-70 mt-1 block">
                             {message.timestamp.toLocaleTimeString()}
                           </span>
@@ -307,6 +486,26 @@ const SoloRoomPage = () => {
                         )}
                       </motion.div>
                     ))}
+                    
+                    {/* Loading indicator */}
+                    {isLoading && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex items-start space-x-3 justify-start"
+                      >
+                        <div className="w-8 h-8 rounded-full bg-[#2E5BFF] flex items-center justify-center">
+                          <Loader className="w-5 h-5 animate-spin" />
+                        </div>
+                        <div className="bg-white/10 text-white max-w-[80%] rounded-lg p-3">
+                          <div className="flex space-x-2 items-center">
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse delay-200"></div>
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse delay-400"></div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
                   </div>
                 </div>
                 <div className="flex space-x-2 min-h-[42px]">
@@ -317,13 +516,28 @@ const SoloRoomPage = () => {
                     onKeyPress={handleKeyPress}
                     placeholder="Type your message..."
                     className="flex-1 bg-white/5 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] border border-white/10"
+                    disabled={isLoading}
                   />
                   <button
                     onClick={handleSendMessage}
-                    className="bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition flex items-center space-x-2 whitespace-nowrap flex-shrink-0 w-[100px]"
+                    className={`text-white px-4 py-2 rounded-lg transition flex items-center space-x-2 whitespace-nowrap flex-shrink-0 w-[100px] ${
+                      isLoading 
+                        ? 'bg-[#2E5BFF]/50 cursor-not-allowed' 
+                        : 'bg-[#2E5BFF] hover:bg-[#1E4BEF] cursor-pointer'
+                    }`}
+                    disabled={isLoading}
                   >
-                    <Send className="w-5 h-5" />
-                    <span>Send</span>
+                    {isLoading ? (
+                      <>
+                        <Loader className="w-5 h-5 animate-spin" />
+                        <span>Sending</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-5 h-5" />
+                        <span>Send</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </>
@@ -490,22 +704,135 @@ const SoloRoomPage = () => {
             </h2>
             <div className="flex-1 bg-white/5 rounded-lg p-4 overflow-hidden flex flex-col">
               <div className="flex-1 font-mono text-sm overflow-y-auto">
-                <pre className="text-gray-300">
-                  <code>
-{`// Java code editor
-public class HelloWorld {
-    public static void main(String[] args) {
-        // Your code here
-        System.out.println("Hello, Java!");
-    }
-}`}
-                  </code>
-                </pre>
+                <textarea
+                  value={codeInput}
+                  onChange={(e) => setCodeInput(e.target.value)}
+                  className="w-full h-3/4 bg-[#1A2E42]/80 text-gray-300 p-4 rounded-lg font-mono text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[#2E5BFF]"
+                  placeholder="// Write your Java code here"
+                />
+                
+                {/* Code output */}
+                {codeOutput && (
+                  <div className="mt-4 bg-[#1a1a1a] rounded-lg p-4 text-sm">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-gray-400">Output (executed in {codeOutput.executionTime}ms)</span>
+                    </div>
+                    {codeOutput.stdout && (
+                      <div className="mb-2">
+                        <p className="text-green-400 mb-1">Standard Output:</p>
+                        <pre className="text-white whitespace-pre-wrap">{codeOutput.stdout}</pre>
+                      </div>
+                    )}
+                    {codeOutput.stderr && (
+                      <div>
+                        <p className="text-red-400 mb-1">Standard Error:</p>
+                        <pre className="text-white whitespace-pre-wrap">{codeOutput.stderr}</pre>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              <div className="mt-4 flex justify-end">
-                <button className="bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition flex items-center space-x-2">
-                  <Code className="h-5 w-5" />
-                  <span>Run Code</span>
+              <div className="mt-4 flex items-center justify-between">
+                <button
+                  onClick={async () => {
+                    if (!codeInput.trim()) {
+                      toast.error('Please write some code first');
+                      return;
+                    }
+                    
+                    setIsExecuting(true);
+                    setCodeOutput(null);
+                    
+                    try {
+                      const result = await executeJavaCode({
+                        code: codeInput,
+                      });
+                      
+                      setCodeOutput(result);
+                      
+                      // If execution was successful, ask AI to evaluate the code
+                      if (!result.stderr) {
+                        const botMessage: Message = {
+                          id: Date.now(),
+                          text: "I've analyzed your code. Would you like me to give you feedback?",
+                          sender: 'bot',
+                          timestamp: new Date(),
+                          code: codeInput
+                        };
+                        
+                        if (activeTab === 'chat') {
+                          setMessages(prev => [...prev, botMessage]);
+                        }
+                      }
+                    } catch (error) {
+                      console.error('Error executing code:', error);
+                      toast.error('Failed to execute code');
+                    } finally {
+                      setIsExecuting(false);
+                    }
+                  }}
+                  className="bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition flex items-center space-x-2"
+                  disabled={isExecuting}
+                >
+                  {isExecuting ? (
+                    <>
+                      <Loader className="h-5 w-5 animate-spin" />
+                      <span>Running...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Code className="h-5 w-5" />
+                      <span>Run Code</span>
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={async () => {
+                    if (!codeInput.trim()) {
+                      toast.error('Please write some code first');
+                      return;
+                    }
+                    
+                    setIsLoading(true);
+                    
+                    try {
+                      const feedback = await evaluateCode({
+                        code: codeInput,
+                        topic: selectedTopic?.title
+                      });
+                      
+                      const botMessage: Message = {
+                        id: Date.now(),
+                        text: feedback.feedback,
+                        sender: 'bot',
+                        timestamp: new Date(),
+                        code: codeInput
+                      };
+                      
+                      setActiveTab('chat');
+                      setMessages(prev => [...prev, botMessage]);
+                    } catch (error) {
+                      console.error('Error evaluating code:', error);
+                      toast.error('Failed to evaluate code');
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  className="bg-white/10 text-white px-4 py-2 rounded-lg hover:bg-white/20 transition flex items-center space-x-2"
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <>
+                      <Loader className="h-5 w-5 animate-spin" />
+                      <span>Analyzing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="h-5 w-5" />
+                      <span>Get Feedback</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
