@@ -23,7 +23,7 @@ import { toast } from 'sonner';
 interface Message {
   id: number;
   text: string;
-  sender: 'user' | 'bot';
+  sender: 'user' | 'bot' | 'ai';
   timestamp: Date;
   code?: string;  // Optional code snippet that might be included in the message
 }
@@ -36,6 +36,7 @@ interface Topic {
   description?: string;
   difficulty_level?: string;
   parent_id?: number | null;
+  exercises_count?: number;
 }
 
 interface Session {
@@ -68,6 +69,13 @@ const SoloRoomPage = () => {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
+  
+  // Progress tracking state
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [timeSpentMinutes, setTimeSpentMinutes] = useState(0);
+  const [exercisesCompleted, setExercisesCompleted] = useState(0);
+  const [exercisesTotal, setExercisesTotal] = useState(0);
+  const [completedSubtopics, setCompletedSubtopics] = useState<string[]>([]);
   
   // Sample topics data as fallback
   const defaultTopics: Topic[] = [
@@ -160,6 +168,81 @@ const SoloRoomPage = () => {
     fetchTopics();
   }, []);
 
+  // Tracking interval
+  useEffect(() => {
+    // Start tracking time when a topic is selected
+    if (selectedTopic) {
+      if (!sessionStartTime) {
+        setSessionStartTime(new Date());
+      }
+      
+      // Set up interval to update time spent every minute
+      const trackingInterval = setInterval(() => {
+        if (sessionStartTime) {
+          const now = new Date();
+          const diffMs = now.getTime() - sessionStartTime.getTime();
+          const diffMinutes = Math.floor(diffMs / 60000);
+          
+          // Only update if time has changed
+          if (diffMinutes > timeSpentMinutes) {
+            setTimeSpentMinutes(diffMinutes);
+            
+            // Update progress every 5 minutes
+            if (diffMinutes % 5 === 0 && selectedTopic) {
+              updateUserProgress();
+            }
+          }
+        }
+      }, 60000); // Check every minute
+      
+      return () => clearInterval(trackingInterval);
+    }
+  }, [selectedTopic, sessionStartTime, timeSpentMinutes]);
+
+  // Function to update user progress
+  const updateUserProgress = async (progressIncrement = 0) => {
+    if (!selectedTopic) return;
+    
+    try {
+      // Calculate new progress percentage
+      let newProgress = selectedTopic.progress + progressIncrement;
+      
+      // Ensure progress is within bounds
+      newProgress = Math.min(Math.max(newProgress, 0), 100);
+      
+      // Only send update if progress has changed or time has been spent
+      if (newProgress !== selectedTopic.progress || timeSpentMinutes > 0) {
+        // Determine status based on progress
+        let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
+        if (newProgress >= 100) {
+          status = 'completed';
+        } else if (newProgress > 0) {
+          status = 'in_progress';
+        }
+        
+        // Update progress in database
+        await updateProgress({
+          topic_id: selectedTopic.id,
+          progress_percentage: newProgress,
+          status,
+          time_spent_minutes: timeSpentMinutes,
+          exercises_completed: exercisesCompleted,
+          exercises_total: exercisesTotal,
+          completed_subtopics: completedSubtopics
+        });
+        
+        // Update local state
+        setSelectedTopic({
+          ...selectedTopic,
+          progress: newProgress
+        });
+      }
+    } catch (error) {
+      console.error("Error updating progress:", error);
+    }
+  };
+
+  // Enhanced handleSendMessage with progress tracking
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
@@ -204,72 +287,35 @@ const SoloRoomPage = () => {
         session_id: currentSessionId !== null ? currentSessionId : undefined
       });
 
-      console.log('Received response from AI API:', response);
+      // Add AI's response to the chat
+      const aiMessage: Message = {
+        id: Date.now() + 1,
+        text: response.response || "I'm sorry, I don't have a response for that.",
+        sender: 'ai',
+        timestamp: new Date(),
+      };
 
-      if (!response || !response.response) {
-        throw new Error('Invalid response format received from API');
-      }
-
-      // Store session ID if provided
-      if (response.session_id && !currentSessionId) {
+      setMessages(prev => [...prev, aiMessage]);
+      
+      // Increment progress when user interacts with the AI
+      // More interaction = more progress
+      await updateUserProgress(2); // Add 2% progress for each interaction
+      
+      // If the session has an ID now, update the current session ID
+      if (response.session_id && currentSessionId === null) {
         setCurrentSessionId(response.session_id);
       }
-
-      // Add bot's response to the chat
-      const botResponse: Message = {
-        id: Date.now(),
-        text: response.response,
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-      
-      setMessages(prev => [...prev, botResponse]);
-      
-      // Update progress if we have a topic selected
-      if (selectedTopic && selectedTopic.id) {
-        // This would ideally be calculated based on the conversation,
-        // but for now we'll just increment it slightly with each message
-        const newProgress = Math.min(selectedTopic.progress + 5, 100);
-        
-        if (newProgress > selectedTopic.progress) {
-          // Update progress in the state
-          setSelectedTopic({
-            ...selectedTopic,
-            progress: newProgress
-          });
-          
-          // Update progress in the backend
-          try {
-            await updateProgress({
-              topic_id: selectedTopic.id,
-              progress_percentage: newProgress
-            });
-          } catch (error) {
-            console.error('Failed to update progress:', error);
-          }
-        }
-      }
     } catch (error) {
-      console.error('Error getting AI response:', error);
-      let errorMsg = 'Unknown error';
-      
-      if (error instanceof Error) {
-        errorMsg = error.message;
-      } else if (typeof error === 'string') {
-        errorMsg = error;
-      }
-      
-      toast.error(`Failed to get response from AI tutor: ${errorMsg}`);
-      
-      // Add fallback message
-      const fallbackMessage: Message = {
-        id: Date.now(),
-        text: "I'm sorry, I'm having trouble connecting to my knowledge base. Please try again later.",
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-      
-      setMessages(prev => [...prev, fallbackMessage]);
+      console.error("Error getting AI response:", error);
+      setMessages(prev => [
+        ...prev,
+        {
+          id: Date.now() + 1,
+          text: "I'm having trouble connecting to my AI services. Please try again later.",
+          sender: 'ai',
+          timestamp: new Date(),
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }
@@ -286,6 +332,13 @@ const SoloRoomPage = () => {
     setSelectedTopic(topic);
     setActiveTab('chat');
     setIsLoading(true);
+    
+    // Reset session tracking for the new topic
+    setSessionStartTime(new Date());
+    setTimeSpentMinutes(0);
+    setExercisesCompleted(0);
+    setExercisesTotal(topic.exercises_count || 0);
+    setCompletedSubtopics([]);
     
     try {
       // Reset session ID when selecting a new topic
@@ -307,48 +360,48 @@ const SoloRoomPage = () => {
         topic: topic.title,
         topic_id: topic.id
       });
+
+      // Clear previous messages and add welcome message
+      const welcomeMessage: Message = {
+        id: Date.now(),
+        text: response.response || `Welcome to the ${topic.title} topic!`,
+        sender: 'ai',
+        timestamp: new Date(),
+      };
       
-      console.log('Received topic introduction response:', response);
+      setMessages([welcomeMessage]);
       
-      if (!response || !response.response) {
-        throw new Error('Invalid response format received from API');
-      }
+      // Initialize progress to 5% for starting the topic
+      setSelectedTopic({
+        ...topic,
+        progress: 5
+      });
       
-      // Store session ID if provided
+      // Initialize progress in the database
+      await updateProgress({
+        topic_id: topic.id,
+        progress_percentage: 5,
+        status: 'in_progress',
+        time_spent_minutes: 0,
+        exercises_completed: 0,
+        exercises_total: topic.exercises_count || 0,
+        completed_subtopics: []
+      });
+      
+      // If the response includes a session ID, set it
       if (response.session_id) {
         setCurrentSessionId(response.session_id);
       }
-      
-      // Add bot's response to the chat
-      const botResponse: Message = {
-        id: Date.now(),
-        text: response.response,
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-      
-      setMessages([botResponse]);
     } catch (error) {
-      console.error('Error getting AI response for topic:', error);
-      let errorMsg = 'Unknown error';
-      
-      if (error instanceof Error) {
-        errorMsg = error.message;
-      } else if (typeof error === 'string') {
-        errorMsg = error;
-      }
-      
-      toast.error(`Failed to get topic introduction: ${errorMsg}`);
-      
-      // Add fallback message
-      const fallbackMessage: Message = {
-        id: Date.now(),
-        text: `Let's learn about ${topic.title}. What specific aspect would you like to explore?`,
-        sender: 'bot',
-        timestamp: new Date(),
-      };
-      
-      setMessages([fallbackMessage]);
+      console.error("Error selecting topic:", error);
+      setMessages([
+        {
+          id: Date.now(),
+          text: `I'm having trouble loading the ${topic.title} topic. Please try again later.`,
+          sender: 'ai',
+          timestamp: new Date(),
+        },
+      ]);
     } finally {
       setIsLoading(false);
     }

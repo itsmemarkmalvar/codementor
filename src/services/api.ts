@@ -111,6 +111,11 @@ export const executeJavaCode = async (params: {
 export const updateProgress = async (params: {
   topic_id: number;
   progress_percentage: number;
+  status?: 'not_started' | 'in_progress' | 'completed';
+  time_spent_minutes?: number;
+  exercises_completed?: number;
+  exercises_total?: number;
+  completed_subtopics?: string[];
 }) => {
   try {
     console.log('Calling updateProgress API with params:', params);
