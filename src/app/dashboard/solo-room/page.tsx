@@ -17,7 +17,7 @@ import {
   Zap,
   Loader
 } from 'lucide-react';
-import { getTutorResponse, executeJavaCode, evaluateCode } from '@/services/api';
+import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress } from '@/services/api';
 import { toast } from 'sonner';
 
 interface Message {
@@ -32,7 +32,10 @@ interface Topic {
   id: number;
   title: string;
   progress: number;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
+  description?: string;
+  difficulty_level?: string;
+  parent_id?: number | null;
 }
 
 interface Session {
@@ -62,31 +65,34 @@ const SoloRoomPage = () => {
 }`);
   const [codeOutput, setCodeOutput] = useState<{stdout: string, stderr: string, executionTime: number} | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [isLoadingTopics, setIsLoadingTopics] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
   
-  // Sample topics data
-  const topics: Topic[] = [
+  // Sample topics data as fallback
+  const defaultTopics: Topic[] = [
     { 
       id: 1, 
       title: 'Java Basics', 
-      progress: 65, 
+      progress: 65,
       icon: <BookOpen className="h-5 w-5 text-[#2E5BFF]" /> 
     },
     { 
       id: 2, 
       title: 'Object-Oriented Programming', 
-      progress: 40, 
+      progress: 40,
       icon: <Code className="h-5 w-5 text-[#2E5BFF]" /> 
     },
     { 
       id: 3, 
       title: 'Data Structures', 
-      progress: 25, 
+      progress: 25,
       icon: <BarChart className="h-5 w-5 text-[#2E5BFF]" /> 
     },
     { 
       id: 4, 
       title: 'Algorithms', 
-      progress: 10, 
+      progress: 10,
       icon: <Zap className="h-5 w-5 text-[#2E5BFF]" /> 
     },
   ];
@@ -105,6 +111,54 @@ const SoloRoomPage = () => {
     explanationDetail: 'detailed',
     challengeDifficulty: 'medium',
   });
+
+  // Fetch topics on component mount
+  useEffect(() => {
+    const fetchTopics = async () => {
+      setIsLoadingTopics(true);
+      try {
+        const fetchedTopics = await getTopics();
+        if (fetchedTopics && Array.isArray(fetchedTopics)) {
+          // Add icon based on topic title
+          const topicsWithIcons = fetchedTopics.map(topic => {
+            let icon;
+            const title = topic.title.toLowerCase();
+            
+            if (title.includes('basic') || title.includes('introduction')) {
+              icon = <BookOpen className="h-5 w-5 text-[#2E5BFF]" />;
+            } else if (title.includes('object') || title.includes('class') || title.includes('programming')) {
+              icon = <Code className="h-5 w-5 text-[#2E5BFF]" />;
+            } else if (title.includes('data') || title.includes('structure')) {
+              icon = <BarChart className="h-5 w-5 text-[#2E5BFF]" />;
+            } else if (title.includes('algorithm')) {
+              icon = <Zap className="h-5 w-5 text-[#2E5BFF]" />;
+            } else {
+              icon = <BookOpen className="h-5 w-5 text-[#2E5BFF]" />;
+            }
+            
+            return {
+              ...topic,
+              icon,
+              progress: 0 // Initialize progress to 0, should be fetched from user progress API
+            };
+          });
+          
+          setTopics(topicsWithIcons);
+        } else {
+          console.warn('Failed to fetch topics, using default data');
+          setTopics(defaultTopics);
+        }
+      } catch (error) {
+        console.error('Error fetching topics:', error);
+        toast.error('Failed to load topics. Using sample data instead.');
+        setTopics(defaultTopics);
+      } finally {
+        setIsLoadingTopics(false);
+      }
+    };
+    
+    fetchTopics();
+  }, []);
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
@@ -135,7 +189,9 @@ const SoloRoomPage = () => {
         question: inputMessage,
         conversationHistory: conversationHistory.length,
         preferences: tutorPreferences,
-        topic: selectedTopic?.title
+        topic: selectedTopic?.title,
+        topic_id: selectedTopic?.id,
+        session_id: currentSessionId
       });
 
       // Get response from AI tutor
@@ -143,13 +199,20 @@ const SoloRoomPage = () => {
         question: inputMessage,
         conversationHistory,
         preferences: tutorPreferences,
-        topic: selectedTopic?.title
+        topic: selectedTopic?.title,
+        topic_id: selectedTopic?.id,
+        session_id: currentSessionId !== null ? currentSessionId : undefined
       });
 
       console.log('Received response from AI API:', response);
 
       if (!response || !response.response) {
         throw new Error('Invalid response format received from API');
+      }
+
+      // Store session ID if provided
+      if (response.session_id && !currentSessionId) {
+        setCurrentSessionId(response.session_id);
       }
 
       // Add bot's response to the chat
@@ -161,6 +224,31 @@ const SoloRoomPage = () => {
       };
       
       setMessages(prev => [...prev, botResponse]);
+      
+      // Update progress if we have a topic selected
+      if (selectedTopic && selectedTopic.id) {
+        // This would ideally be calculated based on the conversation,
+        // but for now we'll just increment it slightly with each message
+        const newProgress = Math.min(selectedTopic.progress + 5, 100);
+        
+        if (newProgress > selectedTopic.progress) {
+          // Update progress in the state
+          setSelectedTopic({
+            ...selectedTopic,
+            progress: newProgress
+          });
+          
+          // Update progress in the backend
+          try {
+            await updateProgress({
+              topic_id: selectedTopic.id,
+              progress_percentage: newProgress
+            });
+          } catch (error) {
+            console.error('Failed to update progress:', error);
+          }
+        }
+      }
     } catch (error) {
       console.error('Error getting AI response:', error);
       let errorMsg = 'Unknown error';
@@ -200,25 +288,35 @@ const SoloRoomPage = () => {
     setIsLoading(true);
     
     try {
+      // Reset session ID when selecting a new topic
+      setCurrentSessionId(null);
+      
       // Get response from AI tutor about the selected topic
       console.log('Requesting topic introduction:', {
         question: `I'd like to learn about ${topic.title}`,
         conversationHistory: [],
         preferences: tutorPreferences,
-        topic: topic.title
+        topic: topic.title,
+        topic_id: topic.id
       });
 
       const response = await getTutorResponse({
         question: `I'd like to learn about ${topic.title}`,
         conversationHistory: [], // Empty array for new topic
         preferences: tutorPreferences,
-        topic: topic.title
+        topic: topic.title,
+        topic_id: topic.id
       });
       
       console.log('Received topic introduction response:', response);
       
       if (!response || !response.response) {
         throw new Error('Invalid response format received from API');
+      }
+      
+      // Store session ID if provided
+      if (response.session_id) {
+        setCurrentSessionId(response.session_id);
       }
       
       // Add bot's response to the chat
@@ -266,14 +364,18 @@ const SoloRoomPage = () => {
         question: `I want to continue our previous session on ${session.topic}`,
         conversationHistory: [],
         preferences: tutorPreferences,
-        topic: session.topic
+        topic: session.topic,
+        topic_id: topics.find(t => t.title === session.topic)?.id, // Look up topic ID
+        session_id: session.id
       });
 
       const response = await getTutorResponse({
         question: `I want to continue our previous session on ${session.topic}`,
         conversationHistory: [], // Empty array for new session
         preferences: tutorPreferences,
-        topic: session.topic
+        topic: session.topic,
+        topic_id: topics.find(t => t.title === session.topic)?.id, // Look up topic ID
+        session_id: session.id
       });
       
       console.log('Received session resumption response:', response);
@@ -281,6 +383,9 @@ const SoloRoomPage = () => {
       if (!response || !response.response) {
         throw new Error('Invalid response format received from API');
       }
+      
+      // Store session ID
+      setCurrentSessionId(session.id);
       
       // Add bot's response to the chat
       const botResponse: Message = {
@@ -306,7 +411,7 @@ const SoloRoomPage = () => {
       // Add fallback message
       const fallbackMessage: Message = {
         id: Date.now(),
-        text: `Welcome back to our session on ${session.topic}. Would you like to continue where we left off?`,
+        text: `Welcome back to your session on ${session.topic}. How can I help you today?`,
         sender: 'bot',
         timestamp: new Date(),
       };
@@ -746,15 +851,21 @@ const SoloRoomPage = () => {
                     try {
                       const result = await executeJavaCode({
                         code: codeInput,
+                        session_id: currentSessionId !== null ? currentSessionId : undefined,
+                        topic_id: selectedTopic?.id
                       });
                       
-                      setCodeOutput(result);
+                      setCodeOutput({
+                        stdout: result.execution.stdout || '',
+                        stderr: result.execution.stderr || '',
+                        executionTime: result.execution.executionTime || 0
+                      });
                       
-                      // If execution was successful, ask AI to evaluate the code
-                      if (!result.stderr) {
+                      // If execution was successful and we have AI feedback, show it
+                      if (result.execution.success && result.feedback) {
                         const botMessage: Message = {
                           id: Date.now(),
-                          text: "I've analyzed your code. Would you like me to give you feedback?",
+                          text: result.feedback,
                           sender: 'bot',
                           timestamp: new Date(),
                           code: codeInput
@@ -797,14 +908,18 @@ const SoloRoomPage = () => {
                     setIsLoading(true);
                     
                     try {
-                      const feedback = await evaluateCode({
-                        code: codeInput,
-                        topic: selectedTopic?.title
+                      const response = await getTutorResponse({
+                        question: `Please evaluate this Java code and provide feedback: \n\n${codeInput}`,
+                        conversationHistory: [],
+                        preferences: tutorPreferences,
+                        topic: selectedTopic?.title,
+                        topic_id: selectedTopic?.id,
+                        session_id: currentSessionId !== null ? currentSessionId : undefined
                       });
                       
                       const botMessage: Message = {
                         id: Date.now(),
-                        text: feedback.feedback,
+                        text: response.response,
                         sender: 'bot',
                         timestamp: new Date(),
                         code: codeInput
