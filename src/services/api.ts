@@ -116,10 +116,36 @@ export const updateProgress = async (params: {
   exercises_completed?: number;
   exercises_total?: number;
   completed_subtopics?: string[];
+  progress_data?: string;
 }) => {
   try {
-    console.log('Calling updateProgress API with params:', params);
-    const response = await api.post('/tutor/update-progress', params);
+    // Create a clean object with default values for all parameters
+    const cleanParams = {
+      topic_id: Number(params.topic_id),
+      progress_percentage: Math.round(Number(params.progress_percentage)), // Ensure it's an integer
+      status: params.status || 'in_progress',
+      time_spent_minutes: Number(params.time_spent_minutes || 0),
+      exercises_completed: Number(params.exercises_completed || 0),
+      exercises_total: Number(params.exercises_total || 0),
+      // Use empty array for completed_subtopics if not provided
+      completed_subtopics: '[]', // Always send as a string representation of an array
+      progress_data: params.progress_data || null
+    };
+    
+    // Replace the completed_subtopics with JSON string if array is provided
+    if (params.completed_subtopics && Array.isArray(params.completed_subtopics)) {
+      cleanParams.completed_subtopics = JSON.stringify(params.completed_subtopics);
+    }
+    
+    // Ensure progress_data is a string
+    if (cleanParams.progress_data && typeof cleanParams.progress_data !== 'string') {
+      cleanParams.progress_data = JSON.stringify(cleanParams.progress_data);
+    }
+    
+    console.log('Sending updateProgress with params:', cleanParams);
+    
+    // Send request with FormData
+    const response = await api.post('/tutor/update-progress', cleanParams);
     console.log('updateProgress API response status:', response.status);
     
     if (!response.data || response.data.status === 'error') {
@@ -127,8 +153,12 @@ export const updateProgress = async (params: {
     }
     
     return response.data.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in updateProgress API call:', error);
+    // Log additional details for 422 errors
+    if (error.response && error.response.status === 422) {
+      console.error('Validation errors:', error.response.data);
+    }
     throw error;
   }
 };
@@ -163,5 +193,54 @@ export const getTopicHierarchy = async () => {
   } catch (error) {
     console.error('Error in getTopicHierarchy API call:', error);
     throw error;
+  }
+};
+
+// User Progress API calls
+export const getUserProgress = async () => {
+  try {
+    const response = await api.get('/progress');
+    console.log('getUserProgress API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error('Error in getUserProgress API call:', error);
+    return []; // Return empty array instead of throwing to prevent UI errors
+  }
+};
+
+export const getTopicProgress = async (topicId: number) => {
+  try {
+    const response = await api.get(`/progress/${topicId}`);
+    console.log('getTopicProgress API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error(`Error in getTopicProgress API call for topic ${topicId}:`, error);
+    // Return default progress structure instead of throwing
+    return {
+      topic_id: topicId,
+      progress_percentage: 0,
+      status: 'not_started',
+      time_spent_minutes: 0,
+      exercises_completed: 0,
+      exercises_total: 0,
+      completed_subtopics: [],
+      current_streak_days: 0,
+      progress_data: {
+        interaction: 0,
+        code_execution: 0,
+        time_spent: 0,
+        knowledge_check: 0
+      }
+    };
   }
 }; 

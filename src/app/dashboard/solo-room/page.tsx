@@ -1,24 +1,49 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  Send, 
-  User, 
-  Bot, 
-  Code, 
-  BookOpen, 
-  Clock, 
-  Settings as SettingsIcon, 
-  ChevronRight, 
-  BarChart, 
-  CheckCircle, 
+  ChevronDown,
+  ChevronUp,
+  AlertCircle,
+  Terminal,
+  Play,
+  ThumbsUp,
+  ThumbsDown,
+  Code,
+  AlignLeft,
+  Loader,
+  Send,
+  User,
+  Bot,
+  BookOpen,
+  Clock,
+  Settings as SettingsIcon,
+  ChevronRight,
+  BarChart,
+  CheckCircle,
   Star,
   Zap,
-  Loader
+  ScrollText
 } from 'lucide-react';
-import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress } from '@/services/api';
+import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress, getUserProgress, getTopicProgress } from '@/services/api';
 import { toast } from 'sonner';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
+import { Progress } from '@/components/ui/progress';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import styles from './SoloRoom.module.css';
 
 interface Message {
   id: number;
@@ -145,7 +170,16 @@ const SoloRoomPage = () => {
       try {
         const fetchedTopics = await getTopics();
         if (fetchedTopics && Array.isArray(fetchedTopics)) {
-          // Add icon based on topic title
+          // Get user progress data
+          let userProgressData = [];
+          try {
+            userProgressData = await getUserProgress();
+            console.log("Loaded user progress:", userProgressData);
+          } catch (progressError) {
+            console.error("Failed to load user progress:", progressError);
+          }
+          
+          // Add icon based on topic title and merge with progress data
           const topicsWithIcons = fetchedTopics.map(topic => {
             let icon;
             const title = topic.title.toLowerCase();
@@ -162,10 +196,14 @@ const SoloRoomPage = () => {
               icon = <BookOpen className="h-5 w-5 text-[#2E5BFF]" />;
             }
             
+            // Find progress for this topic if it exists
+            const topicProgress = userProgressData.find((p: any) => p.topic_id === topic.id);
+            
             return {
               ...topic,
               icon,
-              progress: 0 // Initialize progress to 0, should be fetched from user progress API
+              progress: topicProgress ? topicProgress.progress_percentage : 0,
+              status: topicProgress ? topicProgress.status : 'not_started'
             };
           });
           
@@ -249,6 +287,9 @@ const SoloRoomPage = () => {
         100 // Cap at 100%
       );
       
+      // Ensure newProgress is always an integer
+      newProgress = Math.round(newProgress);
+      
       // Determine status based on progress
       let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
       if (newProgress >= 100) {
@@ -257,18 +298,27 @@ const SoloRoomPage = () => {
         status = 'in_progress';
       }
       
+      // Prepare progress data as a string to avoid serialization issues
+      const progressDataString = JSON.stringify(updatedProgressData);
+      console.log("Sending progress_data as:", progressDataString);
+      
+      // Ensure completed subtopics is a valid array
+      const subtopicsArray = Array.isArray(completedSubtopics) ? completedSubtopics : [];
+      console.log("Sending completed_subtopics as:", subtopicsArray);
+      
       // Update progress in database with progress type data
-      await updateProgress({
+      const result = await updateProgress({
         topic_id: selectedTopic.id,
         progress_percentage: newProgress,
         status,
         time_spent_minutes: timeSpentMinutes,
         exercises_completed: exercisesCompleted,
         exercises_total: exercisesTotal,
-        completed_subtopics: completedSubtopics,
-        // We'll handle the missing property in the API by using the stringified data
-        // as a custom field that we can parse in the backend
+        completed_subtopics: subtopicsArray,
+        progress_data: progressDataString
       });
+      
+      console.log("Progress update successful:", result);
       
       // Update local state for progress data
       setProgressData(updatedProgressData);
@@ -292,8 +342,15 @@ const SoloRoomPage = () => {
         // Request a quiz from the AI
         requestKnowledgeCheck();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating progress:", error);
+      // Show detailed error message
+      if (error.response && error.response.data) {
+        console.error('Response error data:', error.response.data);
+        toast.error(`Progress update failed: ${JSON.stringify(error.response.data.errors || {})}`);
+      } else {
+        toast.error("Failed to update progress. Please try again.");
+      }
     }
   };
 
@@ -431,24 +488,116 @@ const SoloRoomPage = () => {
     setActiveTab('chat');
     setIsLoading(true);
     
-    // Reset session tracking for the new topic
-    setSessionStartTime(new Date());
-    setTimeSpentMinutes(0);
-    setExercisesCompleted(0);
-    setExercisesTotal(topic.exercises_count || 0);
-    setCompletedSubtopics([]);
-    setKnowledgeCheckRequested(false);
-    knowledgeCheckAnswersCount = 0;
-    
-    // Initialize progress data
-    setProgressData({
-      interaction: 0,
-      code_execution: 0,
-      time_spent: 0,
-      knowledge_check: 0
-    });
-    
     try {
+      // Try to get existing progress for this topic
+      const existingProgress = await getTopicProgress(topic.id);
+      console.log("Existing progress for topic:", existingProgress);
+      
+      // If we have existing progress, use it to initialize the state
+      if (existingProgress && existingProgress.progress_percentage > 0) {
+        // Set time spent from existing data
+        setTimeSpentMinutes(existingProgress.time_spent_minutes || 0);
+        setExercisesCompleted(existingProgress.exercises_completed || 0);
+        setExercisesTotal(existingProgress.exercises_total || topic.exercises_count || 0);
+        
+        // Set completed subtopics if available
+        setCompletedSubtopics(existingProgress.completed_subtopics || []);
+        
+        // Set knowledge check requested if progress is high
+        setKnowledgeCheckRequested(
+          existingProgress.progress_percentage >= 80 && 
+          (!existingProgress.progress_data || 
+           !existingProgress.progress_data.knowledge_check ||
+           existingProgress.progress_data.knowledge_check < 20)
+        );
+        
+        // Initialize progress data from existing data
+        if (existingProgress.progress_data) {
+          let parsedProgressData = existingProgress.progress_data;
+          if (typeof parsedProgressData === 'string') {
+            try {
+              parsedProgressData = JSON.parse(parsedProgressData);
+            } catch (e) {
+              console.error("Error parsing progress data:", e);
+              parsedProgressData = {
+                interaction: 0,
+                code_execution: 0,
+                time_spent: 0,
+                knowledge_check: 0
+              };
+            }
+          }
+          setProgressData(parsedProgressData);
+        } else {
+          // Default progress data if none exists
+          setProgressData({
+            interaction: 0,
+            code_execution: 0,
+            time_spent: 0,
+            knowledge_check: 0
+          });
+        }
+        
+        // Update the topic with the correct progress
+        setSelectedTopic({
+          ...topic,
+          progress: existingProgress.progress_percentage
+        });
+      } else {
+        // No existing progress, initialize with defaults
+        // Reset session tracking for the new topic
+        setSessionStartTime(new Date());
+        setTimeSpentMinutes(0);
+        setExercisesCompleted(0);
+        setExercisesTotal(topic.exercises_count || 0);
+        setCompletedSubtopics([]);
+        setKnowledgeCheckRequested(false);
+        knowledgeCheckAnswersCount = 0;
+        
+        // Initialize progress data
+        setProgressData({
+          interaction: 0,
+          code_execution: 0,
+          time_spent: 0,
+          knowledge_check: 0
+        });
+        
+        // Initialize progress to 5% for starting the topic
+        setSelectedTopic({
+          ...topic,
+          progress: 5
+        });
+        
+        // Prepare initial progress data as a string
+        const initialProgressData = JSON.stringify({
+          interaction: 0,
+          code_execution: 0,
+          time_spent: 0,
+          knowledge_check: 0
+        });
+        console.log("Initializing progress_data as:", initialProgressData);
+        
+        // Initialize progress in the database
+        await updateProgress({
+          topic_id: topic.id,
+          progress_percentage: 5, // This is already an integer
+          status: 'in_progress',
+          time_spent_minutes: 0,
+          exercises_completed: 0,
+          exercises_total: topic.exercises_count || 0,
+          completed_subtopics: [], // Empty array for completed subtopics
+          progress_data: initialProgressData
+        }).catch(progressError => {
+          console.error("Error initializing progress:", progressError);
+          if (progressError.response && progressError.response.data) {
+            console.error('Response error data:', progressError.response.data);
+            toast.error(`Progress tracking error: ${JSON.stringify(progressError.response.data.errors || {})}`);
+          } else {
+            toast.error("Failed to initialize progress tracking.");
+          }
+        });
+      }
+      
       // Reset session ID when selecting a new topic
       setCurrentSessionId(null);
       
@@ -470,24 +619,6 @@ const SoloRoomPage = () => {
       };
       
       setMessages([welcomeMessage]);
-      
-      // Initialize progress to 5% for starting the topic
-      setSelectedTopic({
-        ...topic,
-        progress: 5
-      });
-      
-      // Initialize progress in the database
-      await updateProgress({
-        topic_id: topic.id,
-        progress_percentage: 5,
-        status: 'in_progress',
-        time_spent_minutes: 0,
-        exercises_completed: 0,
-        exercises_total: topic.exercises_count || 0,
-        completed_subtopics: [],
-        // Removed progress_data property to avoid type error
-      });
       
       // If the response includes a session ID, set it
       if (response.session_id) {
@@ -614,7 +745,7 @@ const SoloRoomPage = () => {
         // Successful execution
         const progressPoints = Math.min(3 + codeComplexity, 7); // Cap at 7% per successful run
         setExercisesCompleted(prev => prev + 1);
-        await updateUserProgress(progressPoints, 'code_execution');
+        await updateUserProgress(Math.round(progressPoints), 'code_execution');
         
         // If execution was successful and we have AI feedback, show it
         if (result.feedback) {
