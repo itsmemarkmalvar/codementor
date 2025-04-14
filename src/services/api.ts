@@ -55,16 +55,20 @@ export const getTutorResponse = async (params: {
   topic?: string;
   topic_id?: number;
   session_id?: number;
+  lesson_context?: string;
 }) => {
   try {
     // Ensure conversationHistory is an array and convert to the format expected by the API
-    const requestParams = {
+    const requestParams: any = {
       question: params.question,
       conversation_history: Array.isArray(params.conversationHistory) ? params.conversationHistory : [],
-      preferences: params.preferences,
-      topic_id: params.topic_id,
-      session_id: params.session_id
+      preferences: params.preferences
     };
+    
+    // Only add optional parameters if they exist
+    if (params.topic_id !== undefined) requestParams.topic_id = params.topic_id;
+    if (params.session_id !== undefined) requestParams.session_id = params.session_id;
+    if (params.lesson_context) requestParams.lesson_context = params.lesson_context;
     
     console.log('Calling getTutorResponse API with params:', JSON.stringify(requestParams, null, 2));
     const response = await api.post('/tutor/chat', requestParams);
@@ -86,13 +90,15 @@ export const executeJavaCode = async (params: {
   input?: string;
   session_id?: number;
   topic_id?: number;
+  conversation_history?: Array<{role: string; content: string}>;
 }) => {
   try {
     console.log('Calling executeJavaCode API with params:', { 
       code: params.code?.substring(0, 100) + '...', // Log just first 100 chars of code
       input: params.input,
       session_id: params.session_id,
-      topic_id: params.topic_id
+      topic_id: params.topic_id,
+      conversation_history_length: params.conversation_history?.length
     });
     const response = await api.post('/tutor/execute-code', params);
     console.log('executeJavaCode API response status:', response.status);
@@ -242,5 +248,162 @@ export const getTopicProgress = async (topicId: number) => {
         knowledge_check: 0
       }
     };
+  }
+};
+
+// Lesson Plan related API calls
+export const getLessonPlans = async (topicId?: number) => {
+  try {
+    console.log("getLessonPlans called with topicId:", topicId);
+    
+    // If no topicId is provided, we want all lesson plans
+    if (!topicId) {
+      try {
+        console.log("Attempting to fetch all lesson plans via /all-lesson-plans endpoint");
+        // First try the debug endpoint
+        const response = await api.get('/all-lesson-plans');
+        console.log('getLessonPlans (all) API response:', response);
+        
+        if (response.data && response.data.status !== 'error') {
+          console.log("Successful response with data:", response.data.data);
+          return response.data.data;
+        } else {
+          console.warn("API returned an error or unexpected format:", response.data);
+        }
+      } catch (err) {
+        console.error('Error using debug endpoint, falling back to per-topic fetch:', err);
+        // If the debug endpoint fails, fall back to getting all topics and all their lesson plans
+        const topicsResponse = await api.get('/topics');
+        if (!topicsResponse.data || topicsResponse.data.status === 'error') {
+          throw new Error('Failed to fetch topics');
+        }
+        
+        const topics = topicsResponse.data.data;
+        let allPlans: Array<any> = [];
+        
+        // For each topic, get its lesson plans
+        for (const topic of topics) {
+          try {
+            console.log(`Fetching lesson plans for topic ${topic.id} (${topic.title})`);
+            const plansResponse = await api.get(`/topics/${topic.id}/lesson-plans`);
+            if (plansResponse.data && plansResponse.data.status === 'success') {
+              console.log(`Found ${plansResponse.data.data.length} lesson plans for topic ${topic.id}`);
+              allPlans = [...allPlans, ...plansResponse.data.data];
+            }
+          } catch (topicError) {
+            console.error(`Error fetching plans for topic ${topic.id}:`, topicError);
+            // Continue with next topic even if this one fails
+          }
+        }
+        
+        console.log("Returning all plans from multiple topics:", allPlans);
+        return allPlans;
+      }
+    }
+    
+    // If topicId is provided, use the topic-specific endpoint
+    console.log(`Fetching lesson plans for specific topic ${topicId}`);
+    const response = await api.get(`/topics/${topicId}/lesson-plans`);
+    console.log(`getLessonPlans for topic ${topicId} API response:`, response);
+    
+    if (!response.data || response.data.status === 'error') {
+      console.warn("Topic-specific lesson plans API returned an error:", response.data);
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    console.log(`Found ${response.data.data.length} lesson plans for topic ${topicId}`);
+    return response.data.data;
+  } catch (error) {
+    console.error(`Error in getLessonPlans API call:`, error);
+    return []; // Return empty array instead of throwing to avoid breaking UI
+  }
+};
+
+export const getLessonPlanDetails = async (lessonPlanId: number) => {
+  try {
+    const response = await api.get(`/lesson-plans/${lessonPlanId}`);
+    console.log('getLessonPlanDetails API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error(`Error in getLessonPlanDetails API call for plan ${lessonPlanId}:`, error);
+    return null;
+  }
+};
+
+export const getLessonModules = async (lessonPlanId: number) => {
+  try {
+    const response = await api.get(`/lesson-plans/${lessonPlanId}/modules`);
+    console.log('getLessonModules API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error(`Error in getLessonModules API call for plan ${lessonPlanId}:`, error);
+    return [];
+  }
+};
+
+export const getLessonExercises = async (moduleId: number) => {
+  try {
+    const response = await api.get(`/lesson-modules/${moduleId}/exercises`);
+    console.log('getLessonExercises API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error(`Error in getLessonExercises API call for module ${moduleId}:`, error);
+    return [];
+  }
+};
+
+export const updateModuleProgress = async (moduleId: number, params: {
+  status: 'not_started' | 'in_progress' | 'completed';
+  time_spent_minutes?: number;
+}) => {
+  try {
+    const response = await api.post(`/lesson-modules/${moduleId}/progress`, params);
+    console.log('updateModuleProgress API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error('Error in updateModuleProgress API call:', error);
+    throw error;
+  }
+};
+
+export const submitExerciseAttempt = async (exerciseId: number, params: {
+  code?: string;
+  answer?: string;
+  is_correct?: boolean;
+  points_earned?: number;
+  time_spent_seconds?: number;
+}) => {
+  try {
+    const response = await api.post(`/lesson-exercises/${exerciseId}/attempts`, params);
+    console.log('submitExerciseAttempt API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error('Error in submitExerciseAttempt API call:', error);
+    throw error;
   }
 }; 

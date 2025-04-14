@@ -24,9 +24,13 @@ import {
   CheckCircle,
   Star,
   Zap,
-  ScrollText
+  ScrollText,
+  Lightbulb,
+  GraduationCap,
+  FolderOpen,
+  ArrowUp
 } from 'lucide-react';
-import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress, getUserProgress, getTopicProgress } from '@/services/api';
+import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress, getUserProgress, getTopicProgress, getLessonPlanDetails, getLessonModules, getLessonPlans } from '@/services/api';
 import { toast } from 'sonner';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -44,6 +48,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import styles from './SoloRoom.module.css';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 
 interface Message {
   id: number;
@@ -85,10 +91,45 @@ interface ProgressData {
   knowledge_check: number;
 }
 
+interface LessonPlan {
+  id: number;
+  title: string;
+  description: string;
+  topic_id: number;
+  topic_name?: string;
+  topic_title?: string;
+  modules_count: number;
+  completed_modules: number;
+  difficulty_level: number;
+  progress?: number;
+  estimated_minutes?: number;
+  resources?: any;
+  learning_objectives?: string;
+  prerequisites?: string;
+  icon?: React.ReactNode;
+}
+
+interface QuizQuestion {
+  id: number;
+  question: string;
+  options: string[];
+  correctOption: number;
+  explanation?: string;
+}
+
+interface Quiz {
+  id: number;
+  title: string;
+  description: string;
+  topic_id: number;
+  questions: QuizQuestion[];
+  totalPoints: number;
+}
+
 const SoloRoomPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
-  const [activeTab, setActiveTab] = useState<'chat' | 'topics' | 'sessions' | 'settings'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'lesson-plans' | 'sessions' | 'settings' | 'quiz'>('chat');
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [codeInput, setCodeInput] = useState(`public class HelloWorld {
@@ -100,6 +141,7 @@ const SoloRoomPage = () => {
   const [codeOutput, setCodeOutput] = useState<{stdout: string, stderr: string, executionTime: number} | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [topics, setTopics] = useState<Topic[]>([]);
+  const [allLessonPlans, setAllLessonPlans] = useState<LessonPlan[]>([]);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
   
@@ -109,6 +151,21 @@ const SoloRoomPage = () => {
   const [exercisesCompleted, setExercisesCompleted] = useState(0);
   const [exercisesTotal, setExercisesTotal] = useState(0);
   const [completedSubtopics, setCompletedSubtopics] = useState<string[]>([]);
+  
+  // Add new state for lesson plans
+  const [activeLessonPlan, setActiveLessonPlan] = useState<any>(null);
+  const [activeModule, setActiveModule] = useState<any>(null);
+  
+  // Inside the component, add a state for lesson plans
+  const [topicLessonPlans, setTopicLessonPlans] = useState<{[key: number]: any[]}>({});
+  
+  // Quiz state
+  const [activeQuiz, setActiveQuiz] = useState<Quiz | null>(null);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
+  const [quizSubmitted, setQuizSubmitted] = useState(false);
+  const [quizScore, setQuizScore] = useState(0);
+  const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
   
   // Sample topics data as fallback
   const defaultTopics: Topic[] = [
@@ -163,6 +220,89 @@ const SoloRoomPage = () => {
   const [knowledgeCheckRequested, setKnowledgeCheckRequested] = useState(false);
   let knowledgeCheckAnswersCount = 0;
 
+  const searchParams = useSearchParams();
+  
+  // Load lesson plan from URL if specified
+  useEffect(() => {
+    const topicId = searchParams.get('topic');
+    const planId = searchParams.get('plan');
+    
+    if (topicId && planId) {
+      // Convert to numbers
+      const numericTopicId = parseInt(topicId);
+      const numericPlanId = parseInt(planId);
+      
+      // Find the topic
+      const findTopic = async () => {
+        try {
+          // If topics aren't loaded yet, fetch them
+          if (topics.length === 0) {
+            setIsLoadingTopics(true);
+            const fetchedTopics = await getTopics();
+            if (fetchedTopics && Array.isArray(fetchedTopics)) {
+              // Add icon based on topic title
+              const topicsWithIcons = fetchedTopics.map(topic => {
+                let icon;
+                const title = topic.title.toLowerCase();
+                
+                if (title.includes('basic') || title.includes('introduction')) {
+                  icon = <BookOpen className="h-5 w-5 text-[#2E5BFF]" />;
+                } else if (title.includes('object') || title.includes('class') || title.includes('programming')) {
+                  icon = <Code className="h-5 w-5 text-[#2E5BFF]" />;
+                } else if (title.includes('data') || title.includes('structure')) {
+                  icon = <BarChart className="h-5 w-5 text-[#2E5BFF]" />;
+                } else if (title.includes('algorithm') || title.includes('sorting')) {
+                  icon = <Zap className="h-5 w-5 text-[#2E5BFF]" />;
+                } else {
+                  icon = <BookOpen className="h-5 w-5 text-[#2E5BFF]" />;
+                }
+                
+                return { ...topic, icon, progress: 0 };
+              });
+              
+              setTopics(topicsWithIcons);
+              
+              // Find and select the topic
+              const matchedTopic = topicsWithIcons.find(t => t.id === numericTopicId);
+              if (matchedTopic) {
+                await handleTopicSelect(matchedTopic);
+              }
+            }
+            setIsLoadingTopics(false);
+          } else {
+            // Topics already loaded, find the topic
+            const matchedTopic = topics.find(t => t.id === numericTopicId);
+            if (matchedTopic) {
+              await handleTopicSelect(matchedTopic);
+            }
+          }
+          
+          // Find and load the lesson plan
+          const loadPlan = async () => {
+            try {
+              const planDetails = await getLessonPlanDetails(numericPlanId);
+              if (planDetails) {
+                // Load the plan details and open the lesson plans tab
+                await handleLessonPlanSelect(planDetails);
+                setActiveTab('lesson-plans');
+              }
+            } catch (error) {
+              console.error("Error loading lesson plan details:", error);
+              toast.error("Failed to load the lesson plan");
+            }
+          };
+          
+          await loadPlan();
+        } catch (error) {
+          console.error("Error handling URL parameters:", error);
+          toast.error("Failed to load the specified topic and lesson plan");
+        }
+      };
+      
+      findTopic();
+    }
+  }, [searchParams, topics.length]);
+
   // Fetch topics on component mount
   useEffect(() => {
     const fetchTopics = async () => {
@@ -190,31 +330,36 @@ const SoloRoomPage = () => {
               icon = <Code className="h-5 w-5 text-[#2E5BFF]" />;
             } else if (title.includes('data') || title.includes('structure')) {
               icon = <BarChart className="h-5 w-5 text-[#2E5BFF]" />;
-            } else if (title.includes('algorithm')) {
+            } else if (title.includes('algorithm') || title.includes('sorting')) {
               icon = <Zap className="h-5 w-5 text-[#2E5BFF]" />;
             } else {
               icon = <BookOpen className="h-5 w-5 text-[#2E5BFF]" />;
             }
             
-            // Find progress for this topic if it exists
-            const topicProgress = userProgressData.find((p: any) => p.topic_id === topic.id);
+            // Find progress for this topic
+            let progress = 0;
+            if (userProgressData) {
+              const progressItem = userProgressData.find((item: any) => item.topic_id === topic.id);
+              if (progressItem) {
+                progress = progressItem.progress_percentage || 0;
+              }
+            }
             
             return {
               ...topic,
               icon,
-              progress: topicProgress ? topicProgress.progress_percentage : 0,
-              status: topicProgress ? topicProgress.status : 'not_started'
+              progress
             };
           });
           
           setTopics(topicsWithIcons);
-        } else {
-          console.warn('Failed to fetch topics, using default data');
-          setTopics(defaultTopics);
+          
+          // Also fetch lesson plans for all topics
+          await fetchAllLessonPlans(topicsWithIcons);
         }
       } catch (error) {
-        console.error('Error fetching topics:', error);
-        toast.error('Failed to load topics. Using sample data instead.');
+        console.error("Error fetching topics:", error);
+        // Use fallback topics in case of error
         setTopics(defaultTopics);
       } finally {
         setIsLoadingTopics(false);
@@ -223,6 +368,80 @@ const SoloRoomPage = () => {
     
     fetchTopics();
   }, []);
+  
+  // Function to fetch all lesson plans
+  const fetchAllLessonPlans = async (topicsData: Topic[]) => {
+    try {
+      console.log("Starting to fetch all lesson plans");
+      
+      // Try to get all lesson plans at once
+      const allPlans = await getLessonPlans();
+      console.log("API response for all lesson plans:", allPlans);
+      
+      if (allPlans && Array.isArray(allPlans)) {
+        console.log(`Found ${allPlans.length} lesson plans`);
+        
+        // Add icons based on the topic
+        const plansWithIcons = allPlans.map(plan => {
+          // Find the topic this plan belongs to
+          const relatedTopic = topicsData.find(t => t.id === plan.topic_id);
+          console.log(`Processing plan: ${plan.title}, topic_id: ${plan.topic_id}, found related topic:`, relatedTopic?.title);
+          
+          return {
+            ...plan,
+            icon: relatedTopic?.icon || <ScrollText className="h-5 w-5 text-[#2E5BFF]" />,
+            topic_title: relatedTopic?.title || 'Unknown Topic',
+            progress: 0, // Initial progress, will be updated later
+            completed_modules: 0 // Initial completed modules
+          };
+        });
+        
+        console.log("Setting allLessonPlans state with:", plansWithIcons);
+        setAllLessonPlans(plansWithIcons);
+        
+        // Also populate the topic lesson plans mapping
+        const plansByTopic: {[key: number]: any[]} = {};
+        plansWithIcons.forEach(plan => {
+          if (!plansByTopic[plan.topic_id]) {
+            plansByTopic[plan.topic_id] = [];
+          }
+          plansByTopic[plan.topic_id].push(plan);
+        });
+        
+        console.log("Setting topicLessonPlans state with:", plansByTopic);
+        setTopicLessonPlans(plansByTopic);
+      } else {
+        console.warn("API did not return an array of lesson plans:", allPlans);
+      }
+    } catch (error) {
+      console.error("Error fetching lesson plans:", error);
+    }
+  };
+
+  // Fetch lesson plan for the selected topic
+  useEffect(() => {
+    const fetchLessonPlan = async () => {
+      if (selectedTopic) {
+        try {
+          // Get lesson plans for this topic
+          const lessonPlans = await getLessonPlanDetails(selectedTopic.id);
+          if (lessonPlans) {
+            setActiveLessonPlan(lessonPlans);
+            
+            // Get the modules for this lesson plan
+            const modules = await getLessonModules(lessonPlans.id);
+            if (modules && modules.length > 0) {
+              setActiveModule(modules[0]);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching lesson plan:", error);
+        }
+      }
+    };
+    
+    fetchLessonPlan();
+  }, [selectedTopic]);
 
   // Modify the time tracking logic
   useEffect(() => {
@@ -260,56 +479,66 @@ const SoloRoomPage = () => {
     if (!selectedTopic) return;
     
     try {
-      // Get current progress values
-      let newProgress = selectedTopic.progress;
-      
       // Create a copy of the current progress data
       const updatedProgressData: ProgressData = { ...progressData };
       
-      // Update the specific progress type
+      // Update the specific progress type with limits to prevent abuse
       if (progressType === 'interaction') {
-        updatedProgressData.interaction = Math.min(updatedProgressData.interaction + progressIncrement, 25);
+        // Interactive chat progress (limited to 30%)
+        // Cap at 30 points total and limit increments to prevent abuse
+        const maxInteractionPoints = 30;
+        const limitedIncrement = Math.min(progressIncrement, 2); // Limit each increment to 2 points max
+        updatedProgressData.interaction = Math.min(updatedProgressData.interaction + limitedIncrement, maxInteractionPoints);
       } else if (progressType === 'code_execution') {
-        updatedProgressData.code_execution = Math.min(updatedProgressData.code_execution + progressIncrement, 35);
+        // Coding exercise progress (40% weight)
+        // Coding gets higher weight for successful executions
+        const maxCodePoints = 40;
+        updatedProgressData.code_execution = Math.min(updatedProgressData.code_execution + progressIncrement, maxCodePoints);
       } else if (progressType === 'time_spent') {
-        updatedProgressData.time_spent = Math.min(updatedProgressData.time_spent + progressIncrement, 10);
+        // We'll use time spent as a minor helper, not a primary progress factor
+        // Cap at 5% total for time spent
+        const maxTimePoints = 5;
+        updatedProgressData.time_spent = Math.min(updatedProgressData.time_spent + progressIncrement, maxTimePoints);
       } else if (progressType === 'knowledge_check') {
-        updatedProgressData.knowledge_check = updatedProgressData.knowledge_check + progressIncrement;
+        // Quiz/knowledge check progress (30% weight)
+        // Quizzes are a significant factor for progress
+        const maxKnowledgePoints = 30;
+        updatedProgressData.knowledge_check = Math.min(updatedProgressData.knowledge_check + progressIncrement, maxKnowledgePoints);
       }
       
       // Calculate overall progress with appropriate weighting
-      newProgress = Math.min(
-        5 + // Base progress for starting
-        updatedProgressData.interaction +
-        updatedProgressData.code_execution +
-        updatedProgressData.time_spent +
-        updatedProgressData.knowledge_check,
+      const newProgress = Math.min(
+        updatedProgressData.interaction + // 30% from chats
+        updatedProgressData.code_execution + // 40% from coding
+        updatedProgressData.time_spent + // 5% bonus from time
+        updatedProgressData.knowledge_check, // 30% from quizzes
         100 // Cap at 100%
       );
       
       // Ensure newProgress is always an integer
-      newProgress = Math.round(newProgress);
+      const roundedProgress = Math.round(newProgress);
       
       // Determine status based on progress
       let status: 'not_started' | 'in_progress' | 'completed' = 'not_started';
-      if (newProgress >= 100) {
+      if (roundedProgress >= 100) {
         status = 'completed';
-      } else if (newProgress > 0) {
+      } else if (roundedProgress > 0) {
         status = 'in_progress';
       }
       
+      console.log(`Progress update: ${progressType} +${progressIncrement} = Total ${roundedProgress}%`);
+      console.log(`Progress breakdown: Chat ${updatedProgressData.interaction}%, Code ${updatedProgressData.code_execution}%, Quizzes ${updatedProgressData.knowledge_check}%, Time ${updatedProgressData.time_spent}%`);
+      
       // Prepare progress data as a string to avoid serialization issues
       const progressDataString = JSON.stringify(updatedProgressData);
-      console.log("Sending progress_data as:", progressDataString);
       
       // Ensure completed subtopics is a valid array
       const subtopicsArray = Array.isArray(completedSubtopics) ? completedSubtopics : [];
-      console.log("Sending completed_subtopics as:", subtopicsArray);
       
       // Update progress in database with progress type data
       const result = await updateProgress({
         topic_id: selectedTopic.id,
-        progress_percentage: newProgress,
+        progress_percentage: roundedProgress,
         status,
         time_spent_minutes: timeSpentMinutes,
         exercises_completed: exercisesCompleted,
@@ -326,15 +555,15 @@ const SoloRoomPage = () => {
       // Update local state
       setSelectedTopic({
         ...selectedTopic,
-        progress: newProgress
+        progress: roundedProgress
       });
       
-      // If we're at 80% progress but haven't done a knowledge check, prompt for one
-      if (newProgress >= 80 && updatedProgressData.knowledge_check < 20 && !knowledgeCheckRequested) {
+      // If we're at 70% progress but haven't done a knowledge check, prompt for one
+      if (roundedProgress >= 70 && updatedProgressData.knowledge_check < 15 && !knowledgeCheckRequested) {
         setKnowledgeCheckRequested(true);
         const knowledgeCheckMsg: Message = {
           id: Date.now(),
-          text: "You've made great progress! Let's verify your understanding with a few questions about this topic.",
+          text: "You've made great progress! To continue advancing, let's verify your understanding with a quiz on this topic.",
           sender: 'ai',
           timestamp: new Date(),
         };
@@ -386,7 +615,7 @@ const SoloRoomPage = () => {
     }
   };
 
-  // Enhanced handleSendMessage with improved progress tracking
+  // Modified handleSendMessage to include lesson plan context
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
@@ -413,14 +642,26 @@ const SoloRoomPage = () => {
           content: msg.text
         }));
 
-      // Get response from AI tutor
+      // Create context from lesson plan if available
+      let lessonContext = "";
+      if (activeLessonPlan && activeModule) {
+        lessonContext = `
+Current Lesson Plan: ${activeLessonPlan.title}
+Module: ${activeModule.title}
+Module Content: ${activeModule.content ? activeModule.content.substring(0, 500) + '...' : 'No content available'}
+Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
+`;
+      }
+
+      // Get response from AI tutor with lesson context
       const response = await getTutorResponse({
         question: inputMessage,
         conversationHistory,
         preferences: tutorPreferences,
         topic: selectedTopic?.title,
         topic_id: selectedTopic?.id,
-        session_id: currentSessionId !== null ? currentSessionId : undefined
+        session_id: currentSessionId !== null ? currentSessionId : undefined,
+        lesson_context: lessonContext // Add lesson context
       });
 
       // Add AI's response to the chat
@@ -433,13 +674,12 @@ const SoloRoomPage = () => {
 
       setMessages(prev => [...prev, aiMessage]);
       
-      // Only increment progress for meaningful interactions, max 25% for chat interactions
       // Check if this seems to be a knowledge check response
       if (knowledgeCheckRequested && 
           (inputMessage.toLowerCase().includes('answer') || 
            inputMessage.toLowerCase().includes('option') || 
            inputMessage.match(/[a-d]\s*:/i))) {
-        // This might be an answer to a knowledge check question
+        // This might be an answer to a knowledge check question - award higher points for quizzes
         await updateUserProgress(5, 'knowledge_check');
         
         // After a few knowledge check answers, consider the check complete
@@ -449,10 +689,22 @@ const SoloRoomPage = () => {
           knowledgeCheckAnswersCount = 0;
         }
       } else {
-        // Regular message, slower progress
+        // Regular chat message progress - small increments to avoid abuse
+        // Determine message quality based on length and content
         const messageLength = inputMessage.length;
+        
+        // Base the progress increment on the quality of the interaction
+        let progressIncrement = 1; // Default minimal increment
+        
         // More substantial questions get slightly more progress
-        const progressIncrement = messageLength > 50 ? 2 : 1;
+        if (messageLength > 50) {
+          // Check if this is a meaningful message with programming-related terms
+          const hasProgrammingTerms = /\b(java|code|function|method|class|variable|loop|if|else|algorithm|data|structure)\b/i.test(inputMessage);
+          if (hasProgrammingTerms) {
+            progressIncrement = 2; // More substantial programming questions
+          }
+        }
+        
         await updateUserProgress(progressIncrement, 'interaction');
       }
       
@@ -492,6 +744,16 @@ const SoloRoomPage = () => {
       // Try to get existing progress for this topic
       const existingProgress = await getTopicProgress(topic.id);
       console.log("Existing progress for topic:", existingProgress);
+      
+      // Get lesson plans for this topic
+      const lessonPlans = await getLessonPlans(topic.id);
+      console.log("Lesson plans for topic:", lessonPlans);
+      
+      // Store lesson plans in state
+      setTopicLessonPlans(prev => ({
+        ...prev,
+        [topic.id]: lessonPlans
+      }));
       
       // If we have existing progress, use it to initialize the state
       if (existingProgress && existingProgress.progress_percentage > 0) {
@@ -725,10 +987,19 @@ const SoloRoomPage = () => {
     setCodeOutput(null);
     
     try {
+      // Format conversation history for the API
+      const conversationHistory = messages
+        .slice(-10)
+        .map(msg => ({
+          role: msg.sender === 'user' ? 'user' : 'assistant',
+          content: msg.text
+        }));
+      
       const result = await executeJavaCode({
         code: codeInput,
         session_id: currentSessionId !== null ? currentSessionId : undefined,
-        topic_id: selectedTopic?.id
+        topic_id: selectedTopic?.id,
+        conversation_history: conversationHistory
       });
       
       setCodeOutput({
@@ -737,13 +1008,12 @@ const SoloRoomPage = () => {
         executionTime: result.execution.executionTime || 0
       });
       
-      // Track code execution for progress
-      // Award more points for meaningful code (longer, with methods, classes)
+      // Calculate code complexity to determine progress award
       const codeComplexity = calculateCodeComplexity(codeInput);
       
       if (result.execution.success) {
-        // Successful execution
-        const progressPoints = Math.min(3 + codeComplexity, 7); // Cap at 7% per successful run
+        // Successful code execution - award more substantial progress in coding category
+        const progressPoints = Math.min(4 + codeComplexity, 8); // Higher rewards for coding exercise success
         setExercisesCompleted(prev => prev + 1);
         await updateUserProgress(Math.round(progressPoints), 'code_execution');
         
@@ -763,6 +1033,7 @@ const SoloRoomPage = () => {
         }
       } else {
         // Unsuccessful attempt still gets some points (for trying)
+        // Award less for unsuccessful attempts but still recognize the effort
         await updateUserProgress(1, 'code_execution');
       }
     } catch (error) {
@@ -795,94 +1066,297 @@ const SoloRoomPage = () => {
     return complexity;
   };
 
+  const handleLessonPlanSelect = async (lessonPlan: LessonPlan) => {
+    setIsLoading(true);
+    
+    try {
+      // Find the topic this lesson plan belongs to
+      const relatedTopic = topics.find(t => t.id === lessonPlan.topic_id);
+      
+      if (relatedTopic) {
+        // Set the selected topic based on the lesson plan's topic
+        setSelectedTopic(relatedTopic);
+        
+        // Fetch topic progress
+        const existingProgress = await getTopicProgress(relatedTopic.id);
+        console.log("Existing progress for topic:", existingProgress);
+        
+        // Initialize progress state from the existing progress
+        if (existingProgress && existingProgress.progress_percentage > 0) {
+          setTimeSpentMinutes(existingProgress.time_spent_minutes || 0);
+          setExercisesCompleted(existingProgress.exercises_completed || 0);
+          setExercisesTotal(existingProgress.exercises_total || relatedTopic.exercises_count || 0);
+          setCompletedSubtopics(existingProgress.completed_subtopics || []);
+          
+          // Initialize progress data from existing data
+          if (existingProgress.progress_data) {
+            let parsedProgressData = existingProgress.progress_data;
+            if (typeof parsedProgressData === 'string') {
+              try {
+                parsedProgressData = JSON.parse(parsedProgressData);
+              } catch (e) {
+                console.error("Error parsing progress data:", e);
+                parsedProgressData = {
+                  interaction: 0,
+                  code_execution: 0,
+                  time_spent: 0,
+                  knowledge_check: 0
+                };
+              }
+            }
+            setProgressData(parsedProgressData);
+          }
+        } else {
+          // Initialize new progress
+          setSessionStartTime(new Date());
+          setTimeSpentMinutes(0);
+          setExercisesCompleted(0);
+          setExercisesTotal(relatedTopic.exercises_count || 0);
+          setCompletedSubtopics([]);
+          setProgressData({
+            interaction: 0,
+            code_execution: 0,
+            time_spent: 0,
+            knowledge_check: 0
+          });
+        }
+      }
+      
+      // Reset session ID when selecting a new lesson plan
+      setCurrentSessionId(null);
+      
+      // Switch to chat tab
+      setActiveTab('chat');
+      
+      // Get details about the lesson plan
+      const lessonPlanDetails = await getLessonPlanDetails(lessonPlan.id);
+      console.log("Lesson plan details:", lessonPlanDetails);
+      
+      // Get response from AI tutor about the selected lesson plan
+      const response = await getTutorResponse({
+        question: `I'd like to learn about ${lessonPlan.title}. This is a lesson plan for ${lessonPlan.topic_title || 'a programming topic'}. Please provide a brief introduction to this lesson plan and what I'll be learning.`,
+        conversationHistory: [], // Empty array for new conversation
+        preferences: tutorPreferences,
+        topic: lessonPlan.topic_title || '',
+        topic_id: lessonPlan.topic_id
+      });
+
+      // Clear previous messages and add welcome message
+      const welcomeMessage: Message = {
+        id: Date.now(),
+        text: response.response || `Welcome to the ${lessonPlan.title} lesson plan!`,
+        sender: 'ai',
+        timestamp: new Date(),
+      };
+      
+      setMessages([welcomeMessage]);
+      
+      // If the response includes a session ID, set it
+      if (response.session_id) {
+        setCurrentSessionId(response.session_id);
+      }
+    } catch (error) {
+      console.error("Error selecting lesson plan:", error);
+      setMessages([
+        {
+          id: Date.now(),
+          text: `I'm having trouble loading the ${lessonPlan.title} lesson plan. Please try again later.`,
+          sender: 'ai',
+          timestamp: new Date(),
+        },
+      ]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Add a function to generate a quiz for a topic at the beginning of the component
+  const generateQuizForTopic = async (topicId: number, title: string) => {
+    if (!selectedTopic) return;
+    
+    setIsLoadingQuiz(true);
+    try {
+      const response = await getTutorResponse({
+        question: `Generate a quiz with 5 multiple-choice questions about ${title}. Each question should have 4 options (A, B, C, D) with only one correct answer. Format your response as a JSON array in this exact structure:
+        [
+          {
+            "question": "Question text here?",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "correctOption": 0, // Index of correct option (0-3)
+            "explanation": "Explanation of why this answer is correct"
+          }
+        ]
+        Note: correctOption must be the index (0-3) of the correct answer, not a letter.`,
+        conversationHistory: [],
+        preferences: {
+          ...tutorPreferences,
+          responseLength: 'detailed',
+        },
+        topic: selectedTopic?.title,
+        topic_id: topicId
+      });
+
+      if (response && response.response) {
+        try {
+          // Extract the JSON from the response
+          const jsonMatch = response.response.match(/```json\s*([\s\S]*?)\s*```|```\s*([\s\S]*?)\s*```|\[\s*\{[\s\S]*\}\s*\]/);
+          let jsonStr = '';
+          
+          if (jsonMatch) {
+            jsonStr = jsonMatch[1] || jsonMatch[2] || jsonMatch[0];
+          } else {
+            // If no JSON code block found, try to extract array directly
+            jsonStr = response.response.replace(/^[\s\S]*?(\[\s*\{)/m, '$1').replace(/(\}\s*\])[\s\S]*$/m, '$1');
+          }
+
+          // Clean up the string
+          jsonStr = jsonStr.trim();
+          
+          // Parse the JSON
+          const questions = JSON.parse(jsonStr);
+          
+          if (Array.isArray(questions) && questions.length > 0) {
+            // Create the quiz object
+            const quiz: Quiz = {
+              id: Date.now(),
+              title: `${title} Quiz`,
+              description: `Test your knowledge of ${title} with these multiple-choice questions.`,
+              topic_id: topicId,
+              questions: questions.map((q, index) => ({
+                id: index + 1,
+                question: q.question,
+                options: q.options,
+                correctOption: q.correctOption,
+                explanation: q.explanation
+              })),
+              totalPoints: questions.length * 10
+            };
+            
+            setActiveQuiz(quiz);
+            setCurrentQuestionIndex(0);
+            setSelectedOptions(new Array(questions.length).fill(-1));
+            setQuizSubmitted(false);
+            setQuizScore(0);
+            
+            // Switch to the quiz tab
+            setActiveTab('quiz');
+          } else {
+            throw new Error('Invalid question format');
+          }
+        } catch (parseError) {
+          console.error('Error parsing quiz questions:', parseError);
+          toast.error('Failed to generate valid quiz questions');
+        }
+      }
+    } catch (error) {
+      console.error('Error generating quiz:', error);
+      toast.error('Failed to generate a quiz');
+    } finally {
+      setIsLoadingQuiz(false);
+    }
+  };
+
+  // Add a function to handle quiz submission
+  const handleQuizSubmit = async () => {
+    if (!activeQuiz || !selectedTopic) return;
+    
+    // Calculate score
+    let correctAnswers = 0;
+    activeQuiz.questions.forEach((question, index) => {
+      if (selectedOptions[index] === question.correctOption) {
+        correctAnswers++;
+      }
+    });
+    
+    const scorePercentage = Math.round((correctAnswers / activeQuiz.questions.length) * 100);
+    setQuizScore(scorePercentage);
+    setQuizSubmitted(true);
+    
+    // Update progress based on quiz performance
+    const progressPoints = Math.round((scorePercentage / 100) * 15); // Award up to 15 points for quiz performance
+    await updateUserProgress(progressPoints, 'knowledge_check');
+    
+    // Mark knowledge check as complete
+    setKnowledgeCheckRequested(false);
+  };
+
   return (
-    <div className="flex flex-col space-y-6">
-      <div className="flex items-center space-x-2">
-        <Code className="h-6 w-6 text-[#2E5BFF]" />
-        <h1 className="text-2xl font-bold">AI Tutor Solo Room</h1>
-      </div>
-      
-      <p className="text-gray-400">
-        Practice coding with your personal AI tutor. Ask questions, get feedback, and improve your Java programming skills.
-      </p>
-      
-      {/* Progress Overview */}
-      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-4">
-        <h2 className="text-lg font-semibold mb-3">Your Learning Progress</h2>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-white/5 rounded-lg p-3 flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-[#2E5BFF]/20 flex items-center justify-center">
-              <BookOpen className="h-5 w-5 text-[#2E5BFF]" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-400">Topics Covered</p>
-              <p className="text-xl font-bold">4/12</p>
-            </div>
+    <div className="space-y-6">
+      {/* Page Header with improved title that emphasizes AI tutoring */}
+      <div className="space-y-2">
+        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Code className="h-6 w-6 text-[#2E5BFF]" />
+          AI-Driven Learning Environment
+        </h1>
+        <p className="text-gray-400">Learn programming with your personal AI tutor and structured lesson plans</p>
           </div>
           
-          <div className="bg-white/5 rounded-lg p-3 flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-[#2E5BFF]/20 flex items-center justify-center">
-              <CheckCircle className="h-5 w-5 text-[#2E5BFF]" />
+      {/* Main content area - now full width */}
+      <div className="bg-white/5 backdrop-blur-sm rounded-lg border border-white/10 overflow-hidden">
+        {/* Tab navigation with enhanced design for lesson plans tab */}
+        <div className="border-b border-white/10">
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as any)}
+            className="w-full"
+          >
+            <TabsList className="grid grid-cols-5 bg-transparent w-full">
+              <TabsTrigger
+                value="chat"
+                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white ${
+                  activeTab === 'chat' ? 'text-white' : 'text-gray-400'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Bot className="h-4 w-4" />
+                  <span>AI Tutor Chat</span>
             </div>
-            <div>
-              <p className="text-sm text-gray-400">Exercises Completed</p>
-              <p className="text-xl font-bold">24/50</p>
+              </TabsTrigger>
+              <TabsTrigger
+                value="lesson-plans"
+                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white relative ${
+                  activeTab === 'lesson-plans' ? 'text-white' : 'text-gray-400'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="h-4 w-4" />
+                  <span>Lesson Plans</span>
+                  {selectedTopic && topicLessonPlans[selectedTopic.id]?.length > 0 && (
+                    <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#2E5BFF] rounded-full flex items-center justify-center">
+                      <span className="text-[10px] font-bold">{topicLessonPlans[selectedTopic.id]?.length}</span>
             </div>
+                  )}
           </div>
-          
-          <div className="bg-white/5 rounded-lg p-3 flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-[#2E5BFF]/20 flex items-center justify-center">
-              <Clock className="h-5 w-5 text-[#2E5BFF]" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-400">Learning Hours</p>
-              <p className="text-xl font-bold">12.5</p>
-            </div>
-          </div>
-          
-          <div className="bg-white/5 rounded-lg p-3 flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-[#2E5BFF]/20 flex items-center justify-center">
-              <Star className="h-5 w-5 text-[#2E5BFF]" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-400">Current Streak</p>
-              <p className="text-xl font-bold">5 days</p>
-            </div>
-          </div>
+              </TabsTrigger>
+              <TabsTrigger
+                value="quiz"
+                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white ${
+                  activeTab === 'quiz' ? 'text-white' : 'text-gray-400'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4" />
+                  <span>Quizzes</span>
         </div>
-      </div>
-      
-      {/* Main Interface */}
-      <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl overflow-hidden">
-        <div className="flex flex-wrap border-b border-white/10">
-          <button 
-            onClick={() => setActiveTab('chat')}
-            className={`px-4 py-3 flex items-center space-x-2 ${activeTab === 'chat' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-          >
-            <Bot className="h-5 w-5" />
-            <span>Chat</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('topics')}
-            className={`px-4 py-3 flex items-center space-x-2 ${activeTab === 'topics' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-          >
-            <BookOpen className="h-5 w-5" />
-            <span>Topics</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('sessions')}
-            className={`px-4 py-3 flex items-center space-x-2 ${activeTab === 'sessions' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-          >
-            <Clock className="h-5 w-5" />
-            <span>Sessions</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`px-4 py-3 flex items-center space-x-2 ${activeTab === 'settings' ? 'bg-white/10 text-white' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-          >
-            <SettingsIcon className="h-5 w-5" />
-            <span>Preferences</span>
-          </button>
+              </TabsTrigger>
+              <TabsTrigger
+                value="sessions"
+                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white ${
+                  activeTab === 'sessions' ? 'text-white' : 'text-gray-400'
+                }`}
+              >
+                Sessions
+              </TabsTrigger>
+              <TabsTrigger
+                value="settings"
+                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white ${
+                  activeTab === 'settings' ? 'text-white' : 'text-gray-400'
+                }`}
+              >
+                Settings
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
         
         <div className="flex flex-col">
@@ -914,6 +1388,30 @@ const SoloRoomPage = () => {
                     </div>
                   )}
                 </div>
+                
+                {/* Message header - show lesson context if available */}
+                {activeLessonPlan && activeModule && (
+                  <Card className="bg-white/5 border-[#2E5BFF]/20 text-white mb-2">
+                    <div className="flex items-center justify-between p-2">
+                      <div className="flex items-center space-x-1 text-xs">
+                        <BookOpen className="h-3 w-3 mr-1 text-[#2E5BFF]" />
+                        <span className="font-medium text-[#2E5BFF]">{activeLessonPlan.title}</span>
+                        <ChevronRight className="h-3 w-3 mx-1 text-gray-500" />
+                        <span className="text-gray-400">{activeModule.title}</span>
+                      </div>
+                      <Link href={`/dashboard/lesson-plans/${activeLessonPlan.id}/${activeModule.id}`}>
+                        <Button 
+                          variant="ghost" 
+                          size="sm"
+                          className="h-6 text-xs text-[#2E5BFF] hover:text-white hover:bg-[#2E5BFF]/20 px-2 py-0"
+                        >
+                          <ScrollText className="h-3 w-3 mr-1" />
+                          View Full
+                        </Button>
+                      </Link>
+                    </div>
+                  </Card>
+                )}
                 
                 <div className="bg-white/5 rounded-lg p-4 overflow-y-auto mb-4" style={{ height: '40vh' }}>
                   <div className="space-y-4">
@@ -1132,43 +1630,498 @@ const SoloRoomPage = () => {
             </div>
           )}
           
-          {activeTab === 'topics' && (
+          {activeTab === 'lesson-plans' && (
             <section className="p-4">
               <h2 className="text-xl font-semibold mb-4 flex items-center">
-                <BookOpen className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                Learning Topics
+                <ScrollText className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                Lesson Plans
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[70vh] overflow-y-auto">
+              {/* Debug logging */}
+              {(() => { console.log("Rendering lesson plans, topics:", topics.length, "loading:", isLoadingTopics); return null; })()}
+              
+              {isLoadingTopics ? (
+                // Loading state
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {Array(4).fill(0).map((_, i) => (
+                    <div key={i} className="bg-white/5 rounded-lg p-3 animate-pulse h-32"></div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  {/* Topic Selection */}
+                  <div className="mb-6">
+                    <h3 className="text-lg font-medium mb-3 text-gray-300">Select a Topic</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {topics.map((topic) => (
                   <motion.div
                     key={topic.id}
                     whileHover={{ x: 5 }}
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => handleTopicSelect(topic)}
-                    className="bg-white/5 rounded-lg p-3 cursor-pointer hover:bg-white/10 transition"
-                  >
-                    <div className="flex justify-between items-center">
+                          onClick={() => setSelectedTopic(topic)}
+                          className={`p-4 rounded-lg cursor-pointer transition-colors ${
+                            selectedTopic?.id === topic.id
+                              ? 'bg-[#2E5BFF] text-white'
+                              : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3">
-                        {topic.icon}
-                        <span>{topic.title}</span>
+                              <div>{topic.icon}</div>
+                              <div>
+                                <p className="font-medium">{topic.title}</p>
+                                <div className="flex items-center mt-1">
+                                  <div className="h-1.5 rounded-full bg-white/10 w-20">
+                                    <div
+                                      className="h-full rounded-full bg-gradient-to-r from-[#2E5BFF] to-purple-500"
+                                      style={{ width: `${topic.progress || 0}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="text-xs ml-2">{topic.progress || 0}%</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-full bg-white/10 h-6 w-6 flex items-center justify-center text-xs">
+                              {topicLessonPlans[topic.id]?.length || 0}
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  {/* Lesson Plans for Selected Topic */}
+                  {selectedTopic && (
+                    <div>
+                      <h3 className="text-lg font-medium mb-3 text-gray-300 flex items-center">
+                        <span>Lessons for {selectedTopic.title}</span>
+                        <span className="ml-2 text-sm text-gray-400">({topicLessonPlans[selectedTopic.id]?.length || 0} plans)</span>
+                      </h3>
+                      
+                      {topicLessonPlans[selectedTopic.id]?.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
+                          {topicLessonPlans[selectedTopic.id]?.map((plan) => (
+                            <motion.div
+                              key={plan.id}
+                              initial={{ opacity: 0, y: 20 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              whileHover={{ x: 5 }}
+                              whileTap={{ scale: 0.98 }}
+                              className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition"
+                            >
+                              <div 
+                                className="flex justify-between items-center cursor-pointer"
+                                onClick={() => handleLessonPlanSelect(plan)}
+                              >
+                                <div className="flex items-center space-x-3">
+                                  {plan.icon}
+                                  <span>{plan.title}</span>
                       </div>
                       <ChevronRight className="h-5 w-5 text-gray-400" />
                     </div>
+                              
                     <div className="mt-2">
                       <div className="flex justify-between items-center mb-1">
-                        <span className="text-xs text-gray-400">Progress</span>
-                        <span className="text-xs font-medium">{topic.progress}%</span>
+                                  <span className="text-xs text-gray-400">Difficulty</span>
+                                  <span className="text-xs font-medium">
+                                    {[...Array(plan.difficulty_level || 1)].map((_, i) => (
+                                      <Star key={i} className="inline h-3 w-3 text-yellow-500" />
+                                    ))}
+                                  </span>
                       </div>
-                      <div className="w-full bg-white/10 rounded-full h-1.5">
-                        <div 
-                          className="bg-[#2E5BFF] h-1.5 rounded-full" 
-                          style={{ width: `${topic.progress}%` }}
+                                <div className="flex justify-between items-center mb-1">
+                                  <span className="text-xs text-gray-400">Modules</span>
+                                  <span className="text-xs font-medium">{plan.modules_count || 0}</span>
+                                </div>
+                                {plan.estimated_minutes && (
+                                  <div className="flex justify-between items-center mb-1">
+                                    <span className="text-xs text-gray-400">Estimated Time</span>
+                                    <span className="text-xs font-medium">{plan.estimated_minutes} min</span>
+                                  </div>
+                                )}
+                              </div>
+                              
+                              {plan.description && (
+                                <div className="mt-2 text-xs text-gray-400">
+                                  {plan.description.length > 100 
+                                    ? `${plan.description.substring(0, 100)}...` 
+                                    : plan.description
+                                  }
+                                </div>
+                              )}
+                            </motion.div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center p-6 bg-white/5 rounded-lg">
+                          <FolderOpen className="h-10 w-10 mx-auto mb-3 text-gray-500" />
+                          <p className="text-gray-400">No lesson plans available for this topic yet.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {!selectedTopic && (
+                    <div className="text-center p-6 bg-white/5 rounded-lg">
+                      <ArrowUp className="h-10 w-10 mx-auto mb-3 text-gray-500" />
+                      <p className="text-gray-400">Please select a topic to view its lesson plans.</p>
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+          )}
+          
+          {activeTab === 'quiz' && (
+            <section className="p-4">
+              <h2 className="text-xl font-semibold mb-4 flex items-center">
+                <Lightbulb className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                Knowledge Check Quizzes
+              </h2>
+              
+              {isLoadingQuiz ? (
+                <div className="flex flex-col items-center justify-center p-12">
+                  <Loader className="h-10 w-10 text-[#2E5BFF] animate-spin mb-4" />
+                  <p className="text-white">Generating quiz questions...</p>
+                </div>
+              ) : !selectedTopic ? (
+                <div className="bg-white/5 rounded-lg p-8 text-center">
+                  <BookOpen className="h-12 w-12 text-gray-500 mx-auto mb-4" />
+                  <h3 className="text-xl font-medium text-white mb-2">Select a Topic First</h3>
+                  <p className="text-gray-400">Please select a learning topic to generate a quiz.</p>
+                  <button
+                    onClick={() => setActiveTab('lesson-plans')}
+                    className="mt-4 bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition"
+                  >
+                    Browse Topics
+                  </button>
+                </div>
+              ) : !activeQuiz ? (
+                <div className="bg-white/5 rounded-lg p-8">
+                  <div className="text-center mb-8">
+                    <Lightbulb className="h-12 w-12 text-[#2E5BFF] mx-auto mb-4" />
+                    <h3 className="text-xl font-medium text-white mb-2">Test Your Knowledge</h3>
+                    <p className="text-gray-400">Generate a quiz to test your understanding of {selectedTopic.title}.</p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <Card className="bg-white/5 border-white/10 text-white">
+                      <CardHeader>
+                        <CardTitle className="text-lg">{selectedTopic.title} Quiz</CardTitle>
+                        <CardDescription className="text-gray-400">
+                          Multiple choice questions to test your understanding
+                        </CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-sm text-gray-300 mb-4">
+                          This quiz will help you assess your knowledge and contribute to your learning progress. 
+                          Quiz performance accounts for 30% of your total progress.
+                        </p>
+                        <ul className="text-sm space-y-2 text-gray-300">
+                          <li className="flex items-center">
+                            <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                            5 multiple choice questions
+                          </li>
+                          <li className="flex items-center">
+                            <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                            Detailed explanations for each answer
+                          </li>
+                          <li className="flex items-center">
+                            <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
+                            Instant results and feedback
+                          </li>
+                        </ul>
+                      </CardContent>
+                      <CardFooter>
+                        <Button 
+                          className="w-full bg-[#2E5BFF] hover:bg-[#1E4BEF]"
+                          onClick={() => generateQuizForTopic(selectedTopic.id, selectedTopic.title)}
+                        >
+                          Start Quiz
+                        </Button>
+                      </CardFooter>
+                    </Card>
+                    
+                    <div className="bg-white/5 border border-white/10 rounded-lg p-6">
+                      <h4 className="text-lg font-medium text-white mb-4">Your Progress</h4>
+                      <div className="space-y-4">
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-sm text-gray-400">Overall Progress</span>
+                            <span className="text-sm font-medium text-white">{selectedTopic.progress}%</span>
+                          </div>
+                          <div className="w-full bg-white/10 rounded-full h-2">
+                            <div 
+                              className="bg-[#2E5BFF] h-2 rounded-full" 
+                              style={{ width: `${selectedTopic.progress}%` }}
                         ></div>
                       </div>
+                        </div>
+                        
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-sm text-gray-400">Chat Interactions</span>
+                            <span className="text-sm font-medium text-white">{progressData.interaction}%</span>
+                          </div>
+                          <div className="w-full bg-white/10 rounded-full h-2">
+                            <div 
+                              className="bg-green-500 h-2 rounded-full" 
+                              style={{ width: `${(progressData.interaction / 30) * 100}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-sm text-gray-400">Quizzes</span>
+                            <span className="text-sm font-medium text-white">{progressData.knowledge_check}%</span>
+                          </div>
+                          <div className="w-full bg-white/10 rounded-full h-2">
+                            <div 
+                              className="bg-purple-500 h-2 rounded-full" 
+                              style={{ width: `${(progressData.knowledge_check / 30) * 100}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-sm text-gray-400">Coding</span>
+                            <span className="text-sm font-medium text-white">{progressData.code_execution}%</span>
+                          </div>
+                          <div className="w-full bg-white/10 rounded-full h-2">
+                            <div 
+                              className="bg-orange-500 h-2 rounded-full" 
+                              style={{ width: `${(progressData.code_execution / 40) * 100}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white/5 rounded-lg p-6">
+                  <div className="mb-6">
+                    <h3 className="text-xl font-medium text-white mb-2">{activeQuiz.title}</h3>
+                    <p className="text-gray-400">{activeQuiz.description}</p>
+                    
+                    {!quizSubmitted && (
+                      <div className="flex items-center space-x-4 mt-4">
+                        <div className="flex items-center space-x-1">
+                          <div className="w-2 h-2 bg-[#2E5BFF] rounded-full"></div>
+                          <span className="text-sm text-white">Question {currentQuestionIndex + 1} of {activeQuiz.questions.length}</span>
+                        </div>
+                        
+                        <div className="flex-1 h-1 bg-white/10 rounded-full">
+                          <div 
+                            className="bg-[#2E5BFF] h-1 rounded-full"
+                            style={{ width: `${((currentQuestionIndex + 1) / activeQuiz.questions.length) * 100}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {!quizSubmitted ? (
+                    <div className="space-y-6">
+                      <div className="bg-white/10 rounded-lg p-4">
+                        <h4 className="text-lg font-medium text-white mb-4">
+                          Question {activeQuiz.questions[currentQuestionIndex].id}: {activeQuiz.questions[currentQuestionIndex].question}
+                        </h4>
+                        
+                        <div className="space-y-3">
+                          {activeQuiz.questions[currentQuestionIndex].options.map((option, optionIndex) => (
+                            <motion.div
+                              key={optionIndex}
+                              whileHover={{ x: 5 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => {
+                                const newSelectedOptions = [...selectedOptions];
+                                newSelectedOptions[currentQuestionIndex] = optionIndex;
+                                setSelectedOptions(newSelectedOptions);
+                              }}
+                              className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                                selectedOptions[currentQuestionIndex] === optionIndex
+                                  ? 'bg-[#2E5BFF] text-white'
+                                  : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                              }`}
+                            >
+                              <div className="flex items-center">
+                                <div className={`w-6 h-6 flex items-center justify-center rounded-full mr-3 ${
+                                  selectedOptions[currentQuestionIndex] === optionIndex
+                                    ? 'bg-white text-[#2E5BFF]'
+                                    : 'bg-white/10 text-gray-400'
+                                }`}>
+                                  {String.fromCharCode(65 + optionIndex)}
+                                </div>
+                                <span>{option}</span>
                     </div>
                   </motion.div>
                 ))}
               </div>
+                      </div>
+                      
+                      <div className="flex items-center justify-between">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            if (currentQuestionIndex > 0) {
+                              setCurrentQuestionIndex(currentQuestionIndex - 1);
+                            }
+                          }}
+                          disabled={currentQuestionIndex === 0}
+                          className="border-white/10 text-white hover:bg-white/10 hover:text-white"
+                        >
+                          Previous
+                        </Button>
+                        
+                        {currentQuestionIndex < activeQuiz.questions.length - 1 ? (
+                          <Button
+                            onClick={() => setCurrentQuestionIndex(currentQuestionIndex + 1)}
+                            disabled={selectedOptions[currentQuestionIndex] === -1}
+                            className="bg-[#2E5BFF] hover:bg-[#1E4BEF]"
+                          >
+                            Next
+                          </Button>
+                        ) : (
+                          <Button
+                            onClick={handleQuizSubmit}
+                            disabled={selectedOptions.some(option => option === -1)}
+                            className="bg-green-600 hover:bg-green-700"
+                          >
+                            Submit Quiz
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div className="bg-white/10 rounded-lg p-6 text-center">
+                        <div className="mb-4">
+                          <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${
+                            quizScore >= 80 ? 'bg-green-500' : quizScore >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}>
+                            <span className="text-2xl font-bold text-white">{quizScore}%</span>
+                          </div>
+                        </div>
+                        
+                        <h4 className="text-xl font-medium text-white mb-2">
+                          {quizScore >= 80 ? 'Excellent!' : quizScore >= 60 ? 'Good job!' : 'Keep practicing!'}
+                        </h4>
+                        
+                        <p className="text-gray-400">
+                          You answered {activeQuiz.questions.filter((_, i) => selectedOptions[i] === activeQuiz.questions[i].correctOption).length} 
+                          out of {activeQuiz.questions.length} questions correctly.
+                        </p>
+                        
+                        <div className="mt-6 space-y-2">
+                          <Button
+                            className="w-full bg-[#2E5BFF] hover:bg-[#1E4BEF]"
+                            onClick={() => {
+                              setCurrentQuestionIndex(0);
+                              setQuizSubmitted(false);
+                            }}
+                          >
+                            Review Answers
+                          </Button>
+                          
+                          <Button
+                            variant="outline"
+                            className="w-full border-white/10 text-white hover:bg-white/10"
+                            onClick={() => setActiveQuiz(null)}
+                          >
+                            Take Another Quiz
+                          </Button>
+                        </div>
+                      </div>
+                      
+                      {currentQuestionIndex < activeQuiz.questions.length && (
+                        <div className="bg-white/10 rounded-lg p-4">
+                          <h4 className="text-lg font-medium text-white mb-4">
+                            Question {activeQuiz.questions[currentQuestionIndex].id}: {activeQuiz.questions[currentQuestionIndex].question}
+                          </h4>
+                          
+                          <div className="space-y-3">
+                            {activeQuiz.questions[currentQuestionIndex].options.map((option, optionIndex) => {
+                              const isCorrect = optionIndex === activeQuiz.questions[currentQuestionIndex].correctOption;
+                              const isSelected = selectedOptions[currentQuestionIndex] === optionIndex;
+                              
+                              return (
+                                <div
+                                  key={optionIndex}
+                                  className={`p-3 rounded-lg ${
+                                    isCorrect
+                                      ? 'bg-green-500/20 border border-green-500 text-white'
+                                      : isSelected
+                                        ? 'bg-red-500/20 border border-red-500 text-white'
+                                        : 'bg-white/5 text-gray-300'
+                                  }`}
+                                >
+                                  <div className="flex items-center">
+                                    <div className={`w-6 h-6 flex items-center justify-center rounded-full mr-3 ${
+                                      isCorrect
+                                        ? 'bg-green-500 text-white'
+                                        : isSelected
+                                          ? 'bg-red-500 text-white'
+                                          : 'bg-white/10 text-gray-400'
+                                    }`}>
+                                      {String.fromCharCode(65 + optionIndex)}
+                                    </div>
+                                    <span>{option}</span>
+                                    
+                                    {isCorrect && (
+                                      <CheckCircle className="h-5 w-5 text-green-500 ml-auto" />
+                                    )}
+                                    
+                                    {!isCorrect && isSelected && (
+                                      <AlertCircle className="h-5 w-5 text-red-500 ml-auto" />
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          
+                          {activeQuiz.questions[currentQuestionIndex].explanation && (
+                            <div className="mt-4 p-3 bg-white/5 rounded-lg">
+                              <h5 className="text-sm font-medium text-white mb-2">Explanation:</h5>
+                              <p className="text-sm text-gray-300">{activeQuiz.questions[currentQuestionIndex].explanation}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      <div className="flex items-center justify-between">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            if (currentQuestionIndex > 0) {
+                              setCurrentQuestionIndex(currentQuestionIndex - 1);
+                            }
+                          }}
+                          disabled={currentQuestionIndex === 0}
+                          className="border-white/10 text-white hover:bg-white/10 hover:text-white"
+                        >
+                          Previous
+                        </Button>
+                        
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            if (currentQuestionIndex < activeQuiz.questions.length - 1) {
+                              setCurrentQuestionIndex(currentQuestionIndex + 1);
+                            }
+                          }}
+                          disabled={currentQuestionIndex === activeQuiz.questions.length - 1}
+                          className="border-white/10 text-white hover:bg-white/10 hover:text-white"
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
           )}
           

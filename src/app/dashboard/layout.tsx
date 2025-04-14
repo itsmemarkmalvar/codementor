@@ -14,6 +14,7 @@ import {
   Settings,
   X,
   Code,
+  BookOpen,
 } from "lucide-react";
 import { useState } from "react";
 import AuthGuard from "@/components/AuthGuard";
@@ -26,7 +27,8 @@ const navItems = [
   { href: "/dashboard/courses", label: "Courses", icon: Book },
   { href: "/dashboard/practice", label: "Practice", icon: GraduationCap },
   { href: "/dashboard/progress", label: "Progress", icon: LineChart },
-  { href: "/dashboard/solo-room", label: "Solo Room", icon: Code },
+  { href: "/dashboard/solo-room", label: "AI Tutor Room", icon: Code },
+  { href: "/dashboard/lesson-plans", label: "Lesson Library", icon: BookOpen },
 ];
 
 export default function DashboardLayout({
