@@ -28,9 +28,26 @@ import {
   Lightbulb,
   GraduationCap,
   FolderOpen,
-  ArrowUp
+  ArrowUp,
+  Award,
+  PieChart,
+  ArrowLeft,
+  MessageSquare,
+  PlusCircle,
+  RefreshCw,
+  Sparkles,
+  TerminalSquare,
+  Trash2,
+  X,
+  Lock,
+  ArrowRight,
+  Check,
+  LifeBuoy,
+  Save,
+  SendHorizonal,
+  Coffee
 } from 'lucide-react';
-import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress, getUserProgress, getTopicProgress, getLessonPlanDetails, getLessonModules, getLessonPlans } from '@/services/api';
+import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress, getUserProgress, getTopicProgress, getLessonPlanDetails, getLessonModules, getLessonPlans, analyzeQuizResults } from '@/services/api';
 import { toast } from 'sonner';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -50,6 +67,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import styles from './SoloRoom.module.css';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import axios from 'axios';
+import { cn } from '@/lib/utils';
+import { DiJava as JavaIcon, DiPython as PythonIcon } from "react-icons/di";
 
 interface Message {
   id: number;
@@ -62,11 +82,12 @@ interface Message {
 interface Topic {
   id: number;
   title: string;
-  progress: number;
-  icon?: React.ReactNode;
   description?: string;
   difficulty_level?: string;
-  parent_id?: number | null;
+  icon?: string | React.ReactNode;
+  progress?: number;
+  is_locked?: boolean;
+  prerequisites?: string | string[] | number[] | any;  // Update to allow different types
   exercises_count?: number;
 }
 
@@ -126,6 +147,223 @@ interface Quiz {
   totalPoints: number;
 }
 
+interface LessonQuiz {
+  id: number;
+  title: string;
+  description: string;
+  difficulty: string;
+  time_limit_minutes: number;
+  passing_score_percent: number;
+  questions: QuizQuestion[];
+  points_per_question: number;
+  is_published: boolean;
+  passed: boolean;
+}
+
+// Replace the API_URL import with a direct definition
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+
+// Function to check if a topic is locked based on prerequisites and user progress
+const checkTopicLockStatus = (topics: Topic[], userProgress: any) => {
+  // First pass - apply regular prerequisite logic
+  const topicsWithBasicLocking = topics.map(topic => {
+    // If no prerequisites, topic is not locked
+    if (!topic.prerequisites) {
+      return { ...topic, is_locked: false };
+    }
+
+    let prerequisites: string[] = [];
+    
+    // Handle prerequisites in different formats
+    if (typeof topic.prerequisites === 'string') {
+      try {
+        // Try to parse it as JSON
+        const parsed = JSON.parse(topic.prerequisites);
+        // Make sure it's an array of strings
+        if (Array.isArray(parsed)) {
+          prerequisites = parsed;
+        } else if (typeof parsed === 'object') {
+          // If it's an object but not an array, use keys
+          prerequisites = Object.keys(parsed);
+        } else {
+          // Fallback if it's something else
+          prerequisites = [String(parsed)];
+        }
+      } catch (e) {
+        // If not valid JSON, treat as comma-separated list
+        prerequisites = topic.prerequisites.split(',')
+          .map(p => p.trim())
+          .filter(p => p.length > 0); // Only keep non-empty strings
+      }
+    } else if (Array.isArray(topic.prerequisites)) {
+      // If it's already an array, use it directly
+      prerequisites = topic.prerequisites.map(p => String(p));
+    } else if (topic.prerequisites) {
+      // If it's something else, convert to string
+      prerequisites = [String(topic.prerequisites)];
+    }
+    
+    // Safety check: ensure prerequisites is an array before using array methods
+    if (!Array.isArray(prerequisites)) {
+      console.error("Prerequisites is not an array after processing:", topic.prerequisites);
+      return { ...topic, is_locked: false }; // Default to unlocked if something went wrong
+    }
+    
+    // If there are no prerequisites after processing, topic is unlocked
+    if (prerequisites.length === 0) {
+      return { ...topic, is_locked: false };
+    }
+    
+    console.log(`Topic ${topic.title} has prerequisites:`, prerequisites);
+    
+    // Check if all prerequisites are met
+    let allPrerequisitesMet = true; // Start with true
+    
+    for (const prereqId of prerequisites) {
+      // Find the prerequisite topic by ID (not title)
+      const prerequisiteTopic = topics.find(t => 
+        String(t.id) === prereqId
+      );
+      
+      if (!prerequisiteTopic) {
+        console.warn(`Prerequisite topic ID "${prereqId}" not found`);
+        continue; // Skip this one, doesn't change our result
+      }
+      
+      // Check if user has completed this prerequisite topic
+      const topicProgress = userProgress.find((p: any) => p.topic_id === prerequisiteTopic.id);
+      if (!topicProgress || topicProgress.progress_percentage < 80) {
+        allPrerequisitesMet = false;
+        break; // No need to check others, we already know it's locked
+      }
+    }
+    
+    // Topic is locked if not all prerequisites are met
+    return { ...topic, is_locked: !allPrerequisitesMet };
+  });
+  
+  // Second pass - apply specific rules
+  return topicsWithBasicLocking.map(topic => {
+    // Special case for Java Advanced Concepts - ensure it's locked if Java Basics doesn't have enough progress
+    if (topic.title === 'Java Advanced Concepts') {
+      const javaBasics = topicsWithBasicLocking.find(t => t.title === 'Java Basics');
+      
+      if (javaBasics) {
+        const javaBasicsProgress = userProgress.find((p: any) => p.topic_id === javaBasics.id);
+        const hasEnoughProgress = javaBasicsProgress && javaBasicsProgress.progress_percentage >= 80;
+        
+        // Always lock Java Advanced if Java Basics isn't complete, regardless of prerequisites
+        return { ...topic, is_locked: !hasEnoughProgress };
+      }
+    }
+    
+    // If topic name contains "Advanced", ensure basic topics are completed
+    if (topic.title.toLowerCase().includes('advanced')) {
+      // Find any basic topics
+      const basicTopics = topicsWithBasicLocking.filter(t => 
+        t.title.toLowerCase().includes('basic') || 
+        t.title.toLowerCase().includes('fundamental')
+      );
+      
+      for (const basicTopic of basicTopics) {
+        const basicProgress = userProgress.find((p: any) => p.topic_id === basicTopic.id);
+        if (!basicProgress || basicProgress.progress_percentage < 80) {
+          // Lock this advanced topic if any basic topic isn't complete
+          return { ...topic, is_locked: true };
+        }
+      }
+    }
+    
+    // Return the topic with its original locking status if no special cases apply
+    return topic;
+  });
+};
+
+// Add the HierarchicalLessonPlans component
+interface HierarchicalLessonPlansProps {
+  plans: LessonPlan[];
+  onSelectPlan: (plan: LessonPlan) => void;
+}
+
+const HierarchicalLessonPlans: React.FC<HierarchicalLessonPlansProps> = ({ plans, onSelectPlan }) => {
+  // Extract step numbers for all plans
+  const getStepNumber = (plan: LessonPlan) => {
+    const match = plan.description?.match(/Step (\d+):/);
+    return match ? parseInt(match[1], 10) : 999;
+  };
+  
+  // Sort plans by step number
+  const sortedPlans = [...plans].sort((a, b) => {
+    return getStepNumber(a) - getStepNumber(b);
+  });
+  
+  // Find the highest completed step based on progress
+  const highestCompletedStep = sortedPlans.reduce((highest, plan) => {
+    const stepNumber = getStepNumber(plan);
+    // Consider a lesson completed if progress is at least 80%
+    const isCompleted = (plan.progress || 0) >= 80;
+    return isCompleted && stepNumber > highest ? stepNumber : highest;
+  }, 0);
+  
+  return (
+    <div className="space-y-4 max-w-3xl ml-0">
+      {sortedPlans.map((plan) => {
+        const stepNumber = getStepNumber(plan);
+        // A lesson is locked if its step number is more than 1 ahead of the highest completed step
+        const isLocked = stepNumber > highestCompletedStep + 1;
+        
+        return (
+          <motion.div
+            key={plan.id}
+            whileHover={isLocked ? {} : { x: 5 }}
+            whileTap={isLocked ? {} : { scale: 0.98 }}
+            onClick={() => !isLocked && onSelectPlan(plan)}
+            className={`bg-white/5 rounded-lg p-4 ${isLocked ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10'} transition`}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`${isLocked ? 'text-gray-500' : 'text-[#2E5BFF]'}`}>
+                {isLocked ? (
+                  <Lock className="h-5 w-5" />
+                ) : (
+                  plan.icon || <ScrollText className="h-5 w-5" />
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className={`font-medium ${isLocked ? 'text-gray-400' : 'text-white'}`}>
+                  {plan.title}
+                  {isLocked && <span className="ml-2 text-xs text-amber-400">(Locked)</span>}
+                </h3>
+                <p className="text-sm text-gray-400 line-clamp-2">{plan.description}</p>
+                <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                  <span>{plan.modules_count} modules</span>
+                  <span>{plan.estimated_minutes || 30} min</span>
+                  {plan.progress !== undefined && (
+                    <div className="flex items-center gap-1">
+                      <span>Progress:</span>
+                      <div className="w-16 h-1.5 bg-white/10 rounded-full">
+                        <div 
+                          className={`h-1.5 ${isLocked ? 'bg-gray-500' : 'bg-[#2E5BFF]'} rounded-full`}
+                          style={{ width: `${plan.progress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {isLocked && (
+                  <div className="mt-2 text-xs text-amber-400">
+                    Complete previous lessons to unlock
+                  </div>
+                )}
+              </div>
+              <ChevronRight className={`h-5 w-5 ${isLocked ? 'text-gray-500' : 'text-gray-400'}`} />
+            </div>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+};
+
 const SoloRoomPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -166,6 +404,15 @@ const SoloRoomPage = () => {
   const [quizSubmitted, setQuizSubmitted] = useState(false);
   const [quizScore, setQuizScore] = useState(0);
   const [isLoadingQuiz, setIsLoadingQuiz] = useState(false);
+  
+  // Add these state variables inside the component
+  const [moduleQuizzes, setModuleQuizzes] = useState<LessonQuiz[]>([]);
+  const [quizAttempt, setQuizAttempt] = useState<any>(null);
+  const [showQuizAtThreshold, setShowQuizAtThreshold] = useState(false);
+  
+  // Add state variable for quiz analysis
+  const [quizAnalysis, setQuizAnalysis] = useState<any>(null);
+  const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(false);
   
   // Sample topics data as fallback
   const defaultTopics: Topic[] = [
@@ -308,71 +555,153 @@ const SoloRoomPage = () => {
     const fetchTopics = async () => {
       setIsLoadingTopics(true);
       try {
-        const fetchedTopics = await getTopics();
-        if (fetchedTopics && Array.isArray(fetchedTopics)) {
-          // Get user progress data
-          let userProgressData = [];
-          try {
-            userProgressData = await getUserProgress();
-            console.log("Loaded user progress:", userProgressData);
-          } catch (progressError) {
-            console.error("Failed to load user progress:", progressError);
+        const response = await getTopics();
+        
+        // Check if response exists and is an array
+        if (!response || !Array.isArray(response)) {
+          console.error('Invalid response format from getTopics()', response);
+          setTopics([]);
+          setIsLoadingTopics(false);
+          return;
+        }
+        
+        const topicsData = response.map((topic: any) => ({
+          ...topic,
+          icon: getDifficultyIcon(topic.difficulty_level)
+        }));
+        
+        // Get user progress
+        const progressResponse = await getUserProgress();
+        
+        // Check if progressResponse exists and is an array
+        if (!progressResponse || !Array.isArray(progressResponse)) {
+          console.error('Invalid response format from getUserProgress()', progressResponse);
+          // We can still continue with the topics but without progress data
+          setTopics(topicsData.map((topic: any) => ({
+            ...topic,
+            progress: 0,
+            is_locked: false
+          })));
+          setIsLoadingTopics(false);
+          return;
+        }
+        
+        const progressData = progressResponse;
+        
+        // Map topics with progress and lock status
+        const topicsWithStatus = topicsData.map((topic: any) => {
+          // Find progress for this topic
+          const topicProgress = progressData.find((p: any) => p.topic_id === topic.id);
+          
+          // Add default locking logic based on title for fallback
+          let is_locked = topic.is_locked || false;
+          
+          // Hard-code specific locking rules to ensure proper functioning
+          if (topic.title === 'Java Advanced Concepts') {
+            // Lock Java Advanced until Java Basics is completed
+            const javaBasics = topicsData.find(t => t.title === 'Java Basics');
+            if (javaBasics) {
+              const basicProgress = progressData.find((p: any) => p.topic_id === javaBasics.id);
+              is_locked = !(basicProgress && basicProgress.progress_percentage >= 80);
+            }
+          } 
+          else if (topic.title === 'Java Enterprise Development') {
+            // Lock Java Enterprise until both Java Basics and Java Advanced are completed
+            const javaBasics = topicsData.find(t => t.title === 'Java Basics');
+            const javaAdvanced = topicsData.find(t => t.title === 'Java Advanced Concepts');
+            
+            let hasBasicsProgress = false;
+            let hasAdvancedProgress = false;
+            
+            if (javaBasics) {
+              const basicProgress = progressData.find((p: any) => p.topic_id === javaBasics.id);
+              hasBasicsProgress = basicProgress && basicProgress.progress_percentage >= 80;
+            }
+            
+            if (javaAdvanced) {
+              const advancedProgress = progressData.find((p: any) => p.topic_id === javaAdvanced.id);
+              hasAdvancedProgress = advancedProgress && advancedProgress.progress_percentage >= 80;
+            }
+            
+            // Lock enterprise if either prerequisite is not completed
+            is_locked = !(hasBasicsProgress && hasAdvancedProgress);
           }
           
-          // Add icon based on topic title and merge with progress data
-          const topicsWithIcons = fetchedTopics.map(topic => {
-            let icon;
-            const title = topic.title.toLowerCase();
+          return {
+            ...topic,
+            progress: topicProgress ? topicProgress.progress_percentage : 0,
+            is_locked: is_locked
+          };
+        });
+        
+        // Apply topic locking based on prerequisites
+        const topicsWithLocking = checkTopicLockStatus(topicsWithStatus, progressData);
+        
+        // Ensure Java Enterprise is locked by applying our explicit locking logic again
+        const finalTopics = topicsWithLocking.map(topic => {
+          if (topic.title === 'Java Enterprise Development') {
+            const javaBasics = topicsWithLocking.find(t => t.title === 'Java Basics');
+            const javaAdvanced = topicsWithLocking.find(t => t.title === 'Java Advanced Concepts');
             
-            if (title.includes('basic') || title.includes('introduction')) {
-              icon = <BookOpen className="h-5 w-5 text-[#2E5BFF]" />;
-            } else if (title.includes('object') || title.includes('class') || title.includes('programming')) {
-              icon = <Code className="h-5 w-5 text-[#2E5BFF]" />;
-            } else if (title.includes('data') || title.includes('structure')) {
-              icon = <BarChart className="h-5 w-5 text-[#2E5BFF]" />;
-            } else if (title.includes('algorithm') || title.includes('sorting')) {
-              icon = <Zap className="h-5 w-5 text-[#2E5BFF]" />;
-            } else {
-              icon = <BookOpen className="h-5 w-5 text-[#2E5BFF]" />;
+            let hasBasicsProgress = false;
+            let hasAdvancedProgress = false;
+            
+            if (javaBasics) {
+              const basicProgress = progressData.find((p: any) => p.topic_id === javaBasics.id);
+              hasBasicsProgress = basicProgress && basicProgress.progress_percentage >= 80;
             }
             
-            // Find progress for this topic
-            let progress = 0;
-            if (userProgressData) {
-              const progressItem = userProgressData.find((item: any) => item.topic_id === topic.id);
-              if (progressItem) {
-                progress = progressItem.progress_percentage || 0;
-              }
+            if (javaAdvanced) {
+              const advancedProgress = progressData.find((p: any) => p.topic_id === javaAdvanced.id);
+              hasAdvancedProgress = advancedProgress && advancedProgress.progress_percentage >= 80;
             }
             
-            return {
-              ...topic,
-              icon,
-              progress
-            };
-          });
-          
-          setTopics(topicsWithIcons);
-          
-          // Also fetch lesson plans for all topics
-          await fetchAllLessonPlans(topicsWithIcons);
-        }
+            // Force lock if either prerequisite is not completed
+            return { ...topic, is_locked: !(hasBasicsProgress && hasAdvancedProgress) };
+          }
+          return topic;
+        });
+        
+        console.log("Final topics with locking:", finalTopics.map(t => ({
+          title: t.title,
+          is_locked: t.is_locked
+        })));
+        
+        setTopics(finalTopics);
+        
+        // Now fetch lesson plans for these topics
+        fetchAllLessonPlans(finalTopics);
       } catch (error) {
-        console.error("Error fetching topics:", error);
-        // Use fallback topics in case of error
-        setTopics(defaultTopics);
+        console.error('Error fetching topics:', error);
+        // Fallback topics for demonstration or error case
+        setTopics([]);
       } finally {
         setIsLoadingTopics(false);
       }
     };
-    
+
     fetchTopics();
   }, []);
   
+  // Create function to get appropriate icon based on difficulty level
+  const getDifficultyIcon = (level: string | undefined) => {
+    switch(level?.toLowerCase()) {
+      case 'beginner':
+        return <BookOpen className="h-4 w-4 text-green-500" />;
+      case 'intermediate':
+        return <Code className="h-4 w-4 text-blue-500" />;
+      case 'advanced':
+        return <Terminal className="h-4 w-4 text-purple-500" />;
+      default:
+        return <BookOpen className="h-4 w-4 text-green-500" />;
+    }
+  };
+
   // Function to fetch all lesson plans
   const fetchAllLessonPlans = async (topicsData: Topic[]) => {
     try {
-      console.log("Starting to fetch all lesson plans");
+      console.log("Starting to fetch all lesson plans for topics:", 
+        topicsData.map(t => ({id: t.id, title: t.title})));
       
       // Try to get all lesson plans at once
       const allPlans = await getLessonPlans();
@@ -412,6 +741,47 @@ const SoloRoomPage = () => {
         setTopicLessonPlans(plansByTopic);
       } else {
         console.warn("API did not return an array of lesson plans:", allPlans);
+        
+        // Try to fetch lesson plans individually for each topic
+        console.log("Attempting to fetch lesson plans for each topic individually");
+        const plansByTopic: {[key: number]: any[]} = {};
+        let allCollectedPlans: any[] = [];
+        
+        for (const topic of topicsData) {
+          try {
+            console.log(`Fetching lesson plans for topic ${topic.id} (${topic.title})`);
+            const topicPlans = await getLessonPlans(topic.id);
+            
+            if (topicPlans && Array.isArray(topicPlans) && topicPlans.length > 0) {
+              console.log(`Found ${topicPlans.length} plans for topic ${topic.id}`);
+              
+              const plansWithIcons = topicPlans.map(plan => ({
+                ...plan,
+                icon: topic.icon || <ScrollText className="h-5 w-5 text-[#2E5BFF]" />,
+                topic_title: topic.title,
+                progress: 0,
+                completed_modules: 0
+              }));
+              
+              plansByTopic[topic.id] = plansWithIcons;
+              allCollectedPlans = [...allCollectedPlans, ...plansWithIcons];
+            } else {
+              console.log(`No plans found for topic ${topic.id}`);
+              plansByTopic[topic.id] = [];
+            }
+          } catch (topicError) {
+            console.error(`Error fetching plans for topic ${topic.id}:`, topicError);
+            plansByTopic[topic.id] = [];
+          }
+        }
+        
+        if (allCollectedPlans.length > 0) {
+          console.log(`Successfully collected ${allCollectedPlans.length} lesson plans from individual topic requests`);
+          setAllLessonPlans(allCollectedPlans);
+          setTopicLessonPlans(plansByTopic);
+        } else {
+          console.error("Failed to fetch any lesson plans through any method");
+        }
       }
     } catch (error) {
       console.error("Error fetching lesson plans:", error);
@@ -557,6 +927,9 @@ const SoloRoomPage = () => {
         ...selectedTopic,
         progress: roundedProgress
       });
+      
+      // Check if user has reached a quiz threshold
+      await checkForQuizThreshold(roundedProgress, activeModule?.id);
       
       // If we're at 70% progress but haven't done a knowledge check, prompt for one
       if (roundedProgress >= 70 && updatedProgressData.knowledge_check < 15 && !knowledgeCheckRequested) {
@@ -735,170 +1108,49 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
     }
   };
   
-  const handleTopicSelect = async (topic: Topic) => {
-    setSelectedTopic(topic);
-    setActiveTab('chat');
-    setIsLoading(true);
-    
-    try {
-      // Try to get existing progress for this topic
-      const existingProgress = await getTopicProgress(topic.id);
-      console.log("Existing progress for topic:", existingProgress);
-      
-      // Get lesson plans for this topic
-      const lessonPlans = await getLessonPlans(topic.id);
-      console.log("Lesson plans for topic:", lessonPlans);
-      
-      // Store lesson plans in state
-      setTopicLessonPlans(prev => ({
-        ...prev,
-        [topic.id]: lessonPlans
-      }));
-      
-      // If we have existing progress, use it to initialize the state
-      if (existingProgress && existingProgress.progress_percentage > 0) {
-        // Set time spent from existing data
-        setTimeSpentMinutes(existingProgress.time_spent_minutes || 0);
-        setExercisesCompleted(existingProgress.exercises_completed || 0);
-        setExercisesTotal(existingProgress.exercises_total || topic.exercises_count || 0);
-        
-        // Set completed subtopics if available
-        setCompletedSubtopics(existingProgress.completed_subtopics || []);
-        
-        // Set knowledge check requested if progress is high
-        setKnowledgeCheckRequested(
-          existingProgress.progress_percentage >= 80 && 
-          (!existingProgress.progress_data || 
-           !existingProgress.progress_data.knowledge_check ||
-           existingProgress.progress_data.knowledge_check < 20)
-        );
-        
-        // Initialize progress data from existing data
-        if (existingProgress.progress_data) {
-          let parsedProgressData = existingProgress.progress_data;
-          if (typeof parsedProgressData === 'string') {
-            try {
-              parsedProgressData = JSON.parse(parsedProgressData);
-            } catch (e) {
-              console.error("Error parsing progress data:", e);
-              parsedProgressData = {
-                interaction: 0,
-                code_execution: 0,
-                time_spent: 0,
-                knowledge_check: 0
-              };
-            }
-          }
-          setProgressData(parsedProgressData);
-        } else {
-          // Default progress data if none exists
-          setProgressData({
-            interaction: 0,
-            code_execution: 0,
-            time_spent: 0,
-            knowledge_check: 0
-          });
-        }
-        
-        // Update the topic with the correct progress
-        setSelectedTopic({
-          ...topic,
-          progress: existingProgress.progress_percentage
-        });
-      } else {
-        // No existing progress, initialize with defaults
-        // Reset session tracking for the new topic
-        setSessionStartTime(new Date());
-        setTimeSpentMinutes(0);
-        setExercisesCompleted(0);
-        setExercisesTotal(topic.exercises_count || 0);
-        setCompletedSubtopics([]);
-        setKnowledgeCheckRequested(false);
-        knowledgeCheckAnswersCount = 0;
-        
-        // Initialize progress data
-        setProgressData({
-          interaction: 0,
-          code_execution: 0,
-          time_spent: 0,
-          knowledge_check: 0
-        });
-        
-        // Initialize progress to 5% for starting the topic
-        setSelectedTopic({
-          ...topic,
-          progress: 5
-        });
-        
-        // Prepare initial progress data as a string
-        const initialProgressData = JSON.stringify({
-          interaction: 0,
-          code_execution: 0,
-          time_spent: 0,
-          knowledge_check: 0
-        });
-        console.log("Initializing progress_data as:", initialProgressData);
-        
-        // Initialize progress in the database
-        await updateProgress({
-          topic_id: topic.id,
-          progress_percentage: 5, // This is already an integer
-          status: 'in_progress',
-          time_spent_minutes: 0,
-          exercises_completed: 0,
-          exercises_total: topic.exercises_count || 0,
-          completed_subtopics: [], // Empty array for completed subtopics
-          progress_data: initialProgressData
-        }).catch(progressError => {
-          console.error("Error initializing progress:", progressError);
-          if (progressError.response && progressError.response.data) {
-            console.error('Response error data:', progressError.response.data);
-            toast.error(`Progress tracking error: ${JSON.stringify(progressError.response.data.errors || {})}`);
-          } else {
-            toast.error("Failed to initialize progress tracking.");
-          }
-        });
-      }
-      
-      // Reset session ID when selecting a new topic
-      setCurrentSessionId(null);
-      
-      // Get response from AI tutor about the selected topic
-      const response = await getTutorResponse({
-        question: `I'd like to learn about ${topic.title}. Please provide a brief introduction and mention what I'll need to know to demonstrate mastery of this topic.`,
-        conversationHistory: [], // Empty array for new topic
-        preferences: tutorPreferences,
-        topic: topic.title,
-        topic_id: topic.id
-      });
+  // Update handleTopicSelect to prevent selecting locked topics
+  const handleTopicSelect = (topic: Topic) => {
+    if (topic.is_locked) {
+      toast.error("Topic Locked: You need to complete the prerequisites first.");
+      return;
+    }
 
-      // Clear previous messages and add welcome message
-      const welcomeMessage: Message = {
-        id: Date.now(),
-        text: response.response || `Welcome to the ${topic.title} topic!`,
-        sender: 'ai',
-        timestamp: new Date(),
-      };
-      
-      setMessages([welcomeMessage]);
-      
-      // If the response includes a session ID, set it
-      if (response.session_id) {
-        setCurrentSessionId(response.session_id);
-      }
-    } catch (error) {
-      console.error("Error selecting topic:", error);
-      setMessages([
-        {
+    setSelectedTopic(topic);
+    setMessages([]);
+    // Use the existing topic selection flow
+    const fetchTutorResponse = async () => {
+      setIsLoading(true);
+      try {
+        const response = await getTutorResponse({
+          question: `I'd like to learn about ${topic.title}. Please provide a brief introduction.`,
+          conversationHistory: [],
+          preferences: tutorPreferences,
+          topic: topic.title,
+          topic_id: topic.id
+        });
+
+        // Add welcome message
+        const welcomeMessage: Message = {
           id: Date.now(),
-          text: `I'm having trouble loading the ${topic.title} topic. Please try again later.`,
+          text: response.response || `Welcome to the ${topic.title} topic!`,
           sender: 'ai',
           timestamp: new Date(),
-        },
-      ]);
-    } finally {
-      setIsLoading(false);
-    }
+        };
+        
+        setMessages([welcomeMessage]);
+        
+        // Save session ID if available
+        if (response.session_id) {
+          setCurrentSessionId(response.session_id);
+        }
+      } catch (error) {
+        console.error("Error getting tutor response:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTutorResponse();
   };
   
   const handleSessionSelect = async (session: Session) => {
@@ -1067,6 +1319,32 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
   };
 
   const handleLessonPlanSelect = async (lessonPlan: LessonPlan) => {
+    // Extract step numbers and check if this lesson is locked
+    const getStepNumber = (plan: LessonPlan) => {
+      const match = plan.description?.match(/Step (\d+):/);
+      return match ? parseInt(match[1], 10) : 999;
+    };
+    
+    // Find the step number of the selected plan
+    const selectedStepNumber = getStepNumber(lessonPlan);
+    
+    // Find the highest completed step in the current topic
+    const topicPlans = topicLessonPlans[lessonPlan.topic_id] || [];
+    const highestCompletedStep = topicPlans.reduce((highest, plan) => {
+      const stepNumber = getStepNumber(plan);
+      // Consider a lesson completed if progress is at least 80%
+      const isCompleted = (plan.progress || 0) >= 80;
+      return isCompleted && stepNumber > highest ? stepNumber : highest;
+    }, 0);
+    
+    // Check if this lesson is locked (more than 1 step ahead)
+    const isLocked = selectedStepNumber > highestCompletedStep + 1;
+    
+    if (isLocked) {
+      toast.error('This lesson is locked. Complete previous lessons first.');
+      return;
+    }
+    
     setIsLoading(true);
     
     try {
@@ -1280,6 +1558,228 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
     setKnowledgeCheckRequested(false);
   };
 
+  /**
+   * Check if user has reached a progress threshold and should take a quiz
+   */
+  const checkForQuizThreshold = async (progress: number, moduleId?: number) => {
+    // If we already have a quiz attempt in progress, don't show another quiz
+    if (quizAttempt && !quizAttempt.completed_at) return;
+    
+    // Determine the threshold levels (30%, 60%, 90%)
+    const thresholds = [30, 60, 90];
+    
+    // Find the next threshold the user should hit
+    const nextThreshold = thresholds.find(t => progress >= t && progress < t + 10);
+    
+    if (!nextThreshold) return;
+    
+    try {
+      // If we have a specific module ID, load quizzes for that module
+      if (moduleId) {
+        const response = await axios.get(`${API_URL}/modules/${moduleId}/quizzes`);
+        if (response.data.quizzes && response.data.quizzes.length > 0) {
+          const availableQuizzes = response.data.quizzes.filter((q: any) => q.is_published && !q.passed);
+          
+          if (availableQuizzes.length > 0) {
+            setModuleQuizzes(availableQuizzes);
+            setShowQuizAtThreshold(true);
+            
+            // Add a message about the quiz to the chat
+            const quizPromptMessage: Message = {
+              id: Date.now(),
+              text: `You've reached ${nextThreshold}% progress! It's a good time to test your knowledge with a quiz. Click on the Quiz tab to get started.`,
+              sender: 'ai',
+              timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, quizPromptMessage]);
+            
+            // Switch to the quiz tab
+            setActiveTab('quiz');
+          }
+        }
+      } else if (activeModule) {
+        // If we don't have a module ID but have an active module, use that
+        const response = await axios.get(`${API_URL}/modules/${activeModule.id}/quizzes`);
+        if (response.data.quizzes && response.data.quizzes.length > 0) {
+          const availableQuizzes = response.data.quizzes.filter((q: any) => q.is_published && !q.passed);
+          
+          if (availableQuizzes.length > 0) {
+            setModuleQuizzes(availableQuizzes);
+            setShowQuizAtThreshold(true);
+            
+            // Add a message about the quiz to the chat
+            const quizPromptMessage: Message = {
+              id: Date.now(),
+              text: `You've reached ${nextThreshold}% progress! It's a good time to test your knowledge with a quiz. Click on the Quiz tab to get started.`,
+              sender: 'ai',
+              timestamp: new Date(),
+            };
+            setMessages(prev => [...prev, quizPromptMessage]);
+            
+            // Switch to the quiz tab
+            setActiveTab('quiz');
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error loading quizzes for threshold check:", error);
+    }
+  };
+
+  /**
+   * Start an attempt at the module quiz
+   */
+  const startModuleQuiz = async (quizId: number) => {
+    try {
+      setIsLoadingQuiz(true);
+      
+      // Start a quiz attempt
+      const response = await axios.post(`${API_URL}/quizzes/${quizId}/attempt`);
+      
+      if (response.data.attempt) {
+        setQuizAttempt(response.data.attempt);
+        
+        // Load the quiz details
+        const quizResponse = await axios.get(`${API_URL}/quizzes/${quizId}`);
+        if (quizResponse.data.quiz) {
+          const quiz = quizResponse.data.quiz;
+          setActiveQuiz({
+            id: quiz.id,
+            title: quiz.title,
+            description: quiz.description || `Test your knowledge of ${activeModule?.title || selectedTopic?.title}`,
+            topic_id: selectedTopic?.id || 0,
+            questions: quiz.questions.map((q: any) => ({
+              id: q.id,
+              question: q.question_text,
+              options: q.options || [],
+              correctOption: -1, // We don't show correct answers until submission
+              explanation: q.explanation || ""
+            })),
+            totalPoints: quiz.questions.length * quiz.points_per_question
+          });
+          
+          setCurrentQuestionIndex(0);
+          setSelectedOptions(new Array(quiz.questions.length).fill(-1));
+          setQuizSubmitted(false);
+          setQuizScore(0);
+        }
+      }
+    } catch (error) {
+      console.error("Error starting module quiz:", error);
+      toast.error("Failed to start the quiz. Please try again.");
+    } finally {
+      setIsLoadingQuiz(false);
+    }
+  };
+
+  /**
+   * Submit responses to the module quiz
+   */
+  const submitModuleQuiz = async () => {
+    if (!activeQuiz || !quizAttempt) return;
+    
+    try {
+      setIsLoadingQuiz(true);
+      
+      // Convert the responses format for the API
+      const responsesObj: Record<string, any> = {};
+      activeQuiz.questions.forEach((question, index) => {
+        responsesObj[question.id] = selectedOptions[index];
+      });
+      
+      // Submit the quiz attempt
+      const response = await axios.post(`${API_URL}/quiz-attempts/${quizAttempt.id}/submit`, {
+        responses: responsesObj,
+        time_spent_seconds: Math.floor((Date.now() - new Date(quizAttempt.created_at).getTime()) / 1000)
+      });
+      
+      if (response.data) {
+        setQuizAttempt(response.data.attempt);
+        setQuizScore(response.data.percentage);
+        setQuizSubmitted(true);
+        
+        // Update progress based on quiz performance
+        const progressPoints = Math.round((response.data.percentage / 100) * 15); // Award up to 15 points for quiz performance
+        await updateUserProgress(progressPoints, 'knowledge_check');
+        
+        // Get the correct answers from the AI tutor perspective
+        const tutorResponse = await getTutorResponse({
+          question: `The user just completed a quiz on ${activeModule?.title || selectedTopic?.title} and scored ${response.data.percentage}%. 
+          Based on this performance, what areas should they focus on improving? 
+          Which concepts were they strong in and which need more attention?`,
+          conversationHistory: [],
+          preferences: {
+            ...tutorPreferences,
+            responseLength: 'medium',
+          },
+          topic: selectedTopic?.title,
+          topic_id: selectedTopic?.id,
+          session_id: currentSessionId !== null ? currentSessionId : undefined
+        });
+        
+        if (tutorResponse && tutorResponse.response) {
+          const quizFeedbackMessage: Message = {
+            id: Date.now(),
+            text: tutorResponse.response,
+            sender: 'ai',
+            timestamp: new Date(),
+          };
+          
+          setMessages(prev => [...prev, quizFeedbackMessage]);
+        }
+      }
+    } catch (error) {
+      console.error("Error submitting module quiz:", error);
+      toast.error("Failed to submit quiz answers. Please try again.");
+    } finally {
+      setIsLoadingQuiz(false);
+    }
+  };
+
+  // Add a function to get quiz analysis
+  const getQuizAnalysis = async () => {
+    if (!selectedTopic) return;
+    
+    try {
+      setIsLoadingAnalysis(true);
+      const analysisData = await analyzeQuizResults({
+        topic_id: selectedTopic.id
+      });
+      
+      setQuizAnalysis(analysisData);
+      
+      // Add the analysis message to chat if there's feedback
+      if (analysisData.feedback) {
+        const analysisMessage: Message = {
+          id: Date.now(),
+          text: `📊 **Quiz Performance Analysis**\n\n${analysisData.feedback}`,
+          sender: 'ai',
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, analysisMessage]);
+      }
+    } catch (error) {
+      console.error("Error getting quiz analysis:", error);
+      toast.error("Failed to analyze quiz performance");
+    } finally {
+      setIsLoadingAnalysis(false);
+    }
+  };
+
+  // Add a function to get color based on difficulty level
+  const getDifficultyColor = (level: string | undefined) => {
+    switch(level?.toLowerCase()) {
+      case 'beginner':
+        return 'text-green-500 border-green-200';
+      case 'intermediate':
+        return 'text-blue-500 border-blue-200';
+      case 'advanced':
+        return 'text-purple-500 border-purple-200';
+      default:
+        return 'text-green-500 border-green-200';
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header with improved title that emphasizes AI tutoring */}
@@ -1300,23 +1800,45 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
             onValueChange={(value) => setActiveTab(value as any)}
             className="w-full"
           >
-            <TabsList className="grid grid-cols-5 bg-transparent w-full">
+            <TabsList className="grid grid-cols-5 bg-transparent w-full relative overflow-visible">
+              {/* Animated Background Indicator */}
+              <motion.div 
+                className="absolute h-full bg-white/5 rounded-md top-0 z-0"
+                style={{ 
+                  width: '20%',
+                  left: activeTab === 'chat' ? '0%' : 
+                       activeTab === 'lesson-plans' ? '20%' : 
+                       activeTab === 'quiz' ? '40%' : 
+                       activeTab === 'sessions' ? '60%' : '80%'
+                }}
+                layout
+                transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              />
+              
               <TabsTrigger
                 value="chat"
-                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white ${
-                  activeTab === 'chat' ? 'text-white' : 'text-gray-400'
-                }`}
+                className={`px-3 py-2 text-sm z-10 relative overflow-visible transition-all hover:text-white
+                  ${activeTab === 'chat' ? 'text-white font-semibold' : 'text-gray-400'}`}
               >
                 <div className="flex items-center gap-2">
                   <Bot className="h-4 w-4" />
                   <span>AI Tutor Chat</span>
-            </div>
+                </div>
+                {activeTab === 'chat' && (
+                  <motion.div 
+                    className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-400 to-indigo-600 rounded-t-full"
+                    layoutId="activeTabIndicator"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3 }}
+                  />
+                )}
               </TabsTrigger>
+              
               <TabsTrigger
                 value="lesson-plans"
-                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white relative ${
-                  activeTab === 'lesson-plans' ? 'text-white' : 'text-gray-400'
-                }`}
+                className={`px-3 py-2 text-sm z-10 relative overflow-visible transition-all hover:text-white
+                  ${activeTab === 'lesson-plans' ? 'text-white font-semibold' : 'text-gray-400'}`}
               >
                 <div className="flex items-center gap-2">
                   <GraduationCap className="h-4 w-4" />
@@ -1324,36 +1846,78 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                   {selectedTopic && topicLessonPlans[selectedTopic.id]?.length > 0 && (
                     <div className="absolute -top-1 -right-1 w-4 h-4 bg-[#2E5BFF] rounded-full flex items-center justify-center">
                       <span className="text-[10px] font-bold">{topicLessonPlans[selectedTopic.id]?.length}</span>
-            </div>
+                    </div>
                   )}
-          </div>
+                </div>
+                {activeTab === 'lesson-plans' && (
+                  <motion.div 
+                    className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-400 to-indigo-600 rounded-t-full"
+                    layoutId="activeTabIndicator"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3 }}
+                  />
+                )}
               </TabsTrigger>
+              
               <TabsTrigger
                 value="quiz"
-                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white ${
-                  activeTab === 'quiz' ? 'text-white' : 'text-gray-400'
-                }`}
+                className={`px-3 py-2 text-sm z-10 relative overflow-visible transition-all hover:text-white
+                  ${activeTab === 'quiz' ? 'text-white font-semibold' : 'text-gray-400'}`}
               >
                 <div className="flex items-center gap-2">
                   <Lightbulb className="h-4 w-4" />
                   <span>Quizzes</span>
-        </div>
+                </div>
+                {activeTab === 'quiz' && (
+                  <motion.div 
+                    className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-400 to-indigo-600 rounded-t-full"
+                    layoutId="activeTabIndicator"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3 }}
+                  />
+                )}
               </TabsTrigger>
+              
               <TabsTrigger
                 value="sessions"
-                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white ${
-                  activeTab === 'sessions' ? 'text-white' : 'text-gray-400'
-                }`}
+                className={`px-3 py-2 text-sm z-10 relative overflow-visible transition-all hover:text-white
+                  ${activeTab === 'sessions' ? 'text-white font-semibold' : 'text-gray-400'}`}
               >
-                Sessions
+                <div className="flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  <span>Sessions</span>
+                </div>
+                {activeTab === 'sessions' && (
+                  <motion.div 
+                    className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-400 to-indigo-600 rounded-t-full"
+                    layoutId="activeTabIndicator"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3 }}
+                  />
+                )}
               </TabsTrigger>
+              
               <TabsTrigger
                 value="settings"
-                className={`px-3 py-2 text-sm data-[state=active]:bg-white/10 data-[state=active]:text-white rounded-none border-b-2 border-transparent data-[state=active]:border-[#2E5BFF] transition-all hover:text-white ${
-                  activeTab === 'settings' ? 'text-white' : 'text-gray-400'
-                }`}
+                className={`px-3 py-2 text-sm z-10 relative overflow-visible transition-all hover:text-white
+                  ${activeTab === 'settings' ? 'text-white font-semibold' : 'text-gray-400'}`}
               >
-                Settings
+                <div className="flex items-center gap-2">
+                  <SettingsIcon className="h-4 w-4" />
+                  <span>Settings</span>
+                </div>
+                {activeTab === 'settings' && (
+                  <motion.div 
+                    className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-400 to-indigo-600 rounded-t-full"
+                    layoutId="activeTabIndicator"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.3 }}
+                  />
+                )}
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -1390,6 +1954,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                 </div>
                 
                 {/* Message header - show lesson context if available */}
+                {/* Removed redundant lesson plan/module header per user request 
                 {activeLessonPlan && activeModule && (
                   <Card className="bg-white/5 border-[#2E5BFF]/20 text-white mb-2">
                     <div className="flex items-center justify-between p-2">
@@ -1411,9 +1976,9 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                       </Link>
                     </div>
                   </Card>
-                )}
+                )} */}
                 
-                <div className="bg-white/5 rounded-lg p-4 overflow-y-auto mb-4" style={{ height: '40vh' }}>
+                <div className="bg-white/5 rounded-lg p-4 overflow-y-auto mb-4" style={{ height: '55vh' }}>
                   <div className="space-y-4">
                     {messages.length === 0 && (
                       <div className="text-center text-gray-400 py-8">
@@ -1651,37 +2216,80 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                   {/* Topic Selection */}
                   <div className="mb-6">
                     <h3 className="text-lg font-medium mb-3 text-gray-300">Select a Topic</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {topics.map((topic) => (
-                  <motion.div
-                    key={topic.id}
-                    whileHover={{ x: 5 }}
-                    whileTap={{ scale: 0.98 }}
-                          onClick={() => setSelectedTopic(topic)}
-                          className={`p-4 rounded-lg cursor-pointer transition-colors ${
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {topics.map((topic) => (
+                        <motion.div
+                          key={topic.id}
+                          whileHover={topic.is_locked ? {} : { y: -5, scale: 1.02 }}
+                          whileTap={topic.is_locked ? {} : { scale: 0.98 }}
+                          onClick={() => !topic.is_locked && setSelectedTopic(topic)}
+                          className={`p-5 rounded-lg transition-all duration-300 shadow-lg ${
                             selectedTopic?.id === topic.id
-                              ? 'bg-[#2E5BFF] text-white'
-                              : 'bg-white/5 hover:bg-white/10 text-gray-300'
+                              ? 'bg-gradient-to-br from-[#2E5BFF] to-[#4466ff] text-white ring-2 ring-blue-400 ring-opacity-50'
+                              : topic.is_locked 
+                                ? 'bg-gradient-to-br from-gray-800 to-gray-900 text-gray-500 cursor-not-allowed opacity-70'
+                                : 'bg-gradient-to-br from-gray-800 to-gray-700 hover:from-gray-700 hover:to-gray-600 text-gray-300 cursor-pointer'
                           }`}
                         >
-                          <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                              <div>{topic.icon}</div>
-                              <div>
-                                <p className="font-medium">{topic.title}</p>
-                                <div className="flex items-center mt-1">
-                                  <div className="h-1.5 rounded-full bg-white/10 w-20">
-                                    <div
-                                      className="h-full rounded-full bg-gradient-to-r from-[#2E5BFF] to-purple-500"
-                                      style={{ width: `${topic.progress || 0}%` }}
-                                    ></div>
-                                  </div>
-                                  <span className="text-xs ml-2">{topic.progress || 0}%</span>
+                          <div className="flex flex-col h-full">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                                topic.is_locked ? 'bg-gray-800' : 'bg-blue-600 bg-opacity-20'
+                              }`}>
+                                <div className={topic.is_locked ? 'text-gray-500' : 'text-[#4da3ff]'}>
+                                  {topic.is_locked ? <Lock className="h-5 w-5" /> : topic.icon}
                                 </div>
                               </div>
+                              <div className={`rounded-full ${
+                                topic.is_locked ? 'bg-gray-800' : selectedTopic?.id === topic.id ? 'bg-blue-500' : 'bg-gray-700'
+                              } h-7 w-7 flex items-center justify-center text-xs font-bold`}>
+                                {topicLessonPlans[topic.id]?.length || 0}
+                              </div>
                             </div>
-                            <div className="rounded-full bg-white/10 h-6 w-6 flex items-center justify-center text-xs">
-                              {topicLessonPlans[topic.id]?.length || 0}
+                            
+                            <div>
+                              <div className="flex items-center mb-1">
+                                <h4 className={`font-bold text-lg ${topic.is_locked ? 'text-gray-400' : ''}`}>
+                                  {topic.title}
+                                </h4>
+                                {topic.is_locked && <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-700 bg-opacity-30 text-amber-400">(Locked)</span>}
+                              </div>
+                              
+                              <p className="text-xs text-gray-400 mb-3 line-clamp-2 h-8">
+                                {topic.description || `Learn about ${topic.title} and related concepts.`}
+                              </p>
+                              
+                              <div className="mt-auto">
+                                <div className="flex items-center justify-between text-xs mb-1">
+                                  <span className="text-gray-400">Progress</span>
+                                  <span className={`font-medium ${topic.is_locked ? 'text-gray-500' : 'text-blue-300'}`}>{topic.progress || 0}%</span>
+                                </div>
+                                <div className="h-2 rounded-full bg-black bg-opacity-30 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full ${
+                                      topic.is_locked 
+                                        ? 'bg-gray-700' 
+                                        : 'bg-gradient-to-r from-blue-500 to-indigo-600'
+                                    }`}
+                                    style={{ width: `${topic.progress || 0}%` }}
+                                  ></div>
+                                </div>
+                                
+                                {topic.is_locked && (
+                                  <div className="mt-3 text-xs px-3 py-2 rounded-md bg-amber-900 bg-opacity-20 text-amber-400 flex items-center">
+                                    <AlertCircle className="h-3 w-3 mr-1 flex-shrink-0" />
+                                    <span>Complete prerequisite topics to unlock</span>
+                                  </div>
+                                )}
+                                
+                                {!topic.is_locked && selectedTopic?.id !== topic.id && (
+                                  <div className="mt-3 text-xs text-center invisible group-hover:visible">
+                                    <span className="inline-flex items-center text-blue-400">
+                                      Select to start learning <ChevronRight className="h-3 w-3 ml-1" />
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </motion.div>
@@ -1698,58 +2306,11 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                       </h3>
                       
                       {topicLessonPlans[selectedTopic.id]?.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto">
-                          {topicLessonPlans[selectedTopic.id]?.map((plan) => (
-                            <motion.div
-                              key={plan.id}
-                              initial={{ opacity: 0, y: 20 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              whileHover={{ x: 5 }}
-                              whileTap={{ scale: 0.98 }}
-                              className="bg-white/5 rounded-lg p-3 hover:bg-white/10 transition"
-                            >
-                              <div 
-                                className="flex justify-between items-center cursor-pointer"
-                                onClick={() => handleLessonPlanSelect(plan)}
-                              >
-                                <div className="flex items-center space-x-3">
-                                  {plan.icon}
-                                  <span>{plan.title}</span>
-                      </div>
-                      <ChevronRight className="h-5 w-5 text-gray-400" />
-                    </div>
-                              
-                    <div className="mt-2">
-                      <div className="flex justify-between items-center mb-1">
-                                  <span className="text-xs text-gray-400">Difficulty</span>
-                                  <span className="text-xs font-medium">
-                                    {[...Array(plan.difficulty_level || 1)].map((_, i) => (
-                                      <Star key={i} className="inline h-3 w-3 text-yellow-500" />
-                                    ))}
-                                  </span>
-                      </div>
-                                <div className="flex justify-between items-center mb-1">
-                                  <span className="text-xs text-gray-400">Modules</span>
-                                  <span className="text-xs font-medium">{plan.modules_count || 0}</span>
-                                </div>
-                                {plan.estimated_minutes && (
-                                  <div className="flex justify-between items-center mb-1">
-                                    <span className="text-xs text-gray-400">Estimated Time</span>
-                                    <span className="text-xs font-medium">{plan.estimated_minutes} min</span>
-                                  </div>
-                                )}
-                              </div>
-                              
-                              {plan.description && (
-                                <div className="mt-2 text-xs text-gray-400">
-                                  {plan.description.length > 100 
-                                    ? `${plan.description.substring(0, 100)}...` 
-                                    : plan.description
-                                  }
-                                </div>
-                              )}
-                            </motion.div>
-                          ))}
+                        <div className="max-h-[60vh] overflow-y-auto space-y-6 w-full pl-2">
+                          <HierarchicalLessonPlans 
+                            plans={topicLessonPlans[selectedTopic.id] || []}
+                            onSelectPlan={handleLessonPlanSelect}
+                          />
                         </div>
                       ) : (
                         <div className="text-center p-6 bg-white/5 rounded-lg">
@@ -1781,7 +2342,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
               {isLoadingQuiz ? (
                 <div className="flex flex-col items-center justify-center p-12">
                   <Loader className="h-10 w-10 text-[#2E5BFF] animate-spin mb-4" />
-                  <p className="text-white">Generating quiz questions...</p>
+                  <p className="text-white">Loading quiz questions...</p>
                 </div>
               ) : !selectedTopic ? (
                 <div className="bg-white/5 rounded-lg p-8 text-center">
@@ -1795,13 +2356,316 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                     Browse Topics
                   </button>
                 </div>
-              ) : !activeQuiz ? (
+              ) : showQuizAtThreshold && moduleQuizzes.length > 0 ? (
+                // Show module quizzes when available at thresholds
+                <div className="bg-white/5 rounded-lg p-8">
+                  <div className="text-center mb-8">
+                    <Award className="h-12 w-12 text-[#2E5BFF] mx-auto mb-4" />
+                    <h3 className="text-xl font-medium text-white mb-2">Progress Milestone Reached!</h3>
+                    <p className="text-gray-400">
+                      You've reached a progress milestone. Take this quiz to solidify your knowledge and continue your learning journey.
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {moduleQuizzes.map((quiz) => (
+                      <Card key={quiz.id} className="bg-white/5 border-white/10 text-white">
+                        <CardHeader>
+                          <CardTitle className="text-lg">{quiz.title}</CardTitle>
+                          <CardDescription className="text-gray-400">
+                            {quiz.description || `A quiz about ${activeModule?.title || selectedTopic.title}`}
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Difficulty:</span>
+                              <span className="text-white">{quiz.difficulty}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Time Limit:</span>
+                              <span className="text-white">{quiz.time_limit_minutes} minutes</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-400">Passing Score:</span>
+                              <span className="text-white">{quiz.passing_score_percent}%</span>
+                            </div>
+                          </div>
+                        </CardContent>
+                        <CardFooter>
+                          <Button 
+                            className="w-full bg-[#2E5BFF] hover:bg-[#1E4BEF]"
+                            onClick={() => startModuleQuiz(quiz.id)}
+                          >
+                            Start Quiz
+                          </Button>
+                        </CardFooter>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              ) : activeQuiz && !quizSubmitted && currentQuestionIndex !== null ? (
+                // Showing the active quiz questions (existing code)
+                <div className="bg-white/5 rounded-lg p-6">
+                  <div className="mb-6">
+                    <h3 className="text-xl font-medium text-white mb-2">{activeQuiz.title}</h3>
+                    <p className="text-gray-400">{activeQuiz.description}</p>
+                    
+                    <div className="flex items-center space-x-4 mt-4">
+                      <div className="flex items-center space-x-1">
+                        <div className="w-2 h-2 bg-[#2E5BFF] rounded-full"></div>
+                        <span className="text-sm text-white">Question {currentQuestionIndex + 1} of {activeQuiz.questions.length}</span>
+                      </div>
+                      
+                      <div className="flex-1 h-1 bg-white/10 rounded-full">
+                        <div 
+                          className="bg-[#2E5BFF] h-1 rounded-full"
+                          style={{ width: `${((currentQuestionIndex + 1) / activeQuiz.questions.length) * 100}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-6">
+                    <div className="bg-white/10 rounded-lg p-6">
+                      <h4 className="text-lg font-medium text-white mb-4">
+                        {activeQuiz.questions[currentQuestionIndex].question}
+                      </h4>
+                      
+                      {activeQuiz.questions[currentQuestionIndex].options.map((option, optionIndex) => (
+                        <div 
+                          key={optionIndex}
+                          className={`p-3 rounded-lg border mb-3 cursor-pointer transition-colors ${
+                            selectedOptions[currentQuestionIndex] === optionIndex 
+                              ? 'bg-[#2E5BFF]/20 border-[#2E5BFF]' 
+                              : 'bg-white/5 border-white/10 hover:bg-white/10'
+                          }`}
+                          onClick={() => {
+                            const newSelectedOptions = [...selectedOptions];
+                            newSelectedOptions[currentQuestionIndex] = optionIndex;
+                            setSelectedOptions(newSelectedOptions);
+                          }}
+                        >
+                          <div className="flex items-center">
+                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3 ${
+                              selectedOptions[currentQuestionIndex] === optionIndex 
+                                ? 'border-[#2E5BFF] bg-[#2E5BFF]/20' 
+                                : 'border-white/30'
+                            }`}>
+                              {selectedOptions[currentQuestionIndex] === optionIndex && (
+                                <div className="w-3 h-3 rounded-full bg-[#2E5BFF]"></div>
+                              )}
+                            </div>
+                            <span className="text-white">{option}</span>
+                          </div>
+                        </div>
+                ))}
+              </div>
+                    
+                    <div className="flex justify-between">
+                      <Button
+                        className="bg-white/10 hover:bg-white/20 text-white"
+                        onClick={() => {
+                          if (currentQuestionIndex > 0) {
+                            setCurrentQuestionIndex(currentQuestionIndex - 1);
+                          }
+                        }}
+                        disabled={currentQuestionIndex === 0}
+                      >
+                        Previous
+                      </Button>
+                      
+                      {currentQuestionIndex < activeQuiz.questions.length - 1 ? (
+                        <Button
+                          className="bg-[#2E5BFF] hover:bg-[#1E4BEF] text-white"
+                          onClick={() => {
+                            if (currentQuestionIndex < activeQuiz.questions.length - 1) {
+                              setCurrentQuestionIndex(currentQuestionIndex + 1);
+                            }
+                          }}
+                          disabled={selectedOptions[currentQuestionIndex] === -1}
+                        >
+                          Next
+                        </Button>
+                      ) : (
+                        <Button
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                          onClick={() => quizAttempt ? submitModuleQuiz() : handleQuizSubmit()}
+                          disabled={selectedOptions[currentQuestionIndex] === -1}
+                        >
+                          Submit Quiz
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : activeQuiz && quizSubmitted ? (
+                // Quiz results (existing code with slight modification)
+                <div className="space-y-6">
+                  <div className="bg-white/10 rounded-lg p-6 text-center">
+                    <div className="mb-4">
+                      <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${
+                        quizScore >= 80 ? 'bg-green-500' : quizScore >= 60 ? 'bg-yellow-500' : 'bg-red-500'
+                      }`}>
+                        <span className="text-2xl font-bold text-white">{quizScore}%</span>
+                      </div>
+                    </div>
+                    
+                    <h4 className="text-xl font-medium text-white mb-2">
+                      {quizScore >= 80 ? 'Excellent!' : quizScore >= 60 ? 'Good job!' : 'Keep practicing!'}
+                    </h4>
+                    
+                    <p className="text-gray-400 mb-4">
+                      {quizAttempt ? (
+                        `You answered ${quizAttempt.correct_questions?.length || 0} out of ${activeQuiz.questions.length} questions correctly.`
+                      ) : (
+                        `You answered ${activeQuiz.questions.filter((_, i) => selectedOptions[i] === activeQuiz.questions[i].correctOption).length} 
+                        out of ${activeQuiz.questions.length} questions correctly.`
+                      )}
+                    </p>
+                    
+                    <div className="flex justify-center space-x-4">
+                      <Button
+                        className="bg-white/10 hover:bg-white/20 text-white"
+                        onClick={() => {
+                          setActiveTab('chat');
+                          setShowQuizAtThreshold(false);
+                        }}
+                      >
+                        Return to Chat
+                      </Button>
+                      
+                      <Button
+                        className="bg-[#2E5BFF] hover:bg-[#1E4BEF] text-white"
+                        onClick={() => {
+                          // Reset for a new quiz
+                          setActiveQuiz(null);
+                          setCurrentQuestionIndex(0); // Replace null with 0
+                          setSelectedOptions([]);
+                          setQuizSubmitted(false);
+                          setQuizScore(0);
+                          setQuizAttempt(null);
+                          setShowQuizAtThreshold(false);
+                        }}
+                      >
+                        Done
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {/* Show quiz answers and explanations after submission */}
+                  <div className="bg-white/5 rounded-lg p-6">
+                    <h4 className="text-lg font-medium text-white mb-4">Quiz Review</h4>
+                    
+                    <div className="space-y-6">
+                      {activeQuiz.questions.map((question, qIndex) => (
+                        <div key={qIndex} className="bg-white/10 rounded-lg p-4">
+                          <h5 className="text-white font-medium mb-2">Question {qIndex + 1}: {question.question}</h5>
+                          
+                          <div className="space-y-2 mb-3">
+                            {question.options.map((option, oIndex) => (
+                              <div 
+                                key={oIndex}
+                                className={`p-2 rounded-lg border ${
+                                  // For AI-generated quizzes
+                                  (quizAttempt === null && oIndex === question.correctOption) ? 'bg-green-500/20 border-green-500' :
+                                  (quizAttempt === null && selectedOptions[qIndex] === oIndex && oIndex !== question.correctOption) ? 'bg-red-500/20 border-red-500' :
+                                  
+                                  // For module quizzes
+                                  (quizAttempt && quizAttempt.correct_questions?.includes(question.id) && selectedOptions[qIndex] === oIndex) ? 'bg-green-500/20 border-green-500' :
+                                  (quizAttempt && !quizAttempt.correct_questions?.includes(question.id) && selectedOptions[qIndex] === oIndex) ? 'bg-red-500/20 border-red-500' :
+                                  
+                                  'bg-white/5 border-white/10'
+                                }`}
+                              >
+                                <div className="flex items-center">
+                                  <span className="text-white">{option}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          
+                          {question.explanation && (
+                            <div className="bg-blue-900/20 border border-blue-900 rounded-lg p-3">
+                              <h6 className="text-blue-400 font-medium text-sm mb-1">Explanation:</h6>
+                              <p className="text-white text-sm">{question.explanation}</p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Default quiz generator UI
                 <div className="bg-white/5 rounded-lg p-8">
                   <div className="text-center mb-8">
                     <Lightbulb className="h-12 w-12 text-[#2E5BFF] mx-auto mb-4" />
                     <h3 className="text-xl font-medium text-white mb-2">Test Your Knowledge</h3>
                     <p className="text-gray-400">Generate a quiz to test your understanding of {selectedTopic.title}.</p>
                   </div>
+                  
+                  {/* Add this analysis button */}
+                  <div className="flex justify-end mb-4">
+                    <Button
+                      onClick={getQuizAnalysis}
+                      className="bg-white/10 hover:bg-white/20 text-white flex items-center gap-2"
+                      disabled={isLoadingAnalysis}
+                    >
+                      {isLoadingAnalysis ? (
+                        <Loader className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <PieChart className="h-4 w-4" />
+                      )}
+                      Analyze Quiz Performance
+                    </Button>
+                  </div>
+                  
+                  {/* Show analysis results if available */}
+                  {quizAnalysis && quizAnalysis.status === 'success' && (
+                    <div className="bg-white/5 border border-white/10 rounded-lg p-4 mb-6">
+                      <h4 className="text-white font-medium flex items-center gap-2 mb-3">
+                        <PieChart className="h-5 w-5 text-[#2E5BFF]" />
+                        Quiz Performance Analysis
+                      </h4>
+                      
+                      <div className="text-sm text-gray-300 space-y-3">
+                        <p className="bg-white/5 p-3 rounded">
+                          {quizAnalysis.feedback}
+                        </p>
+                        
+                        {quizAnalysis.analysis.strengths.length > 0 && (
+                          <div>
+                            <h5 className="text-green-400 font-medium mb-1">Strengths:</h5>
+                            <ul className="list-disc pl-5 space-y-1">
+                              {quizAnalysis.analysis.strengths.map((strength: any, i: number) => (
+                                <li key={i}>
+                                  {strength.type === 'topic' 
+                                    ? `${strength.topic}: ${strength.percentage}%` 
+                                    : `${strength.module} in ${strength.topic}: ${strength.percentage}%`}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        
+                        {quizAnalysis.analysis.weaknesses.length > 0 && (
+                          <div>
+                            <h5 className="text-amber-400 font-medium mb-1">Areas to Improve:</h5>
+                            <ul className="list-disc pl-5 space-y-1">
+                              {quizAnalysis.analysis.weaknesses.map((weakness: any, i: number) => (
+                                <li key={i}>
+                                  {weakness.type === 'topic' 
+                                    ? `${weakness.topic}: ${weakness.percentage}%` 
+                                    : `${weakness.module} in ${weakness.topic}: ${weakness.percentage}%`}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <Card className="bg-white/5 border-white/10 text-white">
@@ -1841,285 +2705,45 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                       </CardFooter>
                     </Card>
                     
-                    <div className="bg-white/5 border border-white/10 rounded-lg p-6">
-                      <h4 className="text-lg font-medium text-white mb-4">Your Progress</h4>
-                      <div className="space-y-4">
-                        <div>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-sm text-gray-400">Overall Progress</span>
-                            <span className="text-sm font-medium text-white">{selectedTopic.progress}%</span>
-                          </div>
-                          <div className="w-full bg-white/10 rounded-full h-2">
-                            <div 
-                              className="bg-[#2E5BFF] h-2 rounded-full" 
-                              style={{ width: `${selectedTopic.progress}%` }}
-                        ></div>
-                      </div>
-                        </div>
-                        
-                        <div>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-sm text-gray-400">Chat Interactions</span>
-                            <span className="text-sm font-medium text-white">{progressData.interaction}%</span>
-                          </div>
-                          <div className="w-full bg-white/10 rounded-full h-2">
-                            <div 
-                              className="bg-green-500 h-2 rounded-full" 
-                              style={{ width: `${(progressData.interaction / 30) * 100}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-sm text-gray-400">Quizzes</span>
-                            <span className="text-sm font-medium text-white">{progressData.knowledge_check}%</span>
-                          </div>
-                          <div className="w-full bg-white/10 rounded-full h-2">
-                            <div 
-                              className="bg-purple-500 h-2 rounded-full" 
-                              style={{ width: `${(progressData.knowledge_check / 30) * 100}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                        
-                        <div>
-                          <div className="flex justify-between items-center mb-1">
-                            <span className="text-sm text-gray-400">Coding</span>
-                            <span className="text-sm font-medium text-white">{progressData.code_execution}%</span>
-                          </div>
-                          <div className="w-full bg-white/10 rounded-full h-2">
-                            <div 
-                              className="bg-orange-500 h-2 rounded-full" 
-                              style={{ width: `${(progressData.code_execution / 40) * 100}%` }}
-                            ></div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-white/5 rounded-lg p-6">
-                  <div className="mb-6">
-                    <h3 className="text-xl font-medium text-white mb-2">{activeQuiz.title}</h3>
-                    <p className="text-gray-400">{activeQuiz.description}</p>
-                    
-                    {!quizSubmitted && (
-                      <div className="flex items-center space-x-4 mt-4">
-                        <div className="flex items-center space-x-1">
-                          <div className="w-2 h-2 bg-[#2E5BFF] rounded-full"></div>
-                          <span className="text-sm text-white">Question {currentQuestionIndex + 1} of {activeQuiz.questions.length}</span>
-                        </div>
-                        
-                        <div className="flex-1 h-1 bg-white/10 rounded-full">
-                          <div 
-                            className="bg-[#2E5BFF] h-1 rounded-full"
-                            style={{ width: `${((currentQuestionIndex + 1) / activeQuiz.questions.length) * 100}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {!quizSubmitted ? (
-                    <div className="space-y-6">
-                      <div className="bg-white/10 rounded-lg p-4">
-                        <h4 className="text-lg font-medium text-white mb-4">
-                          Question {activeQuiz.questions[currentQuestionIndex].id}: {activeQuiz.questions[currentQuestionIndex].question}
-                        </h4>
-                        
-                        <div className="space-y-3">
-                          {activeQuiz.questions[currentQuestionIndex].options.map((option, optionIndex) => (
-                            <motion.div
-                              key={optionIndex}
-                              whileHover={{ x: 5 }}
-                              whileTap={{ scale: 0.98 }}
-                              onClick={() => {
-                                const newSelectedOptions = [...selectedOptions];
-                                newSelectedOptions[currentQuestionIndex] = optionIndex;
-                                setSelectedOptions(newSelectedOptions);
-                              }}
-                              className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                                selectedOptions[currentQuestionIndex] === optionIndex
-                                  ? 'bg-[#2E5BFF] text-white'
-                                  : 'bg-white/5 hover:bg-white/10 text-gray-300'
-                              }`}
-                            >
-                              <div className="flex items-center">
-                                <div className={`w-6 h-6 flex items-center justify-center rounded-full mr-3 ${
-                                  selectedOptions[currentQuestionIndex] === optionIndex
-                                    ? 'bg-white text-[#2E5BFF]'
-                                    : 'bg-white/10 text-gray-400'
-                                }`}>
-                                  {String.fromCharCode(65 + optionIndex)}
-                                </div>
-                                <span>{option}</span>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-                      </div>
-                      
-                      <div className="flex items-center justify-between">
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            if (currentQuestionIndex > 0) {
-                              setCurrentQuestionIndex(currentQuestionIndex - 1);
-                            }
-                          }}
-                          disabled={currentQuestionIndex === 0}
-                          className="border-white/10 text-white hover:bg-white/10 hover:text-white"
-                        >
-                          Previous
-                        </Button>
-                        
-                        {currentQuestionIndex < activeQuiz.questions.length - 1 ? (
-                          <Button
-                            onClick={() => setCurrentQuestionIndex(currentQuestionIndex + 1)}
-                            disabled={selectedOptions[currentQuestionIndex] === -1}
-                            className="bg-[#2E5BFF] hover:bg-[#1E4BEF]"
-                          >
-                            Next
-                          </Button>
-                        ) : (
-                          <Button
-                            onClick={handleQuizSubmit}
-                            disabled={selectedOptions.some(option => option === -1)}
-                            className="bg-green-600 hover:bg-green-700"
-                          >
-                            Submit Quiz
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-6">
-                      <div className="bg-white/10 rounded-lg p-6 text-center">
-                        <div className="mb-4">
-                          <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${
-                            quizScore >= 80 ? 'bg-green-500' : quizScore >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                          }`}>
-                            <span className="text-2xl font-bold text-white">{quizScore}%</span>
-                          </div>
-                        </div>
-                        
-                        <h4 className="text-xl font-medium text-white mb-2">
-                          {quizScore >= 80 ? 'Excellent!' : quizScore >= 60 ? 'Good job!' : 'Keep practicing!'}
-                        </h4>
-                        
-                        <p className="text-gray-400">
-                          You answered {activeQuiz.questions.filter((_, i) => selectedOptions[i] === activeQuiz.questions[i].correctOption).length} 
-                          out of {activeQuiz.questions.length} questions correctly.
-                        </p>
-                        
-                        <div className="mt-6 space-y-2">
-                          <Button
+                    {activeModule && (
+                      <Card className="bg-white/5 border-white/10 text-white">
+                        <CardHeader>
+                          <CardTitle className="text-lg">Module Quizzes</CardTitle>
+                          <CardDescription className="text-gray-400">
+                            Complete structured quizzes for the current module
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm text-gray-300 mb-4">
+                            Module quizzes are designed by instructors to test specific learning objectives.
+                            These quizzes help assess your understanding of key concepts.
+                          </p>
+                          <Button 
                             className="w-full bg-[#2E5BFF] hover:bg-[#1E4BEF]"
-                            onClick={() => {
-                              setCurrentQuestionIndex(0);
-                              setQuizSubmitted(false);
+                            onClick={async () => {
+                              try {
+                                setIsLoadingQuiz(true);
+                                const response = await axios.get(`${API_URL}/modules/${activeModule.id}/quizzes`);
+                                if (response.data.quizzes && response.data.quizzes.length > 0) {
+                                  setModuleQuizzes(response.data.quizzes);
+                                  setShowQuizAtThreshold(true);
+                                } else {
+                                  toast.info("No quizzes available for this module yet.");
+                                }
+                              } catch (error) {
+                                console.error("Error loading module quizzes:", error);
+                                toast.error("Failed to load module quizzes.");
+                              } finally {
+                                setIsLoadingQuiz(false);
+                              }
                             }}
                           >
-                            Review Answers
+                            Browse Module Quizzes
                           </Button>
-                          
-                          <Button
-                            variant="outline"
-                            className="w-full border-white/10 text-white hover:bg-white/10"
-                            onClick={() => setActiveQuiz(null)}
-                          >
-                            Take Another Quiz
-                          </Button>
-                        </div>
-                      </div>
-                      
-                      {currentQuestionIndex < activeQuiz.questions.length && (
-                        <div className="bg-white/10 rounded-lg p-4">
-                          <h4 className="text-lg font-medium text-white mb-4">
-                            Question {activeQuiz.questions[currentQuestionIndex].id}: {activeQuiz.questions[currentQuestionIndex].question}
-                          </h4>
-                          
-                          <div className="space-y-3">
-                            {activeQuiz.questions[currentQuestionIndex].options.map((option, optionIndex) => {
-                              const isCorrect = optionIndex === activeQuiz.questions[currentQuestionIndex].correctOption;
-                              const isSelected = selectedOptions[currentQuestionIndex] === optionIndex;
-                              
-                              return (
-                                <div
-                                  key={optionIndex}
-                                  className={`p-3 rounded-lg ${
-                                    isCorrect
-                                      ? 'bg-green-500/20 border border-green-500 text-white'
-                                      : isSelected
-                                        ? 'bg-red-500/20 border border-red-500 text-white'
-                                        : 'bg-white/5 text-gray-300'
-                                  }`}
-                                >
-                                  <div className="flex items-center">
-                                    <div className={`w-6 h-6 flex items-center justify-center rounded-full mr-3 ${
-                                      isCorrect
-                                        ? 'bg-green-500 text-white'
-                                        : isSelected
-                                          ? 'bg-red-500 text-white'
-                                          : 'bg-white/10 text-gray-400'
-                                    }`}>
-                                      {String.fromCharCode(65 + optionIndex)}
-                                    </div>
-                                    <span>{option}</span>
-                                    
-                                    {isCorrect && (
-                                      <CheckCircle className="h-5 w-5 text-green-500 ml-auto" />
-                                    )}
-                                    
-                                    {!isCorrect && isSelected && (
-                                      <AlertCircle className="h-5 w-5 text-red-500 ml-auto" />
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                          
-                          {activeQuiz.questions[currentQuestionIndex].explanation && (
-                            <div className="mt-4 p-3 bg-white/5 rounded-lg">
-                              <h5 className="text-sm font-medium text-white mb-2">Explanation:</h5>
-                              <p className="text-sm text-gray-300">{activeQuiz.questions[currentQuestionIndex].explanation}</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      
-                      <div className="flex items-center justify-between">
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            if (currentQuestionIndex > 0) {
-                              setCurrentQuestionIndex(currentQuestionIndex - 1);
-                            }
-                          }}
-                          disabled={currentQuestionIndex === 0}
-                          className="border-white/10 text-white hover:bg-white/10 hover:text-white"
-                        >
-                          Previous
-                        </Button>
-                        
-                        <Button
-                          variant="outline"
-                          onClick={() => {
-                            if (currentQuestionIndex < activeQuiz.questions.length - 1) {
-                              setCurrentQuestionIndex(currentQuestionIndex + 1);
-                            }
-                          }}
-                          disabled={currentQuestionIndex === activeQuiz.questions.length - 1}
-                          className="border-white/10 text-white hover:bg-white/10 hover:text-white"
-                        >
-                          Next
-                        </Button>
-                      </div>
-                    </div>
-                  )}
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
                 </div>
               )}
             </section>

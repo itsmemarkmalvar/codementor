@@ -406,4 +406,21 @@ export const submitExerciseAttempt = async (exerciseId: number, params: {
     console.error('Error in submitExerciseAttempt API call:', error);
     throw error;
   }
+};
+
+/**
+ * Get AI tutor analysis of quiz results
+ */
+export const analyzeQuizResults = async (data: {
+  topic_id?: number;
+  quiz_id?: number;
+  module_id?: number;
+}) => {
+  try {
+    const response = await axios.post(`${API_URL}/tutor/analyze-quiz-results`, data);
+    return response.data;
+  } catch (error) {
+    console.error('Error analyzing quiz results:', error);
+    throw error;
+  }
 }; 
