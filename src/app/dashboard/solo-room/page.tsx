@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import { 
   ChevronDown,
   ChevronUp,
@@ -45,7 +46,23 @@ import {
   LifeBuoy,
   Save,
   SendHorizonal,
-  Coffee
+  Coffee,
+  ChevronLeft,
+  Plus,
+  Menu,
+  FileCode,
+  Layers,
+  HelpCircle,
+  Edit3,
+  Eye,
+  RotateCw,
+  Activity,
+  Bookmark,
+  ChevronsRight,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Layers as LayersIcon
 } from 'lucide-react';
 import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress, getUserProgress, getTopicProgress, getLessonPlanDetails, getLessonModules, getLessonPlans, analyzeQuizResults } from '@/services/api';
 import { toast } from 'sonner';
@@ -305,12 +322,27 @@ const HierarchicalLessonPlans: React.FC<HierarchicalLessonPlansProps> = ({ plans
     return isCompleted && stepNumber > highest ? stepNumber : highest;
   }, 0);
   
+  // Function to get status label and color
+  const getStatusInfo = (progress: number = 0) => {
+    if (progress >= 100) {
+      return { label: 'Completed', color: 'text-green-400 bg-green-900/30' };
+    } else if (progress > 0) {
+      return { label: 'In Progress', color: 'text-blue-400 bg-blue-900/30' };
+    } else {
+      return { label: 'Not Started', color: 'text-gray-400 bg-gray-800/30' };
+    }
+  };
+  
   return (
     <div className="space-y-4 max-w-3xl ml-0">
       {sortedPlans.map((plan) => {
         const stepNumber = getStepNumber(plan);
         // A lesson is locked if its step number is more than 1 ahead of the highest completed step
         const isLocked = stepNumber > highestCompletedStep + 1;
+        const progress = plan.progress || 0;
+        const { label, color } = getStatusInfo(progress);
+        const completedModules = plan.completed_modules || 0;
+        const totalModules = plan.modules_count || 0;
         
         return (
           <motion.div
@@ -318,10 +350,18 @@ const HierarchicalLessonPlans: React.FC<HierarchicalLessonPlansProps> = ({ plans
             whileHover={isLocked ? {} : { x: 5 }}
             whileTap={isLocked ? {} : { scale: 0.98 }}
             onClick={() => !isLocked && onSelectPlan(plan)}
-            className={`bg-white/5 rounded-lg p-4 ${isLocked ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10'} transition`}
+            className={`bg-white/5 rounded-lg p-4 relative ${isLocked ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:bg-white/10'} transition`}
           >
-            <div className="flex items-center gap-3">
-              <div className={`${isLocked ? 'text-gray-500' : 'text-[#2E5BFF]'}`}>
+            {/* Progress bar at the bottom of the card */}
+            {progress > 0 && !isLocked && (
+              <div 
+                className="absolute bottom-0 left-0 h-1.5 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-b-lg" 
+                style={{ width: `${progress}%` }}
+              ></div>
+            )}
+            
+            <div className="flex items-start gap-3">
+              <div className={`mt-1 ${isLocked ? 'text-gray-500' : 'text-[#2E5BFF]'}`}>
                 {isLocked ? (
                   <Lock className="h-5 w-5" />
                 ) : (
@@ -329,37 +369,253 @@ const HierarchicalLessonPlans: React.FC<HierarchicalLessonPlansProps> = ({ plans
                 )}
               </div>
               <div className="flex-1">
-                <h3 className={`font-medium ${isLocked ? 'text-gray-400' : 'text-white'}`}>
-                  {plan.title}
-                  {isLocked && <span className="ml-2 text-xs text-amber-400">(Locked)</span>}
-                </h3>
-                <p className="text-sm text-gray-400 line-clamp-2">{plan.description}</p>
-                <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                  <span>{plan.modules_count} modules</span>
-                  <span>{plan.estimated_minutes || 30} min</span>
+                <div className="flex justify-between">
+                  <h3 className={`font-medium ${isLocked ? 'text-gray-400' : 'text-white'}`}>
+                    {plan.title}
+                    {isLocked && <span className="ml-2 text-xs text-amber-400">(Locked)</span>}
+                  </h3>
+                  
+                  {/* Status label */}
+                  {!isLocked && (
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${color}`}>
+                      {label}
+                    </span>
+                  )}
+                </div>
+                
+                <p className="text-sm text-gray-400 line-clamp-2 mt-1">{plan.description}</p>
+                
+                <div className="flex items-center flex-wrap gap-x-4 gap-y-2 mt-3 text-xs">
+                  {/* Module completion indicator */}
+                  <div className="flex items-center gap-1 text-gray-300">
+                    <LayersIcon className="h-3.5 w-3.5 text-[#2E5BFF]" />
+                    <span>
+                      {completedModules}/{totalModules} modules
+                    </span>
+                  </div>
+                  
+                  {/* Time indicator */}
+                  <span className="flex items-center gap-1 text-gray-300">
+                    <Clock className="h-3.5 w-3.5 text-[#2E5BFF]" />
+                    <span>{plan.estimated_minutes || 30} min</span>
+                  </span>
+                  
+                  {/* Progress indicator with percentage */}
                   {plan.progress !== undefined && (
-                    <div className="flex items-center gap-1">
-                      <span>Progress:</span>
-                      <div className="w-16 h-1.5 bg-white/10 rounded-full">
-                        <div 
-                          className={`h-1.5 ${isLocked ? 'bg-gray-500' : 'bg-[#2E5BFF]'} rounded-full`}
-                          style={{ width: `${plan.progress}%` }}
-                        ></div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-300">Progress:</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-1.5 ${isLocked ? 'bg-gray-500' : 'bg-gradient-to-r from-blue-500 to-indigo-600'} rounded-full`}
+                            style={{ width: `${plan.progress}%` }}
+                          ></div>
+                        </div>
+                        <span className={isLocked ? 'text-gray-500' : 'text-blue-400'}>
+                          {plan.progress}%
+                        </span>
                       </div>
                     </div>
                   )}
                 </div>
+                
                 {isLocked && (
-                  <div className="mt-2 text-xs text-amber-400">
+                  <div className="mt-2 text-xs text-amber-400 flex items-center">
+                    <AlertCircle className="h-3.5 w-3.5 mr-1.5" />
                     Complete previous lessons to unlock
                   </div>
                 )}
               </div>
-              <ChevronRight className={`h-5 w-5 ${isLocked ? 'text-gray-500' : 'text-gray-400'}`} />
+              <ChevronRight className={`h-5 w-5 mt-1 ${isLocked ? 'text-gray-500' : 'text-gray-400'}`} />
             </div>
           </motion.div>
         );
       })}
+    </div>
+  );
+};
+
+// Add this ProgressBreakdown component before the SoloRoomPage component
+const ProgressBreakdown: React.FC<{ 
+  progressData: ProgressData; 
+  totalProgress: number;
+  label?: string;
+  className?: string;
+}> = ({ progressData, totalProgress, label, className }) => {
+  return (
+    <div className={`bg-white/5 rounded-lg p-4 ${className || ''}`}>
+      <h3 className="text-lg font-semibold mb-3 flex items-center">
+        <BarChart className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+        {label || 'Learning Progress'}
+      </h3>
+      
+      <div className="space-y-3">
+        {/* Chat Interactions */}
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-gray-300">Chat Learning</span>
+            <span className="text-gray-300 font-medium">{progressData.interaction}/30</span>
+          </div>
+          <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-blue-500 rounded-full"
+              style={{ width: `${(progressData.interaction / 30) * 100}%` }}
+            ></div>
+          </div>
+        </div>
+        
+        {/* Code Execution */}
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-gray-300">Coding Practice</span>
+            <span className="text-gray-300 font-medium">{progressData.code_execution}/40</span>
+          </div>
+          <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-green-500 rounded-full"
+              style={{ width: `${(progressData.code_execution / 40) * 100}%` }}
+            ></div>
+          </div>
+        </div>
+        
+        {/* Knowledge Check */}
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-gray-300">Quiz Mastery</span>
+            <span className="text-gray-300 font-medium">{progressData.knowledge_check}/30</span>
+          </div>
+          <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-purple-500 rounded-full"
+              style={{ width: `${(progressData.knowledge_check / 30) * 100}%` }}
+            ></div>
+          </div>
+        </div>
+        
+        {/* Total Progress */}
+        <div>
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-white font-medium">Total Progress</span>
+            <span className="text-white font-medium">{totalProgress}%</span>
+          </div>
+          <div className="h-3 bg-white/10 rounded-full overflow-hidden">
+            <motion.div 
+              className="h-full bg-gradient-to-r from-blue-500 via-green-500 to-purple-500 rounded-full"
+              style={{ width: `${totalProgress}%` }}
+              initial={{ width: 0 }}
+              animate={{ width: `${totalProgress}%` }}
+              transition={{ duration: 0.5, ease: "easeOut" }}
+            ></motion.div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Progress-based recommendations */}
+      {totalProgress >= 30 && progressData.knowledge_check < 10 && (
+        <div className="mt-4 text-sm bg-blue-900/20 p-3 rounded-lg flex items-center">
+          <Lightbulb className="h-4 w-4 mr-2 text-blue-400 flex-shrink-0" />
+          <span>Take a quiz to boost your progress and test your knowledge!</span>
+        </div>
+      )}
+      
+      {totalProgress >= 50 && progressData.code_execution < 20 && (
+        <div className="mt-4 text-sm bg-green-900/20 p-3 rounded-lg flex items-center">
+          <Code className="h-4 w-4 mr-2 text-green-400 flex-shrink-0" />
+          <span>Try writing some code to practice what you've learned.</span>
+        </div>
+      )}
+      
+      {totalProgress >= 80 && (
+        <div className="mt-4 text-sm bg-purple-900/20 p-3 rounded-lg flex items-center">
+          <Award className="h-4 w-4 mr-2 text-purple-400 flex-shrink-0" />
+          <span>Almost there! Complete all lessons to master this topic.</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Add this ModuleList component to display modules with progress
+const ModuleList: React.FC<{
+  modules: any[];
+  activeLessonPlan: any;
+  activeModuleId: number;
+  onSelectModule: (module: any) => void;
+}> = ({ modules, activeLessonPlan, activeModuleId, onSelectModule }) => {
+  if (!modules || modules.length === 0) {
+    return (
+      <div className="bg-white/5 rounded-lg p-4 text-center">
+        <p className="text-gray-400">No modules available for this lesson plan.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white/5 rounded-lg p-4">
+      <h3 className="text-lg font-semibold mb-3 flex items-center">
+        <BookOpen className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+        Modules in {activeLessonPlan?.title || 'This Lesson'}
+      </h3>
+      
+      <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+        {modules.map((module) => {
+          // Calculate progress based on module data
+          const progress = module.progress || 0;
+          const isCompleted = progress >= 100;
+          const isActive = module.id === activeModuleId;
+          
+          return (
+            <div 
+              key={module.id}
+              onClick={() => onSelectModule(module)}
+              className={`border border-white/10 rounded-lg p-3 cursor-pointer relative 
+                ${isActive ? 'bg-white/10 border-l-4 border-l-[#2E5BFF]' : 'hover:bg-white/5'}
+                ${isCompleted ? 'border-green-500/30' : ''}`}
+            >
+              {/* Progress bar */}
+              {progress > 0 && (
+                <div 
+                  className="absolute bottom-0 left-0 h-1 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-b-lg" 
+                  style={{ width: `${progress}%` }}
+                ></div>
+              )}
+              
+              <div className="flex justify-between items-center">
+                <div>
+                  <div className="flex items-center">
+                    <span 
+                      className={`inline-flex items-center justify-center h-5 w-5 rounded-full text-xs font-medium mr-2
+                        ${isActive ? 'bg-[#2E5BFF] text-white' : 'bg-[#2E5BFF]/20 text-[#2E5BFF]'}`}
+                    >
+                      {module.order_index + 1}
+                    </span>
+                    <h4 className="font-medium text-white">
+                      {module.title}
+                      {isActive && (
+                        <span className="ml-2 text-xs text-blue-400 bg-blue-900/30 px-2 py-0.5 rounded-full">
+                          Current
+                        </span>
+                      )}
+                    </h4>
+                  </div>
+                  <p className="text-sm text-gray-400 mt-1">{module.description || 'No description'}</p>
+                </div>
+                
+                <div className="flex flex-col items-end">
+                  {isCompleted ? (
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <span className="text-sm text-blue-400">{progress}%</span>
+                  )}
+                  {module.estimated_minutes && (
+                    <span className="text-xs text-gray-500 mt-1">{module.estimated_minutes} mins</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
@@ -922,11 +1178,27 @@ const SoloRoomPage = () => {
       // Update local state for progress data
       setProgressData(updatedProgressData);
       
-      // Update local state
+      // Update active module and lesson plan progress if applicable
+      if (activeLessonPlan && activeModule) {
+        // Update module progress
+        const updatedModule = {
+          ...activeModule,
+          progress: roundedProgress
+        };
+        setActiveModule(updatedModule);
+        
+        // Update lesson plan's module progress
+        updateLessonPlanProgress(activeLessonPlan.id, activeModule.id, roundedProgress);
+      }
+      
+      // Update local state for selected topic
       setSelectedTopic({
         ...selectedTopic,
         progress: roundedProgress
       });
+      
+      // Update overall topic progress based on lesson progress
+      updateTopicProgressFromLessons(selectedTopic.id);
       
       // Check if user has reached a quiz threshold
       await checkForQuizThreshold(roundedProgress, activeModule?.id);
@@ -953,6 +1225,104 @@ const SoloRoomPage = () => {
       } else {
         toast.error("Failed to update progress. Please try again.");
       }
+    }
+  };
+  
+  // Add this new function to update lesson plan progress
+  const updateLessonPlanProgress = (lessonPlanId: number, moduleId: number, moduleProgress: number) => {
+    // Create a copy of the topic lesson plans
+    const updatedTopicLessonPlans = { ...topicLessonPlans };
+    
+    // Find the topic that contains this lesson plan
+    for (const topicId in updatedTopicLessonPlans) {
+      const plans = updatedTopicLessonPlans[topicId];
+      const planIndex = plans.findIndex(plan => plan.id === lessonPlanId);
+      
+      if (planIndex !== -1) {
+        // Update the progress of the specific module
+        if (!plans[planIndex].modules) {
+          plans[planIndex].modules = [];
+        }
+        
+        // Find or create the module entry
+        const moduleIndex = plans[planIndex].modules.findIndex((m: any) => m.id === moduleId);
+        if (moduleIndex !== -1) {
+          plans[planIndex].modules[moduleIndex].progress = moduleProgress;
+        } else {
+          plans[planIndex].modules.push({ id: moduleId, progress: moduleProgress });
+        }
+        
+        // Calculate overall lesson plan progress by averaging the progress of all modules
+        if (plans[planIndex].modules.length > 0) {
+          const totalModuleProgress = plans[planIndex].modules.reduce(
+            (sum: number, module: any) => sum + (module.progress || 0), 
+            0
+          );
+          plans[planIndex].progress = Math.round(totalModuleProgress / plans[planIndex].modules.length);
+        }
+        
+        // Update state
+        setTopicLessonPlans(updatedTopicLessonPlans);
+        
+        // If this is the active lesson plan, update its state too
+        if (activeLessonPlan && activeLessonPlan.id === lessonPlanId) {
+          setActiveLessonPlan({
+            ...activeLessonPlan,
+            progress: plans[planIndex].progress
+          });
+        }
+        
+        break;
+      }
+    }
+  };
+  
+  // Add this new function to calculate topic progress from lesson progress
+  const updateTopicProgressFromLessons = (topicId: number) => {
+    if (!topicId || !topicLessonPlans[topicId]) return;
+    
+    const plans = topicLessonPlans[topicId];
+    
+    // Calculate the total progress across all lesson plans
+    const totalLessonPlans = plans.length;
+    if (totalLessonPlans === 0) return;
+    
+    // Sum up progress from all lesson plans
+    let totalProgress = 0;
+    for (const plan of plans) {
+      totalProgress += plan.progress || 0;
+    }
+    
+    // Calculate average progress (Topic Progress = Sum of lesson progress percentages ÷ number of lessons)
+    const averageProgress = Math.round(totalProgress / totalLessonPlans);
+    
+    console.log(`Topic ${topicId} progress updated: ${averageProgress}% (${totalProgress}/${totalLessonPlans} lessons)`);
+    
+    // Update the topic's progress in the topics array
+    const updatedTopics = topics.map(topic => 
+      topic.id === topicId ? { ...topic, progress: averageProgress } : topic
+    );
+    
+    // Update topics state
+    setTopics(updatedTopics);
+    
+    // If this is the selected topic, update its state too
+    if (selectedTopic && selectedTopic.id === topicId) {
+      setSelectedTopic({
+        ...selectedTopic,
+        progress: averageProgress
+      });
+    }
+    
+    // Also persist this to the backend
+    try {
+      updateProgress({
+        topic_id: topicId,
+        progress_percentage: averageProgress,
+        status: averageProgress >= 100 ? 'completed' : averageProgress > 0 ? 'in_progress' : 'not_started'
+      });
+    } catch (error) {
+      console.error("Error updating topic progress in backend:", error);
     }
   };
 
@@ -1780,6 +2150,16 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
     }
   };
 
+  // Add this function to handle module selection
+  const handleModuleSelect = (module: any) => {
+    setActiveModule(module);
+    
+    // If we're not in the chat tab, switch to it
+    if (activeTab !== 'chat') {
+      setActiveTab('chat');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header with improved title that emphasizes AI tutoring */}
@@ -1953,30 +2333,24 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                   )}
                 </div>
                 
-                {/* Message header - show lesson context if available */}
-                {/* Removed redundant lesson plan/module header per user request 
+                {/* Add Progress Breakdown right after the title */}
+                {selectedTopic && (
+                  <ProgressBreakdown 
+                    progressData={progressData}
+                    totalProgress={selectedTopic.progress || 0}
+                    className="mb-4"
+                  />
+                )}
+                
+                {/* Add the ModuleList component here */}
                 {activeLessonPlan && activeModule && (
-                  <Card className="bg-white/5 border-[#2E5BFF]/20 text-white mb-2">
-                    <div className="flex items-center justify-between p-2">
-                      <div className="flex items-center space-x-1 text-xs">
-                        <BookOpen className="h-3 w-3 mr-1 text-[#2E5BFF]" />
-                        <span className="font-medium text-[#2E5BFF]">{activeLessonPlan.title}</span>
-                        <ChevronRight className="h-3 w-3 mx-1 text-gray-500" />
-                        <span className="text-gray-400">{activeModule.title}</span>
-                      </div>
-                      <Link href={`/dashboard/lesson-plans/${activeLessonPlan.id}/${activeModule.id}`}>
-                        <Button 
-                          variant="ghost" 
-                          size="sm"
-                          className="h-6 text-xs text-[#2E5BFF] hover:text-white hover:bg-[#2E5BFF]/20 px-2 py-0"
-                        >
-                          <ScrollText className="h-3 w-3 mr-1" />
-                          View Full
-                        </Button>
-                      </Link>
-                    </div>
-                  </Card>
-                )} */}
+                  <ModuleList 
+                    modules={activeLessonPlan.modules || []}
+                    activeLessonPlan={activeLessonPlan}
+                    activeModuleId={activeModule.id}
+                    onSelectModule={handleModuleSelect}
+                  />
+                )}
                 
                 <div className="bg-white/5 rounded-lg p-4 overflow-y-auto mb-4" style={{ height: '55vh' }}>
                   <div className="space-y-4">
