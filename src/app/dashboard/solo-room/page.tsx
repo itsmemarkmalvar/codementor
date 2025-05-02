@@ -62,7 +62,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Layers as LayersIcon
+  Layers as LayersIcon,
+  PenLine,
+  Brackets,
+  Bug,
+  MoreHorizontal
 } from 'lucide-react';
 import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress, getUserProgress, getTopicProgress, getLessonPlanDetails, getLessonModules, getLessonPlans, analyzeQuizResults } from '@/services/api';
 import { toast } from 'sonner';
@@ -81,12 +85,14 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import Editor from "@monaco-editor/react";
 import styles from './SoloRoom.module.css';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import axios from 'axios';
 import { cn } from '@/lib/utils';
 import { DiJava as JavaIcon, DiPython as PythonIcon } from "react-icons/di";
+import { FiMessageSquare } from 'react-icons/fi';
 
 interface Message {
   id: number;
@@ -638,6 +644,24 @@ const SoloRoomPage = () => {
   const [allLessonPlans, setAllLessonPlans] = useState<LessonPlan[]>([]);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
+  
+  // Code editor settings
+  const [editorTheme, setEditorTheme] = useState<string>("vs-dark");
+  const [editorLanguage, setEditorLanguage] = useState<string>("java");
+  const [isFormatting, setIsFormatting] = useState<boolean>(false);
+  const [breakpoints, setBreakpoints] = useState<number[]>([]);
+  const [isDebugging, setIsDebugging] = useState<boolean>(false);
+  const [debugStep, setDebugStep] = useState<number>(0);
+  const [editorOptions, setEditorOptions] = useState({
+    minimap: { enabled: true },
+    scrollBeyondLastLine: false,
+    fontFamily: 'JetBrains Mono, monospace',
+    fontSize: 14,
+    lineHeight: 1.5,
+    automaticLayout: true,
+    formatOnPaste: true,
+    formatOnType: true
+  });
   
   // Progress tracking state
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
@@ -1668,24 +1692,151 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
 
   // Helper function to calculate code complexity
   const calculateCodeComplexity = (code: string) => {
-    let complexity = 0;
+    // Very simple complexity calculation - counts loops, conditionals, etc.
+    const lines = code.split('\n').length;
+    const loops = (code.match(/for\s*\(/g) || []).length + (code.match(/while\s*\(/g) || []).length;
+    const conditionals = (code.match(/if\s*\(/g) || []).length;
+    const methods = (code.match(/\s\w+\s*\([^)]*\)\s*{/g) || []).length;
     
-    // More lines = more complex
-    const lineCount = code.split('\n').length;
-    complexity += Math.min(lineCount / 10, 2);
+    let complexity = 1; // Base complexity
     
-    // Check for classes
-    if (code.includes('class ')) {
-      complexity += 1;
+    // Adjust complexity based on these factors
+    if (lines > 50) complexity += 2;
+    else if (lines > 20) complexity += 1;
+    
+    complexity += Math.min(loops, 3); // Max 3 points for loops
+    complexity += Math.min(conditionals, 2); // Max 2 points for conditionals
+    complexity += Math.min(methods, 2); // Max 2 points for methods
+    
+    return Math.min(complexity, 8); // Cap at 8
+  };
+  
+  // Format code using the Monaco editor's built-in formatter
+  const formatCode = () => {
+    setIsFormatting(true);
+    // Actual formatting happens through Monaco's formatDocument command
+    // This is handled in the editorDidMount function
+    setTimeout(() => setIsFormatting(false), 500);
+    toast.success("Code formatted");
+  };
+  
+  // Handle editor initialization
+  const handleEditorDidMount = (editor: any, monaco: any) => {
+    // Store references if needed for advanced features
+    
+    // Setup auto-completion
+    monaco.languages.registerCompletionItemProvider('java', {
+      provideCompletionItems: (model: any, position: any) => {
+        const suggestions = [
+          {
+            label: 'sout',
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: 'System.out.println(${1:});',
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            documentation: 'Print to standard output'
+          },
+          {
+            label: 'fori',
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: 'for (int ${1:i} = 0; ${1:i} < ${2:length}; ${1:i}++) {\n\t${3:}\n}',
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            documentation: 'For loop with index'
+          },
+          {
+            label: 'psvm',
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: 'public static void main(String[] args) {\n\t${1:}\n}',
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            documentation: 'Public static void main method'
+          },
+          {
+            label: 'trycatch',
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: 'try {\n\t${1:}\n} catch (${2:Exception} e) {\n\t${3:e.printStackTrace();}\n}',
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            documentation: 'Try-catch block'
+          }
+        ];
+        
+        // Add common Java classes and methods
+        ['String', 'Integer', 'Boolean', 'ArrayList', 'HashMap', 'List', 'Map', 'Math'].forEach(className => {
+          suggestions.push({
+            label: className,
+            kind: monaco.languages.CompletionItemKind.Class,
+            insertText: className,
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            documentation: `Java ${className} class`
+          });
+        });
+        
+        return { suggestions };
+      }
+    });
+    
+    // Setup command for formatting
+    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
+      editor.getAction('editor.action.formatDocument').run();
+    });
+  };
+  
+  // Add or remove a breakpoint for debugging visualization
+  const toggleBreakpoint = (lineNumber: number) => {
+    setBreakpoints(prev => 
+      prev.includes(lineNumber) 
+        ? prev.filter(bp => bp !== lineNumber) 
+        : [...prev, lineNumber]
+    );
+  };
+  
+  // Simulate a basic debugging session
+  const startDebugging = () => {
+    if (breakpoints.length === 0) {
+      toast.warning("Add at least one breakpoint to start debugging");
+      return;
     }
     
-    // Check for methods
-    const methodMatches = code.match(/\w+\s*\([^)]*\)\s*{/g);
-    if (methodMatches) {
-      complexity += Math.min(methodMatches.length, 2);
-    }
+    setIsDebugging(true);
+    setDebugStep(0);
     
-    return complexity;
+    // This would be replaced with actual step-by-step execution
+    // For now, we're just simulating the UI experience
+    toast.success("Debug mode started. Use the debug controls to step through code.");
+  };
+  
+  // Stop the debugging session
+  const stopDebugging = () => {
+    setIsDebugging(false);
+    setDebugStep(0);
+    
+    toast.info("Debug session ended");
+  };
+  
+  // Step forward in the debug session
+  const stepDebug = () => {
+    if (!isDebugging) return;
+    
+    // Simulate stepping through code
+    setDebugStep(prev => {
+      const next = prev + 1;
+      
+      // Check if we've reached the end of debugging
+      if (next >= breakpoints.length) {
+        stopDebugging();
+        return 0;
+      }
+      
+      return next;
+    });
+  };
+  
+  // Customize editor settings
+  const updateEditorSettings = (setting: string, value: any) => {
+    setEditorOptions(prev => ({
+      ...prev,
+      [setting]: value
+    }));
+    
+    toast.success(`Editor setting updated: ${setting}`);
   };
 
   const handleLessonPlanSelect = async (lessonPlan: LessonPlan) => {
@@ -2357,8 +2508,8 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                     {messages.length === 0 && (
                       <div className="text-center text-gray-400 py-8">
                         <Bot className="h-12 w-12 mx-auto mb-3 text-[#2E5BFF]" />
-                        <p>Start chatting with your Gemini-powered AI tutor to learn Java programming</p>
-                        <p className="text-xs mt-2">Powered by Google's Gemini AI</p>
+                        <p>Start chatting with your AI-powered tutor to learn Java programming</p>
+                        <p className="text-xs mt-2">Powered by Together AI</p>
                       </div>
                     )}
                     {messages.map((message) => (
@@ -2464,37 +2615,123 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                   <Code className="h-5 w-5 mr-2 text-[#2E5BFF]" />
                   Code Editor
                 </h2>
-                <div className="bg-white/5 rounded-lg p-4 overflow-hidden flex flex-col">
-                  <div className="font-mono text-sm overflow-y-auto">
-                    <textarea
-                      value={codeInput}
-                      onChange={(e) => setCodeInput(e.target.value)}
-                      className="w-full h-[25vh] bg-[#1A2E42]/80 text-gray-300 p-4 rounded-lg font-mono text-sm resize-none focus:outline-none focus:ring-1 focus:ring-[#2E5BFF]"
-                      placeholder="// Write your Java code here"
-                    />
+                <div className="bg-white/5 rounded-lg p-4 overflow-hidden flex flex-col space-y-4">
+                  {/* Editor controls */}
+                  <div className="flex justify-between items-center">
+                    <div className="flex space-x-3">
+                      <select
+                        value={editorTheme}
+                        onChange={(e) => setEditorTheme(e.target.value)}
+                        className="bg-white/10 border-0 rounded text-sm text-gray-300 focus:ring-[#2E5BFF] p-1"
+                      >
+                        <option value="vs-dark">Dark Theme</option>
+                        <option value="vs-light">Light Theme</option>
+                        <option value="hc-black">High Contrast</option>
+                      </select>
+                      
+                      <button
+                        onClick={formatCode}
+                        disabled={isFormatting}
+                        className="bg-white/10 text-gray-300 px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-white/20 transition"
+                        title="Format Code (Alt+Shift+F)"
+                      >
+                        <PenLine className="h-3.5 w-3.5" />
+                        <span>Format</span>
+                      </button>
+                    </div>
                     
-                    {/* Code output */}
-                    {codeOutput && (
-                      <div className="mt-4 bg-[#1a1a1a] rounded-lg p-4 text-sm">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-gray-400">Output (executed in {codeOutput.executionTime}ms)</span>
-                        </div>
-                        {codeOutput.stdout && (
-                          <div className="mb-2">
-                            <p className="text-green-400 mb-1">Standard Output:</p>
-                            <pre className="text-white whitespace-pre-wrap">{codeOutput.stdout}</pre>
-                          </div>
-                        )}
-                        {codeOutput.stderr && (
-                          <div>
-                            <p className="text-red-400 mb-1">Standard Error:</p>
-                            <pre className="text-white whitespace-pre-wrap">{codeOutput.stderr}</pre>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    {/* Debug controls */}
+                    <div className="flex space-x-3">
+                      {isDebugging ? (
+                        <>
+                          <button
+                            onClick={stepDebug}
+                            className="bg-blue-600/50 text-white px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-blue-600/80 transition"
+                          >
+                            <ChevronRight className="h-3.5 w-3.5" />
+                            <span>Step</span>
+                          </button>
+                          <button
+                            onClick={stopDebugging}
+                            className="bg-red-600/50 text-white px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-red-600/80 transition"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            <span>Stop</span>
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={startDebugging}
+                          className="bg-white/10 text-gray-300 px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-white/20 transition"
+                          title="Debug Mode"
+                        >
+                          <Bug className="h-3.5 w-3.5" />
+                          <span>Debug</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="mt-4 flex items-center justify-between">
+                  
+                  {/* Monaco Editor */}
+                  <div className="h-[30vh]">
+                    <Editor
+                      height="100%"
+                      width="100%"
+                      language={editorLanguage}
+                      theme={editorTheme}
+                      value={codeInput}
+                      onChange={(value) => setCodeInput(value || '')}
+                      options={editorOptions}
+                      onMount={handleEditorDidMount}
+                      beforeMount={(monaco) => {
+                        // Optional: Configure Monaco before mounting
+                        monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+                          noSemanticValidation: true,
+                          noSyntaxValidation: false
+                        });
+                      }}
+                      loading={<div className="h-full w-full flex items-center justify-center bg-[#1A2E42]/80">
+                        <Loader className="h-5 w-5 animate-spin text-[#2E5BFF]" />
+                      </div>}
+                    />
+                  </div>
+                  
+                  {/* Debug info panel - Show when debugging */}
+                  {isDebugging && (
+                    <div className="bg-[#1A2E42]/80 rounded p-2 text-xs text-gray-300">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold">Debug Info</span>
+                        <span className="text-blue-400">Breakpoints: {breakpoints.join(', ')}</span>
+                      </div>
+                      <div className="mt-1">
+                        <span>Current Step: {debugStep + 1}/{breakpoints.length}</span>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Code output */}
+                  {codeOutput && (
+                    <div className="bg-[#1a1a1a] rounded-lg p-4 text-sm">
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="text-gray-400">Output (executed in {codeOutput.executionTime}ms)</span>
+                      </div>
+                      {codeOutput.stdout && (
+                        <div className="mb-2">
+                          <p className="text-green-400 mb-1">Standard Output:</p>
+                          <pre className="text-white whitespace-pre-wrap">{codeOutput.stdout}</pre>
+                        </div>
+                      )}
+                      {codeOutput.stderr && (
+                        <div>
+                          <p className="text-red-400 mb-1">Standard Error:</p>
+                          <pre className="text-white whitespace-pre-wrap">{codeOutput.stderr}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Action buttons */}
+                  <div className="flex space-x-3">
                     <button
                       onClick={handleRunCode}
                       className="bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition flex items-center space-x-2"
@@ -2551,17 +2788,8 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                       className="bg-white/10 text-white px-4 py-2 rounded-lg hover:bg-white/20 transition flex items-center space-x-2"
                       disabled={isLoading}
                     >
-                      {isLoading ? (
-                        <>
-                          <Loader className="h-5 w-5 animate-spin" />
-                          <span>Analyzing...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Zap className="h-5 w-5" />
-                          <span>Get Feedback</span>
-                        </>
-                      )}
+                      <Sparkles className="h-5 w-5" />
+                      <span>Get AI Feedback</span>
                     </button>
                   </div>
                 </div>
@@ -3207,7 +3435,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                     style={{ color: 'white', backgroundColor: '#1a2e42' }}
                   >
                     <option value="basic" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Basic</option>
-                    <option value="intermediate" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Intermediate</option>
+                    <option value="moderate" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Moderate</option>
                     <option value="detailed" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Detailed</option>
                   </select>
                 </div>
@@ -3224,6 +3452,115 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                     <option value="medium" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Medium</option>
                     <option value="hard" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Hard</option>
                   </select>
+                </div>
+              </div>
+              
+              {/* Code Editor Settings */}
+              <h2 className="text-xl font-semibold mt-6 mb-4 flex items-center">
+                <Code className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                Code Editor Settings
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium mb-2">Editor Theme</label>
+                  <select 
+                    value={editorTheme}
+                    onChange={(e) => setEditorTheme(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
+                    style={{ color: 'white', backgroundColor: '#1a2e42' }}
+                  >
+                    <option value="vs-dark" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Dark Theme</option>
+                    <option value="vs-light" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Light Theme</option>
+                    <option value="hc-black" style={{ color: 'white', backgroundColor: '#1a2e42' }}>High Contrast</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Font Size</label>
+                  <div className="flex items-center">
+                    <input 
+                      type="range" 
+                      min="12" 
+                      max="24" 
+                      value={editorOptions.fontSize}
+                      onChange={(e) => updateEditorSettings('fontSize', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                    <span className="ml-2 w-8 text-center">{editorOptions.fontSize}</span>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Show Minimap</label>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => updateEditorSettings('minimap', { enabled: true })}
+                      className={`px-3 py-1 rounded-lg ${
+                        editorOptions.minimap.enabled 
+                          ? 'bg-[#2E5BFF] text-white' 
+                          : 'bg-white/5 text-gray-400'
+                      }`}
+                    >
+                      Yes
+                    </button>
+                    <button
+                      onClick={() => updateEditorSettings('minimap', { enabled: false })}
+                      className={`px-3 py-1 rounded-lg ${
+                        !editorOptions.minimap.enabled 
+                          ? 'bg-[#2E5BFF] text-white' 
+                          : 'bg-white/5 text-gray-400'
+                      }`}
+                    >
+                      No
+                    </button>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-2">Auto Format</label>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => {
+                        updateEditorSettings('formatOnPaste', true);
+                        updateEditorSettings('formatOnType', true);
+                      }}
+                      className={`px-3 py-1 rounded-lg ${
+                        editorOptions.formatOnPaste && editorOptions.formatOnType
+                          ? 'bg-[#2E5BFF] text-white' 
+                          : 'bg-white/5 text-gray-400'
+                      }`}
+                    >
+                      On
+                    </button>
+                    <button
+                      onClick={() => {
+                        updateEditorSettings('formatOnPaste', false);
+                        updateEditorSettings('formatOnType', false);
+                      }}
+                      className={`px-3 py-1 rounded-lg ${
+                        !editorOptions.formatOnPaste && !editorOptions.formatOnType
+                          ? 'bg-[#2E5BFF] text-white' 
+                          : 'bg-white/5 text-gray-400'
+                      }`}
+                    >
+                      Off
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="col-span-2">
+                  <div className="bg-[#1a2e42]/50 p-4 rounded-lg">
+                    <h4 className="text-md font-medium mb-2 flex items-center">
+                      <HelpCircle className="h-4 w-4 mr-2 text-[#2E5BFF]" />
+                      Editor Keyboard Shortcuts
+                    </h4>
+                    <ul className="text-sm space-y-1 text-gray-300">
+                      <li><span className="text-white font-mono">Alt+Shift+F</span> - Format document</li>
+                      <li><span className="text-white font-mono">Ctrl+Space</span> - Trigger suggestions</li>
+                      <li><span className="text-white font-mono">F11</span> - Toggle fullscreen</li>
+                      <li><span className="text-white font-mono">Ctrl+/</span> - Toggle line comment</li>
+                    </ul>
+                  </div>
                 </div>
               </div>
             </section>
