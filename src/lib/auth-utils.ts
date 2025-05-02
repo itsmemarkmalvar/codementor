@@ -36,6 +36,13 @@ export const authHeader = (): Record<string, string> => {
   return {};
 };
 
+// For debugging auth issues - adds a test token
+export const setTestToken = (): void => {
+  const testToken = 'debugging_test_token_12345';
+  console.log('Setting test token:', testToken);
+  setToken(testToken);
+};
+
 export default {
   getToken,
   setToken,

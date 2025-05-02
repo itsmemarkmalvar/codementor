@@ -68,7 +68,7 @@ import {
   Bug,
   MoreHorizontal
 } from 'lucide-react';
-import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress, getUserProgress, getTopicProgress, getLessonPlanDetails, getLessonModules, getLessonPlans, analyzeQuizResults } from '@/services/api';
+import { getTutorResponse, executeJavaCode, getTopics, getTopicHierarchy, updateProgress, getUserProgress, getTopicProgress, getLessonPlanDetails, getLessonModules, getLessonPlans, analyzeQuizResults, executeJavaProject } from '@/services/api';
 import { toast } from 'sonner';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -93,6 +93,7 @@ import axios from 'axios';
 import { cn } from '@/lib/utils';
 import { DiJava as JavaIcon, DiPython as PythonIcon } from "react-icons/di";
 import { FiMessageSquare } from 'react-icons/fi';
+import ProjectIntegration from '@/components/ProjectIntegration';
 
 interface Message {
   id: number;
@@ -100,6 +101,25 @@ interface Message {
   sender: 'user' | 'bot' | 'ai';
   timestamp: Date;
   code?: string;  // Optional code snippet that might be included in the message
+}
+
+interface ProjectFile {
+  id: string;
+  name: string;
+  content: string;
+  path: string;
+  language: string;
+  isDirectory?: boolean;
+  children?: ProjectFile[];
+}
+
+interface Project {
+  id: string;
+  name: string;
+  files: ProjectFile[];
+  rootDirectory: ProjectFile;
+  mainFile: string; // ID of the main file to run
+  isNewUnsavedProject?: boolean;
 }
 
 interface Topic {
@@ -694,6 +714,17 @@ const SoloRoomPage = () => {
   const [quizAnalysis, setQuizAnalysis] = useState<any>(null);
   const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(false);
   
+  // Project-based learning state
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [projectFiles, setProjectFiles] = useState<ProjectFile[]>([]);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [openFileTabs, setOpenFileTabs] = useState<string[]>([]);
+  const [isFileExplorerOpen, setIsFileExplorerOpen] = useState(true);
+  const [showNewFileDialog, setShowNewFileDialog] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const [newFileParentPath, setNewFileParentPath] = useState('');
+  const [isCreatingDirectory, setIsCreatingDirectory] = useState(false);
+  
   // Sample topics data as fallback
   const defaultTopics: Topic[] = [
     { 
@@ -961,8 +992,112 @@ const SoloRoomPage = () => {
     };
 
     fetchTopics();
+    
+    // Initialize a default project for project-based learning
+    const defaultProject = createNewProject("Java Project", "Main");
+    setCurrentProject(defaultProject);
+    setProjectFiles(defaultProject.files);
+    setActiveFileId(defaultProject.mainFile);
+    setOpenFileTabs([defaultProject.mainFile]);
+    
+    // Initialize the code input with the content from the main file
+    const mainFile = defaultProject.files.find(file => file.id === defaultProject.mainFile);
+    if (mainFile) {
+      setCodeInput(mainFile.content);
+    }
   }, []);
   
+  // Update the active file content when the code editor value changes
+  useEffect(() => {
+    if (activeFileId && currentProject) {
+      setCurrentProject(prevProject => {
+        if (!prevProject) return null;
+        return updateFileInProject(prevProject, activeFileId, codeInput);
+      });
+    }
+  }, [codeInput, activeFileId]);
+  
+  // Set code input when switching files
+  useEffect(() => {
+    if (activeFileId && currentProject) {
+      const activeFile = findFileById(activeFileId, currentProject.files);
+      if (activeFile) {
+        setCodeInput(activeFile.content);
+        // Update editor language based on file type
+        if (activeFile.language) {
+          setEditorLanguage(activeFile.language);
+        }
+      }
+    }
+  }, [activeFileId, currentProject]);
+  
+  // Functions for project management
+  const handleFileSelect = (fileId: string) => {
+    if (currentProject) {
+      const file = findFileById(fileId, currentProject.files);
+      if (file && !file.isDirectory) {
+        setActiveFileId(fileId);
+        if (!openFileTabs.includes(fileId)) {
+          setOpenFileTabs([...openFileTabs, fileId]);
+        }
+      }
+    }
+  };
+  
+  const handleTabClose = (fileId: string) => {
+    const newTabs = openFileTabs.filter(id => id !== fileId);
+    setOpenFileTabs(newTabs);
+    
+    // If we closed the active file, activate another open file
+    if (activeFileId === fileId && newTabs.length > 0) {
+      setActiveFileId(newTabs[newTabs.length - 1]);
+    } else if (newTabs.length === 0 && currentProject) {
+      // If no tabs left, activate the main file
+      setActiveFileId(currentProject.mainFile);
+      setOpenFileTabs([currentProject.mainFile]);
+    }
+  };
+  
+  const handleCreateNewFile = () => {
+    if (!currentProject) return;
+    
+    const newFile = createFile(newFileParentPath, newFileName, isCreatingDirectory);
+    const updatedProject = addFileToProject(currentProject, newFile, newFileParentPath);
+    
+    setCurrentProject(updatedProject);
+    setProjectFiles(updatedProject.files);
+    
+    // Select the new file if it's not a directory
+    if (!isCreatingDirectory) {
+      handleFileSelect(newFile.id);
+    }
+    
+    // Reset the dialog
+    setShowNewFileDialog(false);
+    setNewFileName('');
+    setNewFileParentPath('/');
+    setIsCreatingDirectory(false);
+  };
+  
+  const handleDeleteFile = (fileId: string) => {
+    if (!currentProject) return;
+    
+    // Prevent deleting the main file
+    if (fileId === currentProject.mainFile) {
+      toast.error("Cannot delete the main file of the project");
+      return;
+    }
+    
+    const updatedProject = deleteFileFromProject(currentProject, fileId);
+    setCurrentProject(updatedProject);
+    setProjectFiles(updatedProject.files);
+    
+    // Remove from open tabs if needed
+    if (openFileTabs.includes(fileId)) {
+      handleTabClose(fileId);
+    }
+  };
+
   // Create function to get appropriate icon based on difficulty level
   const getDifficultyIcon = (level: string | undefined) => {
     switch(level?.toLowerCase()) {
@@ -1624,8 +1759,22 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
 
   // Enhanced code execution with improved progress tracking
   const handleRunCode = async () => {
-    if (!codeInput.trim()) {
-      toast.error('Please write some code first');
+    if (!currentProject) {
+      toast.error('No active project');
+      return;
+    }
+    
+    // For running we need to gather all files that need to be compiled
+    const filesToCompile = currentProject.files
+      .filter(file => file.language === 'java' && !file.isDirectory)
+      .map(file => ({
+        path: file.path,
+        content: file.content
+      }));
+    
+    // If no Java files found, display error
+    if (filesToCompile.length === 0) {
+      toast.error('No Java files found in the project');
       return;
     }
     
@@ -1641,8 +1790,20 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
           content: msg.text
         }));
       
-      const result = await executeJavaCode({
-        code: codeInput,
+      // Get the main file to run
+      const mainFile = findFileById(currentProject.mainFile, currentProject.files);
+      if (!mainFile) {
+        throw new Error('Main file not found');
+      }
+      
+      // Extract the class name from the main file path for execution
+      const mainClass = mainFile.path.split('/').pop()?.replace('.java', '') || 'Main';
+      
+      // Use the new multi-file project execution API
+      const result = await executeJavaProject({
+        files: filesToCompile,
+        main_class: mainClass,
+        input: '',
         session_id: currentSessionId !== null ? currentSessionId : undefined,
         topic_id: selectedTopic?.id,
         conversation_history: conversationHistory
@@ -1655,7 +1816,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
       });
       
       // Calculate code complexity to determine progress award
-      const codeComplexity = calculateCodeComplexity(codeInput);
+      const codeComplexity = calculateCodeComplexity(mainFile.content);
       
       if (result.execution.success) {
         // Successful code execution - award more substantial progress in coding category
@@ -1670,7 +1831,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
             text: result.feedback,
             sender: 'bot',
             timestamp: new Date(),
-            code: codeInput
+            code: mainFile.content
           };
           
           if (activeTab === 'chat') {
@@ -1709,6 +1870,235 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
     complexity += Math.min(methods, 2); // Max 2 points for methods
     
     return Math.min(complexity, 8); // Cap at 8
+  };
+  
+  // Project management utility functions
+  const generateUniqueId = () => {
+    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+  };
+  
+  const createNewProject = (projectName: string, mainClassName: string = "Main") => {
+    // Create a basic Java project structure
+    const mainFileId = generateUniqueId();
+    const srcDirId = generateUniqueId();
+    
+    // Create main Java file with default content
+    const mainFile: ProjectFile = {
+      id: mainFileId,
+      name: `${mainClassName}.java`,
+      content: `public class ${mainClassName} {\n    public static void main(String[] args) {\n        // Your code here\n        System.out.println("Hello, Java!");\n    }\n}`,
+      path: `/src/${mainClassName}.java`,
+      language: 'java'
+    };
+    
+    // Create src directory
+    const srcDir: ProjectFile = {
+      id: srcDirId,
+      name: 'src',
+      content: '',
+      path: '/src',
+      isDirectory: true,
+      language: '',
+      children: [mainFile]
+    };
+    
+    // Create root directory
+    const rootDir: ProjectFile = {
+      id: generateUniqueId(),
+      name: projectName,
+      content: '',
+      path: '/',
+      isDirectory: true,
+      language: '',
+      children: [srcDir]
+    };
+    
+    // Flatten the file structure for easier access
+    const flattenedFiles = flattenFileStructure(rootDir);
+    
+    // Create the project object
+    const newProject: Project = {
+      id: generateUniqueId(),
+      name: projectName,
+      files: flattenedFiles,
+      rootDirectory: rootDir,
+      mainFile: mainFileId,
+      isNewUnsavedProject: true
+    };
+    
+    return newProject;
+  };
+  
+  const flattenFileStructure = (rootDir: ProjectFile): ProjectFile[] => {
+    const result: ProjectFile[] = [rootDir];
+    
+    const traverse = (file: ProjectFile) => {
+      if (file.isDirectory && file.children) {
+        file.children.forEach(child => {
+          result.push(child);
+          if (child.isDirectory) {
+            traverse(child);
+          }
+        });
+      }
+    };
+    
+    traverse(rootDir);
+    return result;
+  };
+  
+  const findFileById = (fileId: string, files: ProjectFile[]): ProjectFile | null => {
+    return files.find(file => file.id === fileId) || null;
+  };
+  
+  const findFileByPath = (path: string, files: ProjectFile[]): ProjectFile | null => {
+    return files.find(file => file.path === path) || null;
+  };
+  
+  const createFile = (parentPath: string, fileName: string, isDirectory: boolean = false): ProjectFile => {
+    const fileExtension = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : '';
+    let language = '';
+    
+    // Determine language based on file extension
+    if (fileExtension === 'java') language = 'java';
+    else if (fileExtension === 'txt') language = 'plaintext';
+    else if (fileExtension === 'md') language = 'markdown';
+    else if (fileExtension === 'json') language = 'json';
+    else if (fileExtension === 'xml') language = 'xml';
+    else if (fileExtension === 'properties') language = 'properties';
+    
+    const newPath = parentPath === '/' 
+      ? `/${fileName}` 
+      : `${parentPath}/${fileName}`;
+    
+    return {
+      id: generateUniqueId(),
+      name: fileName,
+      content: isDirectory ? '' : getTemplateForFile(fileName),
+      path: newPath,
+      isDirectory,
+      language,
+      children: isDirectory ? [] : undefined
+    };
+  };
+  
+  const getTemplateForFile = (fileName: string): string => {
+    const fileExtension = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : '';
+    const className = fileName.includes('.') ? fileName.split('.')[0] : fileName;
+    
+    switch (fileExtension) {
+      case 'java':
+        return `public class ${className} {\n    // TODO: Add your code here\n}`;
+      case 'txt':
+        return '';
+      case 'md':
+        return `# ${className}\n\n## Description\n\nAdd your description here.\n`;
+      case 'json':
+        return '{\n    \n}';
+      case 'xml':
+        return '<?xml version="1.0" encoding="UTF-8"?>\n<root>\n    \n</root>';
+      default:
+        return '';
+    }
+  };
+  
+  const addFileToProject = (project: Project, newFile: ProjectFile, parentPath: string): Project => {
+    const updatedFiles = [...project.files];
+    
+    // Find the parent directory
+    const parentDir = findFileByPath(parentPath, updatedFiles);
+    
+    if (parentDir && parentDir.isDirectory) {
+      // Add to parent's children
+      parentDir.children = [...(parentDir.children || []), newFile];
+      
+      // Add to flattened files
+      updatedFiles.push(newFile);
+      
+      return {
+        ...project,
+        files: updatedFiles
+      };
+    }
+    
+    return project;
+  };
+  
+  const updateFileInProject = (project: Project, fileId: string, content: string): Project => {
+    const updatedFiles = project.files.map(file => 
+      file.id === fileId ? { ...file, content } : file
+    );
+    
+    return {
+      ...project,
+      files: updatedFiles
+    };
+  };
+  
+  const deleteFileFromProject = (project: Project, fileId: string): Project => {
+    const fileToDelete = findFileById(fileId, project.files);
+    
+    if (!fileToDelete) return project;
+    
+    // Find the parent directory
+    const parentPath = fileToDelete.path.substring(0, fileToDelete.path.lastIndexOf('/'));
+    const parentDir = findFileByPath(parentPath, project.files);
+    
+    const updatedFiles = project.files.filter(file => {
+      // Remove this file and all children if it's a directory
+      if (fileToDelete.isDirectory) {
+        return !file.path.startsWith(fileToDelete.path);
+      }
+      // Just remove this file
+      return file.id !== fileId;
+    });
+    
+    // Update the parent's children
+    if (parentDir && parentDir.children) {
+      parentDir.children = parentDir.children.filter(child => child.id !== fileId);
+    }
+    
+    return {
+      ...project,
+      files: updatedFiles
+    };
+  };
+  
+  const renameFileInProject = (project: Project, fileId: string, newName: string): Project => {
+    const fileToRename = findFileById(fileId, project.files);
+    
+    if (!fileToRename) return project;
+    
+    const oldPath = fileToRename.path;
+    const parentPath = oldPath.substring(0, oldPath.lastIndexOf('/'));
+    const newPath = `${parentPath}/${newName}`;
+    
+    // Update the file's path and name
+    const updatedFiles = project.files.map(file => {
+      if (file.id === fileId) {
+        return {
+          ...file,
+          name: newName,
+          path: newPath
+        };
+      }
+      
+      // Update paths of all children if this is a directory
+      if (fileToRename.isDirectory && file.path.startsWith(oldPath + '/')) {
+        const relativePath = file.path.substring(oldPath.length);
+        return {
+          ...file,
+          path: newPath + relativePath
+        };
+      }
+      
+      return file;
+    });
+    
+    return {
+      ...project,
+      files: updatedFiles
+    };
   };
   
   // Format code using the Monaco editor's built-in formatter
@@ -2311,6 +2701,294 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
     }
   };
 
+  // Add the FileExplorer component
+  interface FileExplorerProps {
+    project: Project | null;
+    activeFileId: string | null;
+    onFileSelect: (fileId: string) => void;
+    onCreateNewFile: () => void;
+    onDeleteFile: (fileId: string) => void;
+    setNewFileName: (name: string) => void;
+    setNewFileParentPath: (path: string) => void;
+    setShowNewFileDialog: (show: boolean) => void;
+    setIsCreatingDirectory: (isDir: boolean) => void;
+  }
+
+  const FileExplorer: React.FC<FileExplorerProps> = ({
+    project,
+    activeFileId,
+    onFileSelect,
+    onCreateNewFile,
+    onDeleteFile,
+    setNewFileName,
+    setNewFileParentPath,
+    setShowNewFileDialog,
+    setIsCreatingDirectory
+  }) => {
+    const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set(['/']));
+    
+    if (!project) return null;
+    
+    const handleToggleDirectory = (dirId: string) => {
+      const newExpandedDirs = new Set(expandedDirs);
+      if (newExpandedDirs.has(dirId)) {
+        newExpandedDirs.delete(dirId);
+      } else {
+        newExpandedDirs.add(dirId);
+      }
+      setExpandedDirs(newExpandedDirs);
+    };
+    
+    const getFileIcon = (file: ProjectFile) => {
+      if (file.isDirectory) {
+        return <FolderOpen className="h-4 w-4 text-yellow-500" />;
+      }
+      
+      const extension = file.name.split('.').pop()?.toLowerCase();
+      
+      switch (extension) {
+        case 'java':
+          return <FileCode className="h-4 w-4 text-orange-500" />;
+        case 'txt':
+          return <AlignLeft className="h-4 w-4 text-gray-400" />;
+        case 'md':
+          return <ScrollText className="h-4 w-4 text-blue-400" />;
+        case 'json':
+          return <Brackets className="h-4 w-4 text-green-400" />;
+        case 'xml':
+          return <Code className="h-4 w-4 text-purple-400" />;
+        default:
+          return <FileCode className="h-4 w-4 text-gray-400" />;
+      }
+    };
+    
+    const renderFileTree = (file: ProjectFile, level = 0) => {
+      const isExpanded = expandedDirs.has(file.id);
+      const isActive = activeFileId === file.id;
+      const isMainFile = project.mainFile === file.id;
+      
+      return (
+        <div key={file.id} className="select-none">
+          <div 
+            className={`flex items-center py-1 px-2 rounded-md cursor-pointer text-sm ${
+              isActive ? 'bg-white/20 text-white' : 'text-gray-300 hover:bg-white/10'
+            }`}
+            style={{ paddingLeft: `${level * 12 + 8}px` }}
+            onClick={() => file.isDirectory ? handleToggleDirectory(file.id) : onFileSelect(file.id)}
+          >
+            <div className="flex items-center flex-1 overflow-hidden">
+              {file.isDirectory && (
+                <div className="mr-1">
+                  {isExpanded ? (
+                    <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
+                  )}
+                </div>
+              )}
+              <span className="mr-2">{getFileIcon(file)}</span>
+              <span className="truncate">
+                {file.name}
+                {isMainFile && <span className="ml-1 text-xs text-blue-400">(main)</span>}
+              </span>
+            </div>
+            
+            {!file.isDirectory && !isMainFile && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteFile(file.id);
+                }}
+                className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded text-red-400 hover:text-red-500"
+                title="Delete file"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          
+          {file.isDirectory && isExpanded && file.children && (
+            <div>
+              {file.children.map(child => renderFileTree(child, level + 1))}
+            </div>
+          )}
+        </div>
+      );
+    };
+    
+    const handleNewFile = (isDirectory: boolean, parentPath: string = '/') => {
+      setIsCreatingDirectory(isDirectory);
+      setNewFileParentPath(parentPath);
+      setNewFileName('');
+      setShowNewFileDialog(true);
+    };
+    
+    return (
+      <div className="bg-white/5 rounded-lg p-3 h-full">
+        <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
+          <h3 className="text-sm font-medium flex items-center">
+            <Layers className="h-4 w-4 mr-1.5 text-[#2E5BFF]" />
+            Project Files
+          </h3>
+          <div className="flex">
+            <button
+              onClick={() => handleNewFile(false, '/')}
+              className="p-1 rounded hover:bg-white/10 text-blue-400 mr-1"
+              title="New File"
+            >
+              <FileCode className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => handleNewFile(true, '/')}
+              className="p-1 rounded hover:bg-white/10 text-yellow-400"
+              title="New Folder"
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+        
+        <div className="space-y-1 max-h-[300px] overflow-y-auto">
+          {renderFileTree(project.rootDirectory)}
+        </div>
+      </div>
+    );
+  };
+
+  // Add the FileTabs component
+  interface FileTabsProps {
+    project: Project | null;
+    openFileTabs: string[];
+    activeFileId: string | null;
+    onFileSelect: (fileId: string) => void;
+    onTabClose: (fileId: string) => void;
+  }
+
+  const FileTabs: React.FC<FileTabsProps> = ({
+    project,
+    openFileTabs,
+    activeFileId,
+    onFileSelect,
+    onTabClose
+  }) => {
+    if (!project) return null;
+    
+    return (
+      <div className="flex space-x-1 overflow-x-auto bg-[#1a1a1a] text-sm no-scrollbar border-b border-white/10">
+        {openFileTabs.map(fileId => {
+          const file = project.files.find(f => f.id === fileId);
+          if (!file) return null;
+          
+          const isActive = activeFileId === fileId;
+          
+          return (
+            <div 
+              key={fileId}
+              className={`flex items-center py-1.5 px-3 cursor-pointer group ${
+                isActive 
+                  ? 'bg-[#2a2a2a] text-white' 
+                  : 'text-gray-400 hover:bg-[#252525]'
+              }`}
+              onClick={() => onFileSelect(fileId)}
+            >
+              <div className="flex items-center">
+                {file.name === 'Main.java' ? (
+                  <FileCode className="h-3.5 w-3.5 mr-1.5 text-orange-500" />
+                ) : file.name.endsWith('.java') ? (
+                  <FileCode className="h-3.5 w-3.5 mr-1.5 text-orange-500" />
+                ) : (
+                  <FileCode className="h-3.5 w-3.5 mr-1.5 text-gray-400" />
+                )}
+                <span>{file.name}</span>
+              </div>
+              
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onTabClose(fileId);
+                }}
+                className="ml-2 text-gray-500 hover:text-gray-300"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Add the NewFileDialog component
+  interface NewFileDialogProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onCreate: () => void;
+    fileName: string;
+    setFileName: (name: string) => void;
+    isDirectory: boolean;
+  }
+
+  const NewFileDialog: React.FC<NewFileDialogProps> = ({
+    isOpen,
+    onClose,
+    onCreate,
+    fileName,
+    setFileName,
+    isDirectory
+  }) => {
+    if (!isOpen) return null;
+    
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-[#1a2e42] rounded-lg p-4 w-80">
+          <h3 className="text-lg font-medium mb-4">
+            Create New {isDirectory ? 'Folder' : 'File'}
+          </h3>
+          
+          <div className="mb-4">
+            <label className="block text-sm text-gray-400 mb-1">
+              {isDirectory ? 'Folder Name' : 'File Name'}
+            </label>
+            <input
+              type="text"
+              value={fileName}
+              onChange={(e) => setFileName(e.target.value)}
+              className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-white"
+              placeholder={isDirectory ? 'New Folder' : 'NewFile.java'}
+              autoFocus
+            />
+            
+            {!isDirectory && !fileName.includes('.') && (
+              <p className="text-xs text-amber-400 mt-1">
+                Tip: Include a file extension (e.g. .java)
+              </p>
+            )}
+          </div>
+          
+          <div className="flex justify-end space-x-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1 text-gray-300 hover:bg-white/10 rounded"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onCreate}
+              disabled={!fileName.trim()}
+              className={`px-3 py-1 rounded ${
+                fileName.trim() 
+                  ? 'bg-[#2E5BFF] text-white' 
+                  : 'bg-[#2E5BFF]/50 text-white/70 cursor-not-allowed'
+              }`}
+            >
+              Create
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header with improved title that emphasizes AI tutoring */}
@@ -2609,961 +3287,413 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                 </div>
               </section>
               
-              {/* Code Editor Section - Now below the chat */}
+              {/* Code Editor Section - Updated with multi-file project support */}
               <section className="p-4">
                 <h2 className="text-xl font-semibold mb-4 flex items-center">
                   <Code className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                  Code Editor
+                  Project-Based Code Editor
                 </h2>
-                <div className="bg-white/5 rounded-lg p-4 overflow-hidden flex flex-col space-y-4">
-                  {/* Editor controls */}
-                  <div className="flex justify-between items-center">
-                    <div className="flex space-x-3">
-                      <select
-                        value={editorTheme}
-                        onChange={(e) => setEditorTheme(e.target.value)}
-                        className="bg-white/10 border-0 rounded text-sm text-gray-300 focus:ring-[#2E5BFF] p-1"
+                
+                {/* Add the ProjectIntegration component here */}
+                <div className="mb-4">
+                  <ProjectIntegration
+                    currentProject={currentProject}
+                    setCurrentProject={setCurrentProject}
+                    setProjectFiles={setProjectFiles}
+                    setActiveFileId={setActiveFileId}
+                    setOpenFileTabs={setOpenFileTabs}
+                  />
+                </div>
+                
+                <div className="flex gap-4">
+                  {/* File explorer */}
+                  {isFileExplorerOpen && currentProject && (
+                    <div className="w-64 bg-white/5 rounded-lg p-3 h-[calc(70vh)]">
+                      <div className="flex items-center justify-between mb-3 pb-2 border-b border-white/10">
+                        <h3 className="text-sm font-medium flex items-center">
+                          <Layers className="h-4 w-4 mr-1.5 text-[#2E5BFF]" />
+                          Project Files
+                        </h3>
+                        <div className="flex space-x-1">
+                          <button
+                            onClick={() => {
+                              setNewFileParentPath("/");
+                              setNewFileName("");
+                              setIsCreatingDirectory(false);
+                              setShowNewFileDialog(true);
+                            }}
+                            className="p-1 rounded hover:bg-white/10 text-blue-400"
+                            title="New File"
+                          >
+                            <FileCode className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setNewFileParentPath("/");
+                              setNewFileName("");
+                              setIsCreatingDirectory(true);
+                              setShowNewFileDialog(true);
+                            }}
+                            className="p-1 rounded hover:bg-white/10 text-yellow-400"
+                            title="New Folder"
+                          >
+                            <FolderOpen className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1 max-h-[calc(70vh-60px)] overflow-y-auto">
+                        {currentProject.files.map(file => {
+                          if (file.path === "/") return null; // Skip root
+
+                          // Only show top-level files and directories
+                          if (file.path.split("/").filter(p => p).length === 1) {
+                            return (
+                              <div 
+                                key={file.id}
+                                className={`flex items-center py-1 px-2 rounded-md cursor-pointer text-sm ${
+                                  activeFileId === file.id ? 'bg-white/20 text-white' : 'text-gray-300 hover:bg-white/10'
+                                }`}
+                                onClick={() => {
+                                  if (file.isDirectory) {
+                                    // Toggle directory expansion logic would go here
+                                  } else {
+                                    handleFileSelect(file.id);
+                                  }
+                                }}
+                              >
+                                <div className="flex items-center flex-1 overflow-hidden">
+                                  <span className="mr-2">
+                                    {file.isDirectory ? (
+                                      <FolderOpen className="h-4 w-4 text-yellow-500" />
+                                    ) : file.name.endsWith('.java') ? (
+                                      <FileCode className="h-4 w-4 text-orange-500" />
+                                    ) : (
+                                      <FileCode className="h-4 w-4 text-gray-400" />
+                                    )}
+                                  </span>
+                                  <span className="truncate">
+                                    {file.name}
+                                    {currentProject.mainFile === file.id && (
+                                      <span className="ml-1 text-xs text-blue-400">(main)</span>
+                                    )}
+                                  </span>
+                                </div>
+                                
+                                {!file.isDirectory && currentProject.mainFile !== file.id && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteFile(file.id);
+                                    }}
+                                    className="opacity-0 hover:opacity-100 p-1 hover:bg-red-500/20 rounded text-red-400 hover:text-red-500"
+                                    title="Delete file"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          }
+                          return null;
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Editor area */}
+                  <div className={`flex-1 bg-white/5 rounded-lg p-4 overflow-hidden flex flex-col`}>
+                    {/* Editor controls */}
+                    <div className="flex justify-between items-center mb-3">
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={() => setIsFileExplorerOpen(!isFileExplorerOpen)}
+                          className="bg-white/10 text-gray-300 px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-white/20 transition"
+                          title={isFileExplorerOpen ? "Hide file explorer" : "Show file explorer"}
+                        >
+                          {isFileExplorerOpen ? (
+                            <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 mr-1" />
+                          )}
+                          <span>Files</span>
+                        </button>
+                      
+                        <select
+                          value={editorTheme}
+                          onChange={(e) => setEditorTheme(e.target.value)}
+                          className="bg-white/10 border-0 rounded text-sm text-gray-300 focus:ring-[#2E5BFF] p-1"
+                        >
+                          <option value="vs-dark">Dark Theme</option>
+                          <option value="vs-light">Light Theme</option>
+                          <option value="hc-black">High Contrast</option>
+                        </select>
+                        
+                        <button
+                          onClick={formatCode}
+                          disabled={isFormatting}
+                          className="bg-white/10 text-gray-300 px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-white/20 transition"
+                          title="Format Code (Alt+Shift+F)"
+                        >
+                          <PenLine className="h-3.5 w-3.5" />
+                          <span>Format</span>
+                        </button>
+                      </div>
+                      
+                      {/* Debug controls */}
+                      <div className="flex space-x-3">
+                        {isDebugging ? (
+                          <>
+                            <button
+                              onClick={stepDebug}
+                              className="bg-blue-600/50 text-white px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-blue-600/80 transition"
+                            >
+                              <ChevronRight className="h-3.5 w-3.5" />
+                              <span>Step</span>
+                            </button>
+                            <button
+                              onClick={stopDebugging}
+                              className="bg-red-600/50 text-white px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-red-600/80 transition"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                              <span>Stop</span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={startDebugging}
+                            className="bg-white/10 text-gray-300 px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-white/20 transition"
+                            title="Debug Mode"
+                          >
+                            <Bug className="h-3.5 w-3.5" />
+                            <span>Debug</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* File tabs */}
+                    {openFileTabs.length > 0 && (
+                      <div className="flex overflow-x-auto bg-[#1a1a1a] text-sm mb-2 rounded">
+                        {openFileTabs.map(fileId => {
+                          const file = currentProject?.files.find(f => f.id === fileId);
+                          if (!file) return null;
+                          
+                          return (
+                            <div 
+                              key={file.id}
+                              className={`flex items-center py-1.5 px-3 cursor-pointer group ${
+                                activeFileId === file.id 
+                                  ? 'bg-[#2a2a2a] text-white border-b-2 border-[#2E5BFF]' 
+                                  : 'text-gray-400 hover:bg-[#252525]'
+                              }`}
+                              onClick={() => handleFileSelect(file.id)}
+                            >
+                              <div className="flex items-center">
+                                {file.name.endsWith('.java') ? (
+                                  <FileCode className="h-3.5 w-3.5 mr-1.5 text-orange-500" />
+                                ) : (
+                                  <FileCode className="h-3.5 w-3.5 mr-1.5 text-gray-400" />
+                                )}
+                                <span>{file.name}</span>
+                              </div>
+                              
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleTabClose(file.id);
+                                }}
+                                className="ml-2 text-gray-500 hover:text-gray-300"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    
+                    {/* Monaco Editor */}
+                    <div className="h-[45vh]">
+                      <Editor
+                        height="100%"
+                        width="100%"
+                        language={editorLanguage}
+                        theme={editorTheme}
+                        value={codeInput}
+                        onChange={(value) => setCodeInput(value || '')}
+                        options={editorOptions}
+                        onMount={handleEditorDidMount}
+                        beforeMount={(monaco) => {
+                          // Optional: Configure Monaco before mounting
+                          monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+                            noSemanticValidation: true,
+                            noSyntaxValidation: false
+                          });
+                        }}
+                        loading={<div className="h-full w-full flex items-center justify-center bg-[#1A2E42]/80">
+                          <Loader className="h-5 w-5 animate-spin text-[#2E5BFF]" />
+                        </div>}
+                      />
+                    </div>
+                    
+                    {/* Debug info panel - Show when debugging */}
+                    {isDebugging && (
+                      <div className="bg-[#1A2E42]/80 rounded p-2 mt-3 text-xs text-gray-300">
+                        <div className="flex justify-between items-center">
+                          <span className="font-semibold">Debug Info</span>
+                          <span className="text-blue-400">Breakpoints: {breakpoints.join(', ')}</span>
+                        </div>
+                        <div className="mt-1">
+                          <span>Current Step: {debugStep + 1}/{breakpoints.length}</span>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Code output */}
+                    {codeOutput && (
+                      <div className="bg-[#1a1a1a] rounded-lg p-3 mt-3 text-sm">
+                        <div className="flex justify-between items-center mb-2">
+                          <span className="text-gray-400">Output (executed in {codeOutput.executionTime}ms)</span>
+                        </div>
+                        {codeOutput.stdout && (
+                          <div className="mb-2">
+                            <p className="text-green-400 mb-1">Standard Output:</p>
+                            <pre className="text-white whitespace-pre-wrap max-h-[150px] overflow-y-auto bg-black/30 p-2 rounded">{codeOutput.stdout}</pre>
+                          </div>
+                        )}
+                        {codeOutput.stderr && (
+                          <div>
+                            <p className="text-red-400 mb-1">Standard Error:</p>
+                            <pre className="text-white whitespace-pre-wrap max-h-[150px] overflow-y-auto bg-black/30 p-2 rounded">{codeOutput.stderr}</pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Action buttons */}
+                    <div className="flex space-x-3 mt-3">
+                      <button
+                        onClick={handleRunCode}
+                        className="bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition flex items-center space-x-2"
+                        disabled={isExecuting}
                       >
-                        <option value="vs-dark">Dark Theme</option>
-                        <option value="vs-light">Light Theme</option>
-                        <option value="hc-black">High Contrast</option>
-                      </select>
+                        {isExecuting ? (
+                          <>
+                            <Loader className="h-5 w-5 animate-spin" />
+                            <span>Running...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Code className="h-5 w-5" />
+                            <span>Run Project</span>
+                          </>
+                        )}
+                      </button>
                       
                       <button
-                        onClick={formatCode}
-                        disabled={isFormatting}
-                        className="bg-white/10 text-gray-300 px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-white/20 transition"
-                        title="Format Code (Alt+Shift+F)"
+                        onClick={async () => {
+                          if (!currentProject) {
+                            toast.error('No active project');
+                            return;
+                          }
+                          
+                          const activeFile = findFileById(activeFileId || '', currentProject.files);
+                          if (!activeFile) {
+                            toast.error('No active file to evaluate');
+                            return;
+                          }
+                          
+                          setIsLoading(true);
+                          
+                          try {
+                            const response = await getTutorResponse({
+                              question: `Please evaluate this Java code and provide feedback: \n\n${activeFile.content}`,
+                              conversationHistory: [],
+                              preferences: tutorPreferences,
+                              topic: selectedTopic?.title,
+                              topic_id: selectedTopic?.id,
+                              session_id: currentSessionId !== null ? currentSessionId : undefined
+                            });
+                            
+                            const botMessage: Message = {
+                              id: Date.now(),
+                              text: response.response,
+                              sender: 'bot',
+                              timestamp: new Date(),
+                              code: activeFile.content
+                            };
+                            
+                            setMessages(prev => [...prev, botMessage]);
+                          } catch (error) {
+                            console.error('Error evaluating code:', error);
+                            toast.error('Failed to evaluate code');
+                          } finally {
+                            setIsLoading(false);
+                          }
+                        }}
+                        className="bg-white/10 text-white px-4 py-2 rounded-lg hover:bg-white/20 transition flex items-center space-x-2"
+                        disabled={isLoading || !activeFileId}
                       >
-                        <PenLine className="h-3.5 w-3.5" />
-                        <span>Format</span>
+                        <Sparkles className="h-5 w-5" />
+                        <span>Get AI Feedback</span>
                       </button>
                     </div>
-                    
-                    {/* Debug controls */}
-                    <div className="flex space-x-3">
-                      {isDebugging ? (
-                        <>
-                          <button
-                            onClick={stepDebug}
-                            className="bg-blue-600/50 text-white px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-blue-600/80 transition"
-                          >
-                            <ChevronRight className="h-3.5 w-3.5" />
-                            <span>Step</span>
-                          </button>
-                          <button
-                            onClick={stopDebugging}
-                            className="bg-red-600/50 text-white px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-red-600/80 transition"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                            <span>Stop</span>
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={startDebugging}
-                          className="bg-white/10 text-gray-300 px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-white/20 transition"
-                          title="Debug Mode"
-                        >
-                          <Bug className="h-3.5 w-3.5" />
-                          <span>Debug</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Monaco Editor */}
-                  <div className="h-[30vh]">
-                    <Editor
-                      height="100%"
-                      width="100%"
-                      language={editorLanguage}
-                      theme={editorTheme}
-                      value={codeInput}
-                      onChange={(value) => setCodeInput(value || '')}
-                      options={editorOptions}
-                      onMount={handleEditorDidMount}
-                      beforeMount={(monaco) => {
-                        // Optional: Configure Monaco before mounting
-                        monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
-                          noSemanticValidation: true,
-                          noSyntaxValidation: false
-                        });
-                      }}
-                      loading={<div className="h-full w-full flex items-center justify-center bg-[#1A2E42]/80">
-                        <Loader className="h-5 w-5 animate-spin text-[#2E5BFF]" />
-                      </div>}
-                    />
-                  </div>
-                  
-                  {/* Debug info panel - Show when debugging */}
-                  {isDebugging && (
-                    <div className="bg-[#1A2E42]/80 rounded p-2 text-xs text-gray-300">
-                      <div className="flex justify-between items-center">
-                        <span className="font-semibold">Debug Info</span>
-                        <span className="text-blue-400">Breakpoints: {breakpoints.join(', ')}</span>
-                      </div>
-                      <div className="mt-1">
-                        <span>Current Step: {debugStep + 1}/{breakpoints.length}</span>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {/* Code output */}
-                  {codeOutput && (
-                    <div className="bg-[#1a1a1a] rounded-lg p-4 text-sm">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-gray-400">Output (executed in {codeOutput.executionTime}ms)</span>
-                      </div>
-                      {codeOutput.stdout && (
-                        <div className="mb-2">
-                          <p className="text-green-400 mb-1">Standard Output:</p>
-                          <pre className="text-white whitespace-pre-wrap">{codeOutput.stdout}</pre>
-                        </div>
-                      )}
-                      {codeOutput.stderr && (
-                        <div>
-                          <p className="text-red-400 mb-1">Standard Error:</p>
-                          <pre className="text-white whitespace-pre-wrap">{codeOutput.stderr}</pre>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* Action buttons */}
-                  <div className="flex space-x-3">
-                    <button
-                      onClick={handleRunCode}
-                      className="bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition flex items-center space-x-2"
-                      disabled={isExecuting}
-                    >
-                      {isExecuting ? (
-                        <>
-                          <Loader className="h-5 w-5 animate-spin" />
-                          <span>Running...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Code className="h-5 w-5" />
-                          <span>Run Code</span>
-                        </>
-                      )}
-                    </button>
-                    
-                    <button
-                      onClick={async () => {
-                        if (!codeInput.trim()) {
-                          toast.error('Please write some code first');
-                          return;
-                        }
-                        
-                        setIsLoading(true);
-                        
-                        try {
-                          const response = await getTutorResponse({
-                            question: `Please evaluate this Java code and provide feedback: \n\n${codeInput}`,
-                            conversationHistory: [],
-                            preferences: tutorPreferences,
-                            topic: selectedTopic?.title,
-                            topic_id: selectedTopic?.id,
-                            session_id: currentSessionId !== null ? currentSessionId : undefined
-                          });
-                          
-                          const botMessage: Message = {
-                            id: Date.now(),
-                            text: response.response,
-                            sender: 'bot',
-                            timestamp: new Date(),
-                            code: codeInput
-                          };
-                          
-                          setMessages(prev => [...prev, botMessage]);
-                        } catch (error) {
-                          console.error('Error evaluating code:', error);
-                          toast.error('Failed to evaluate code');
-                        } finally {
-                          setIsLoading(false);
-                        }
-                      }}
-                      className="bg-white/10 text-white px-4 py-2 rounded-lg hover:bg-white/20 transition flex items-center space-x-2"
-                      disabled={isLoading}
-                    >
-                      <Sparkles className="h-5 w-5" />
-                      <span>Get AI Feedback</span>
-                    </button>
                   </div>
                 </div>
               </section>
-            </div>
-          )}
-          
-          {activeTab === 'lesson-plans' && (
-            <section className="p-4">
-              <h2 className="text-xl font-semibold mb-4 flex items-center">
-                <ScrollText className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                Lesson Plans
-              </h2>
-              {/* Debug logging */}
-              {(() => { console.log("Rendering lesson plans, topics:", topics.length, "loading:", isLoadingTopics); return null; })()}
               
-              {isLoadingTopics ? (
-                // Loading state
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {Array(4).fill(0).map((_, i) => (
-                    <div key={i} className="bg-white/5 rounded-lg p-3 animate-pulse h-32"></div>
-                  ))}
-                </div>
-              ) : (
-                <>
-                  {/* Topic Selection */}
-                  <div className="mb-6">
-                    <h3 className="text-lg font-medium mb-3 text-gray-300">Select a Topic</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {topics.map((topic) => (
-                        <motion.div
-                          key={topic.id}
-                          whileHover={topic.is_locked ? {} : { y: -5, scale: 1.02 }}
-                          whileTap={topic.is_locked ? {} : { scale: 0.98 }}
-                          onClick={() => !topic.is_locked && setSelectedTopic(topic)}
-                          className={`p-5 rounded-lg transition-all duration-300 shadow-lg ${
-                            selectedTopic?.id === topic.id
-                              ? 'bg-gradient-to-br from-[#2E5BFF] to-[#4466ff] text-white ring-2 ring-blue-400 ring-opacity-50'
-                              : topic.is_locked 
-                                ? 'bg-gradient-to-br from-gray-800 to-gray-900 text-gray-500 cursor-not-allowed opacity-70'
-                                : 'bg-gradient-to-br from-gray-800 to-gray-700 hover:from-gray-700 hover:to-gray-600 text-gray-300 cursor-pointer'
-                          }`}
-                        >
-                          <div className="flex flex-col h-full">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                                topic.is_locked ? 'bg-gray-800' : 'bg-blue-600 bg-opacity-20'
-                              }`}>
-                                <div className={topic.is_locked ? 'text-gray-500' : 'text-[#4da3ff]'}>
-                                  {topic.is_locked ? <Lock className="h-5 w-5" /> : topic.icon}
-                                </div>
-                              </div>
-                              <div className={`rounded-full ${
-                                topic.is_locked ? 'bg-gray-800' : selectedTopic?.id === topic.id ? 'bg-blue-500' : 'bg-gray-700'
-                              } h-7 w-7 flex items-center justify-center text-xs font-bold`}>
-                                {topicLessonPlans[topic.id]?.length || 0}
-                              </div>
-                            </div>
-                            
-                            <div>
-                              <div className="flex items-center mb-1">
-                                <h4 className={`font-bold text-lg ${topic.is_locked ? 'text-gray-400' : ''}`}>
-                                  {topic.title}
-                                </h4>
-                                {topic.is_locked && <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-700 bg-opacity-30 text-amber-400">(Locked)</span>}
-                              </div>
-                              
-                              <p className="text-xs text-gray-400 mb-3 line-clamp-2 h-8">
-                                {topic.description || `Learn about ${topic.title} and related concepts.`}
-                              </p>
-                              
-                              <div className="mt-auto">
-                                <div className="flex items-center justify-between text-xs mb-1">
-                                  <span className="text-gray-400">Progress</span>
-                                  <span className={`font-medium ${topic.is_locked ? 'text-gray-500' : 'text-blue-300'}`}>{topic.progress || 0}%</span>
-                                </div>
-                                <div className="h-2 rounded-full bg-black bg-opacity-30 overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full ${
-                                      topic.is_locked 
-                                        ? 'bg-gray-700' 
-                                        : 'bg-gradient-to-r from-blue-500 to-indigo-600'
-                                    }`}
-                                    style={{ width: `${topic.progress || 0}%` }}
-                                  ></div>
-                                </div>
-                                
-                                {topic.is_locked && (
-                                  <div className="mt-3 text-xs px-3 py-2 rounded-md bg-amber-900 bg-opacity-20 text-amber-400 flex items-center">
-                                    <AlertCircle className="h-3 w-3 mr-1 flex-shrink-0" />
-                                    <span>Complete prerequisite topics to unlock</span>
-                                  </div>
-                                )}
-                                
-                                {!topic.is_locked && selectedTopic?.id !== topic.id && (
-                                  <div className="mt-3 text-xs text-center invisible group-hover:visible">
-                                    <span className="inline-flex items-center text-blue-400">
-                                      Select to start learning <ChevronRight className="h-3 w-3 ml-1" />
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </div>
-                  
-                  {/* Lesson Plans for Selected Topic */}
-                  {selectedTopic && (
-                    <div>
-                      <h3 className="text-lg font-medium mb-3 text-gray-300 flex items-center">
-                        <span>Lessons for {selectedTopic.title}</span>
-                        <span className="ml-2 text-sm text-gray-400">({topicLessonPlans[selectedTopic.id]?.length || 0} plans)</span>
-                      </h3>
-                      
-                      {topicLessonPlans[selectedTopic.id]?.length > 0 ? (
-                        <div className="max-h-[60vh] overflow-y-auto space-y-6 w-full pl-2">
-                          <HierarchicalLessonPlans 
-                            plans={topicLessonPlans[selectedTopic.id] || []}
-                            onSelectPlan={handleLessonPlanSelect}
-                          />
-                        </div>
-                      ) : (
-                        <div className="text-center p-6 bg-white/5 rounded-lg">
-                          <FolderOpen className="h-10 w-10 mx-auto mb-3 text-gray-500" />
-                          <p className="text-gray-400">No lesson plans available for this topic yet.</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {!selectedTopic && (
-                    <div className="text-center p-6 bg-white/5 rounded-lg">
-                      <ArrowUp className="h-10 w-10 mx-auto mb-3 text-gray-500" />
-                      <p className="text-gray-400">Please select a topic to view its lesson plans.</p>
-                    </div>
-                  )}
-                </>
-              )}
-            </section>
-          )}
-          
-          {activeTab === 'quiz' && (
-            <section className="p-4">
-              <h2 className="text-xl font-semibold mb-4 flex items-center">
-                <Lightbulb className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                Knowledge Check Quizzes
-              </h2>
-              
-              {isLoadingQuiz ? (
-                <div className="flex flex-col items-center justify-center p-12">
-                  <Loader className="h-10 w-10 text-[#2E5BFF] animate-spin mb-4" />
-                  <p className="text-white">Loading quiz questions...</p>
-                </div>
-              ) : !selectedTopic ? (
-                <div className="bg-white/5 rounded-lg p-8 text-center">
-                  <BookOpen className="h-12 w-12 text-gray-500 mx-auto mb-4" />
-                  <h3 className="text-xl font-medium text-white mb-2">Select a Topic First</h3>
-                  <p className="text-gray-400">Please select a learning topic to generate a quiz.</p>
-                  <button
-                    onClick={() => setActiveTab('lesson-plans')}
-                    className="mt-4 bg-[#2E5BFF] text-white px-4 py-2 rounded-lg hover:bg-[#1E4BEF] transition"
-                  >
-                    Browse Topics
-                  </button>
-                </div>
-              ) : showQuizAtThreshold && moduleQuizzes.length > 0 ? (
-                // Show module quizzes when available at thresholds
-                <div className="bg-white/5 rounded-lg p-8">
-                  <div className="text-center mb-8">
-                    <Award className="h-12 w-12 text-[#2E5BFF] mx-auto mb-4" />
-                    <h3 className="text-xl font-medium text-white mb-2">Progress Milestone Reached!</h3>
-                    <p className="text-gray-400">
-                      You've reached a progress milestone. Take this quiz to solidify your knowledge and continue your learning journey.
-                    </p>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {moduleQuizzes.map((quiz) => (
-                      <Card key={quiz.id} className="bg-white/5 border-white/10 text-white">
-                        <CardHeader>
-                          <CardTitle className="text-lg">{quiz.title}</CardTitle>
-                          <CardDescription className="text-gray-400">
-                            {quiz.description || `A quiz about ${activeModule?.title || selectedTopic.title}`}
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-400">Difficulty:</span>
-                              <span className="text-white">{quiz.difficulty}</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-400">Time Limit:</span>
-                              <span className="text-white">{quiz.time_limit_minutes} minutes</span>
-                            </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-400">Passing Score:</span>
-                              <span className="text-white">{quiz.passing_score_percent}%</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                        <CardFooter>
-                          <Button 
-                            className="w-full bg-[#2E5BFF] hover:bg-[#1E4BEF]"
-                            onClick={() => startModuleQuiz(quiz.id)}
-                          >
-                            Start Quiz
-                          </Button>
-                        </CardFooter>
-                      </Card>
-                    ))}
-                  </div>
-                </div>
-              ) : activeQuiz && !quizSubmitted && currentQuestionIndex !== null ? (
-                // Showing the active quiz questions (existing code)
-                <div className="bg-white/5 rounded-lg p-6">
-                  <div className="mb-6">
-                    <h3 className="text-xl font-medium text-white mb-2">{activeQuiz.title}</h3>
-                    <p className="text-gray-400">{activeQuiz.description}</p>
+              {/* New File Dialog */}
+              {showNewFileDialog && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <div className="bg-[#1a2e42] rounded-lg p-4 w-80">
+                    <h3 className="text-lg font-medium mb-4">
+                      Create New {isCreatingDirectory ? 'Folder' : 'File'}
+                    </h3>
                     
-                    <div className="flex items-center space-x-4 mt-4">
-                      <div className="flex items-center space-x-1">
-                        <div className="w-2 h-2 bg-[#2E5BFF] rounded-full"></div>
-                        <span className="text-sm text-white">Question {currentQuestionIndex + 1} of {activeQuiz.questions.length}</span>
-                      </div>
-                      
-                      <div className="flex-1 h-1 bg-white/10 rounded-full">
-                        <div 
-                          className="bg-[#2E5BFF] h-1 rounded-full"
-                          style={{ width: `${((currentQuestionIndex + 1) / activeQuiz.questions.length) * 100}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-6">
-                    <div className="bg-white/10 rounded-lg p-6">
-                      <h4 className="text-lg font-medium text-white mb-4">
-                        {activeQuiz.questions[currentQuestionIndex].question}
-                      </h4>
-                      
-                      {activeQuiz.questions[currentQuestionIndex].options.map((option, optionIndex) => (
-                        <div 
-                          key={optionIndex}
-                          className={`p-3 rounded-lg border mb-3 cursor-pointer transition-colors ${
-                            selectedOptions[currentQuestionIndex] === optionIndex 
-                              ? 'bg-[#2E5BFF]/20 border-[#2E5BFF]' 
-                              : 'bg-white/5 border-white/10 hover:bg-white/10'
-                          }`}
-                          onClick={() => {
-                            const newSelectedOptions = [...selectedOptions];
-                            newSelectedOptions[currentQuestionIndex] = optionIndex;
-                            setSelectedOptions(newSelectedOptions);
-                          }}
-                        >
-                          <div className="flex items-center">
-                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center mr-3 ${
-                              selectedOptions[currentQuestionIndex] === optionIndex 
-                                ? 'border-[#2E5BFF] bg-[#2E5BFF]/20' 
-                                : 'border-white/30'
-                            }`}>
-                              {selectedOptions[currentQuestionIndex] === optionIndex && (
-                                <div className="w-3 h-3 rounded-full bg-[#2E5BFF]"></div>
-                              )}
-                            </div>
-                            <span className="text-white">{option}</span>
-                          </div>
-                        </div>
-                ))}
-              </div>
-                    
-                    <div className="flex justify-between">
-                      <Button
-                        className="bg-white/10 hover:bg-white/20 text-white"
-                        onClick={() => {
-                          if (currentQuestionIndex > 0) {
-                            setCurrentQuestionIndex(currentQuestionIndex - 1);
-                          }
-                        }}
-                        disabled={currentQuestionIndex === 0}
-                      >
-                        Previous
-                      </Button>
-                      
-                      {currentQuestionIndex < activeQuiz.questions.length - 1 ? (
-                        <Button
-                          className="bg-[#2E5BFF] hover:bg-[#1E4BEF] text-white"
-                          onClick={() => {
-                            if (currentQuestionIndex < activeQuiz.questions.length - 1) {
-                              setCurrentQuestionIndex(currentQuestionIndex + 1);
-                            }
-                          }}
-                          disabled={selectedOptions[currentQuestionIndex] === -1}
-                        >
-                          Next
-                        </Button>
-                      ) : (
-                        <Button
-                          className="bg-green-600 hover:bg-green-700 text-white"
-                          onClick={() => quizAttempt ? submitModuleQuiz() : handleQuizSubmit()}
-                          disabled={selectedOptions[currentQuestionIndex] === -1}
-                        >
-                          Submit Quiz
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : activeQuiz && quizSubmitted ? (
-                // Quiz results (existing code with slight modification)
-                <div className="space-y-6">
-                  <div className="bg-white/10 rounded-lg p-6 text-center">
                     <div className="mb-4">
-                      <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto ${
-                        quizScore >= 80 ? 'bg-green-500' : quizScore >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                      }`}>
-                        <span className="text-2xl font-bold text-white">{quizScore}%</span>
-                      </div>
-                    </div>
-                    
-                    <h4 className="text-xl font-medium text-white mb-2">
-                      {quizScore >= 80 ? 'Excellent!' : quizScore >= 60 ? 'Good job!' : 'Keep practicing!'}
-                    </h4>
-                    
-                    <p className="text-gray-400 mb-4">
-                      {quizAttempt ? (
-                        `You answered ${quizAttempt.correct_questions?.length || 0} out of ${activeQuiz.questions.length} questions correctly.`
-                      ) : (
-                        `You answered ${activeQuiz.questions.filter((_, i) => selectedOptions[i] === activeQuiz.questions[i].correctOption).length} 
-                        out of ${activeQuiz.questions.length} questions correctly.`
-                      )}
-                    </p>
-                    
-                    <div className="flex justify-center space-x-4">
-                      <Button
-                        className="bg-white/10 hover:bg-white/20 text-white"
-                        onClick={() => {
-                          setActiveTab('chat');
-                          setShowQuizAtThreshold(false);
-                        }}
-                      >
-                        Return to Chat
-                      </Button>
+                      <label className="block text-sm text-gray-400 mb-1">
+                        {isCreatingDirectory ? 'Folder Name' : 'File Name'}
+                      </label>
+                      <input
+                        type="text"
+                        value={newFileName}
+                        onChange={(e) => setNewFileName(e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded px-3 py-2 text-white"
+                        placeholder={isCreatingDirectory ? 'NewFolder' : 'NewFile.java'}
+                        autoFocus
+                      />
                       
-                      <Button
-                        className="bg-[#2E5BFF] hover:bg-[#1E4BEF] text-white"
-                        onClick={() => {
-                          // Reset for a new quiz
-                          setActiveQuiz(null);
-                          setCurrentQuestionIndex(0); // Replace null with 0
-                          setSelectedOptions([]);
-                          setQuizSubmitted(false);
-                          setQuizScore(0);
-                          setQuizAttempt(null);
-                          setShowQuizAtThreshold(false);
-                        }}
-                      >
-                        Done
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  {/* Show quiz answers and explanations after submission */}
-                  <div className="bg-white/5 rounded-lg p-6">
-                    <h4 className="text-lg font-medium text-white mb-4">Quiz Review</h4>
-                    
-                    <div className="space-y-6">
-                      {activeQuiz.questions.map((question, qIndex) => (
-                        <div key={qIndex} className="bg-white/10 rounded-lg p-4">
-                          <h5 className="text-white font-medium mb-2">Question {qIndex + 1}: {question.question}</h5>
-                          
-                          <div className="space-y-2 mb-3">
-                            {question.options.map((option, oIndex) => (
-                              <div 
-                                key={oIndex}
-                                className={`p-2 rounded-lg border ${
-                                  // For AI-generated quizzes
-                                  (quizAttempt === null && oIndex === question.correctOption) ? 'bg-green-500/20 border-green-500' :
-                                  (quizAttempt === null && selectedOptions[qIndex] === oIndex && oIndex !== question.correctOption) ? 'bg-red-500/20 border-red-500' :
-                                  
-                                  // For module quizzes
-                                  (quizAttempt && quizAttempt.correct_questions?.includes(question.id) && selectedOptions[qIndex] === oIndex) ? 'bg-green-500/20 border-green-500' :
-                                  (quizAttempt && !quizAttempt.correct_questions?.includes(question.id) && selectedOptions[qIndex] === oIndex) ? 'bg-red-500/20 border-red-500' :
-                                  
-                                  'bg-white/5 border-white/10'
-                                }`}
-                              >
-                                <div className="flex items-center">
-                                  <span className="text-white">{option}</span>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                          
-                          {question.explanation && (
-                            <div className="bg-blue-900/20 border border-blue-900 rounded-lg p-3">
-                              <h6 className="text-blue-400 font-medium text-sm mb-1">Explanation:</h6>
-                              <p className="text-white text-sm">{question.explanation}</p>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                // Default quiz generator UI
-                <div className="bg-white/5 rounded-lg p-8">
-                  <div className="text-center mb-8">
-                    <Lightbulb className="h-12 w-12 text-[#2E5BFF] mx-auto mb-4" />
-                    <h3 className="text-xl font-medium text-white mb-2">Test Your Knowledge</h3>
-                    <p className="text-gray-400">Generate a quiz to test your understanding of {selectedTopic.title}.</p>
-                  </div>
-                  
-                  {/* Add this analysis button */}
-                  <div className="flex justify-end mb-4">
-                    <Button
-                      onClick={getQuizAnalysis}
-                      className="bg-white/10 hover:bg-white/20 text-white flex items-center gap-2"
-                      disabled={isLoadingAnalysis}
-                    >
-                      {isLoadingAnalysis ? (
-                        <Loader className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <PieChart className="h-4 w-4" />
+                      {!isCreatingDirectory && !newFileName.includes('.') && (
+                        <p className="text-xs text-amber-400 mt-1">
+                          Tip: Include a file extension (e.g. .java)
+                        </p>
                       )}
-                      Analyze Quiz Performance
-                    </Button>
-                  </div>
-                  
-                  {/* Show analysis results if available */}
-                  {quizAnalysis && quizAnalysis.status === 'success' && (
-                    <div className="bg-white/5 border border-white/10 rounded-lg p-4 mb-6">
-                      <h4 className="text-white font-medium flex items-center gap-2 mb-3">
-                        <PieChart className="h-5 w-5 text-[#2E5BFF]" />
-                        Quiz Performance Analysis
-                      </h4>
-                      
-                      <div className="text-sm text-gray-300 space-y-3">
-                        <p className="bg-white/5 p-3 rounded">
-                          {quizAnalysis.feedback}
-                        </p>
-                        
-                        {quizAnalysis.analysis.strengths.length > 0 && (
-                          <div>
-                            <h5 className="text-green-400 font-medium mb-1">Strengths:</h5>
-                            <ul className="list-disc pl-5 space-y-1">
-                              {quizAnalysis.analysis.strengths.map((strength: any, i: number) => (
-                                <li key={i}>
-                                  {strength.type === 'topic' 
-                                    ? `${strength.topic}: ${strength.percentage}%` 
-                                    : `${strength.module} in ${strength.topic}: ${strength.percentage}%`}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        
-                        {quizAnalysis.analysis.weaknesses.length > 0 && (
-                          <div>
-                            <h5 className="text-amber-400 font-medium mb-1">Areas to Improve:</h5>
-                            <ul className="list-disc pl-5 space-y-1">
-                              {quizAnalysis.analysis.weaknesses.map((weakness: any, i: number) => (
-                                <li key={i}>
-                                  {weakness.type === 'topic' 
-                                    ? `${weakness.topic}: ${weakness.percentage}%` 
-                                    : `${weakness.module} in ${weakness.topic}: ${weakness.percentage}%`}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
                     </div>
-                  )}
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <Card className="bg-white/5 border-white/10 text-white">
-                      <CardHeader>
-                        <CardTitle className="text-lg">{selectedTopic.title} Quiz</CardTitle>
-                        <CardDescription className="text-gray-400">
-                          Multiple choice questions to test your understanding
-                        </CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm text-gray-300 mb-4">
-                          This quiz will help you assess your knowledge and contribute to your learning progress. 
-                          Quiz performance accounts for 30% of your total progress.
-                        </p>
-                        <ul className="text-sm space-y-2 text-gray-300">
-                          <li className="flex items-center">
-                            <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                            5 multiple choice questions
-                          </li>
-                          <li className="flex items-center">
-                            <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                            Detailed explanations for each answer
-                          </li>
-                          <li className="flex items-center">
-                            <CheckCircle className="h-4 w-4 text-green-500 mr-2" />
-                            Instant results and feedback
-                          </li>
-                        </ul>
-                      </CardContent>
-                      <CardFooter>
-                        <Button 
-                          className="w-full bg-[#2E5BFF] hover:bg-[#1E4BEF]"
-                          onClick={() => generateQuizForTopic(selectedTopic.id, selectedTopic.title)}
-                        >
-                          Start Quiz
-                        </Button>
-                      </CardFooter>
-                    </Card>
                     
-                    {activeModule && (
-                      <Card className="bg-white/5 border-white/10 text-white">
-                        <CardHeader>
-                          <CardTitle className="text-lg">Module Quizzes</CardTitle>
-                          <CardDescription className="text-gray-400">
-                            Complete structured quizzes for the current module
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <p className="text-sm text-gray-300 mb-4">
-                            Module quizzes are designed by instructors to test specific learning objectives.
-                            These quizzes help assess your understanding of key concepts.
-                          </p>
-                          <Button 
-                            className="w-full bg-[#2E5BFF] hover:bg-[#1E4BEF]"
-                            onClick={async () => {
-                              try {
-                                setIsLoadingQuiz(true);
-                                const response = await axios.get(`${API_URL}/modules/${activeModule.id}/quizzes`);
-                                if (response.data.quizzes && response.data.quizzes.length > 0) {
-                                  setModuleQuizzes(response.data.quizzes);
-                                  setShowQuizAtThreshold(true);
-                                } else {
-                                  toast.info("No quizzes available for this module yet.");
-                                }
-                              } catch (error) {
-                                console.error("Error loading module quizzes:", error);
-                                toast.error("Failed to load module quizzes.");
-                              } finally {
-                                setIsLoadingQuiz(false);
-                              }
-                            }}
-                          >
-                            Browse Module Quizzes
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    )}
+                    <div className="flex justify-end space-x-2">
+                      <button
+                        onClick={() => setShowNewFileDialog(false)}
+                        className="px-3 py-1 text-gray-300 hover:bg-white/10 rounded"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleCreateNewFile}
+                        disabled={!newFileName.trim()}
+                        className={`px-3 py-1 rounded ${
+                          newFileName.trim() 
+                            ? 'bg-[#2E5BFF] text-white' 
+                            : 'bg-[#2E5BFF]/50 text-white/70 cursor-not-allowed'
+                        }`}
+                      >
+                        Create
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
-            </section>
-          )}
-          
-          {activeTab === 'sessions' && (
-            <section className="p-4">
-              <h2 className="text-xl font-semibold mb-4 flex items-center">
-                <Clock className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                Previous Sessions
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[70vh] overflow-y-auto">
-                {previousSessions.map((session) => (
-                  <motion.div
-                    key={session.id}
-                    whileHover={{ x: 5 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => handleSessionSelect(session)}
-                    className="bg-white/5 rounded-lg p-3 cursor-pointer hover:bg-white/10 transition"
-                  >
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="font-medium">{session.topic}</p>
-                        <p className="text-sm text-gray-400">{session.date} • {session.duration}</p>
-                      </div>
-                      <ChevronRight className="h-5 w-5 text-gray-400" />
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </section>
-          )}
-          
-          {activeTab === 'settings' && (
-            <section className="p-4">
-              <h2 className="text-xl font-semibold mb-4 flex items-center">
-                <SettingsIcon className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                AI Tutor Preferences
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-h-[70vh] overflow-y-auto">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Response Length</label>
-                  <select 
-                    value={tutorPreferences.responseLength}
-                    onChange={(e) => handlePreferenceChange('responseLength', e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
-                    style={{ color: 'white', backgroundColor: '#1a2e42' }}
-                  >
-                    <option value="brief" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Brief</option>
-                    <option value="medium" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Medium</option>
-                    <option value="detailed" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Detailed</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Include Code Examples</label>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => handlePreferenceChange('codeExamples', true)}
-                      className={`px-3 py-1 rounded-lg ${
-                        tutorPreferences.codeExamples 
-                          ? 'bg-[#2E5BFF] text-white' 
-                          : 'bg-white/5 text-gray-400'
-                      }`}
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => handlePreferenceChange('codeExamples', false)}
-                      className={`px-3 py-1 rounded-lg ${
-                        !tutorPreferences.codeExamples 
-                          ? 'bg-[#2E5BFF] text-white' 
-                          : 'bg-white/5 text-gray-400'
-                      }`}
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Explanation Detail</label>
-                  <select 
-                    value={tutorPreferences.explanationDetail}
-                    onChange={(e) => handlePreferenceChange('explanationDetail', e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
-                    style={{ color: 'white', backgroundColor: '#1a2e42' }}
-                  >
-                    <option value="basic" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Basic</option>
-                    <option value="moderate" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Moderate</option>
-                    <option value="detailed" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Detailed</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Challenge Difficulty</label>
-                  <select 
-                    value={tutorPreferences.challengeDifficulty}
-                    onChange={(e) => handlePreferenceChange('challengeDifficulty', e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
-                    style={{ color: 'white', backgroundColor: '#1a2e42' }}
-                  >
-                    <option value="easy" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Easy</option>
-                    <option value="medium" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Medium</option>
-                    <option value="hard" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Hard</option>
-                  </select>
-                </div>
-              </div>
-              
-              {/* Code Editor Settings */}
-              <h2 className="text-xl font-semibold mt-6 mb-4 flex items-center">
-                <Code className="h-5 w-5 mr-2 text-[#2E5BFF]" />
-                Code Editor Settings
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Editor Theme</label>
-                  <select 
-                    value={editorTheme}
-                    onChange={(e) => setEditorTheme(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] appearance-none"
-                    style={{ color: 'white', backgroundColor: '#1a2e42' }}
-                  >
-                    <option value="vs-dark" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Dark Theme</option>
-                    <option value="vs-light" style={{ color: 'white', backgroundColor: '#1a2e42' }}>Light Theme</option>
-                    <option value="hc-black" style={{ color: 'white', backgroundColor: '#1a2e42' }}>High Contrast</option>
-                  </select>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Font Size</label>
-                  <div className="flex items-center">
-                    <input 
-                      type="range" 
-                      min="12" 
-                      max="24" 
-                      value={editorOptions.fontSize}
-                      onChange={(e) => updateEditorSettings('fontSize', parseInt(e.target.value))}
-                      className="w-full"
-                    />
-                    <span className="ml-2 w-8 text-center">{editorOptions.fontSize}</span>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Show Minimap</label>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => updateEditorSettings('minimap', { enabled: true })}
-                      className={`px-3 py-1 rounded-lg ${
-                        editorOptions.minimap.enabled 
-                          ? 'bg-[#2E5BFF] text-white' 
-                          : 'bg-white/5 text-gray-400'
-                      }`}
-                    >
-                      Yes
-                    </button>
-                    <button
-                      onClick={() => updateEditorSettings('minimap', { enabled: false })}
-                      className={`px-3 py-1 rounded-lg ${
-                        !editorOptions.minimap.enabled 
-                          ? 'bg-[#2E5BFF] text-white' 
-                          : 'bg-white/5 text-gray-400'
-                      }`}
-                    >
-                      No
-                    </button>
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium mb-2">Auto Format</label>
-                  <div className="flex items-center space-x-2">
-                    <button
-                      onClick={() => {
-                        updateEditorSettings('formatOnPaste', true);
-                        updateEditorSettings('formatOnType', true);
-                      }}
-                      className={`px-3 py-1 rounded-lg ${
-                        editorOptions.formatOnPaste && editorOptions.formatOnType
-                          ? 'bg-[#2E5BFF] text-white' 
-                          : 'bg-white/5 text-gray-400'
-                      }`}
-                    >
-                      On
-                    </button>
-                    <button
-                      onClick={() => {
-                        updateEditorSettings('formatOnPaste', false);
-                        updateEditorSettings('formatOnType', false);
-                      }}
-                      className={`px-3 py-1 rounded-lg ${
-                        !editorOptions.formatOnPaste && !editorOptions.formatOnType
-                          ? 'bg-[#2E5BFF] text-white' 
-                          : 'bg-white/5 text-gray-400'
-                      }`}
-                    >
-                      Off
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="col-span-2">
-                  <div className="bg-[#1a2e42]/50 p-4 rounded-lg">
-                    <h4 className="text-md font-medium mb-2 flex items-center">
-                      <HelpCircle className="h-4 w-4 mr-2 text-[#2E5BFF]" />
-                      Editor Keyboard Shortcuts
-                    </h4>
-                    <ul className="text-sm space-y-1 text-gray-300">
-                      <li><span className="text-white font-mono">Alt+Shift+F</span> - Format document</li>
-                      <li><span className="text-white font-mono">Ctrl+Space</span> - Trigger suggestions</li>
-                      <li><span className="text-white font-mono">F11</span> - Toggle fullscreen</li>
-                      <li><span className="text-white font-mono">Ctrl+/</span> - Toggle line comment</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            </section>
+            </div>
           )}
         </div>
       </div>

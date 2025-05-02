@@ -16,12 +16,20 @@ const api = axios.create({
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = getToken();
+    
+    // Debug log for auth issues
+    console.log(`API Request to: ${config.url}, Authentication:`, token ? 'Token present' : 'NO TOKEN');
+    
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
+      // Make sure we always include Content-Type and Accept headers
+      config.headers['Content-Type'] = config.headers['Content-Type'] || 'application/json';
+      config.headers['Accept'] = config.headers['Accept'] || 'application/json';
     }
     return config;
   },
   (error: any) => {
+    console.error('API interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -110,6 +118,37 @@ export const executeJavaCode = async (params: {
     return response.data.data;
   } catch (error) {
     console.error('Error in executeJavaCode API call:', error);
+    throw error;
+  }
+};
+
+export const executeJavaProject = async (params: {
+  files: Array<{path: string; content: string}>;
+  main_class: string;
+  input?: string;
+  session_id?: number;
+  topic_id?: number;
+  conversation_history?: Array<{role: string; content: string}>;
+}) => {
+  try {
+    console.log('Calling executeJavaProject API with params:', { 
+      files: params.files.map(f => f.path),
+      main_class: params.main_class,
+      input: params.input,
+      session_id: params.session_id,
+      topic_id: params.topic_id,
+      conversation_history_length: params.conversation_history?.length
+    });
+    const response = await api.post('/tutor/execute-project', params);
+    console.log('executeJavaProject API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error('Error in executeJavaProject API call:', error);
     throw error;
   }
 };
@@ -421,6 +460,326 @@ export const analyzeQuizResults = async (data: {
     return response.data;
   } catch (error) {
     console.error('Error analyzing quiz results:', error);
+    throw error;
+  }
+};
+
+// Project Management API calls
+export interface ProjectFile {
+  id?: string | number;
+  name: string;
+  path: string;
+  content?: string;
+  is_directory: boolean;
+  language?: string;
+  parent_path?: string;
+}
+
+export interface Project {
+  id?: string | number;
+  name: string;
+  description?: string;
+  main_file_id?: string;
+  files: ProjectFile[];
+  metadata?: any;
+}
+
+/**
+ * Get all projects
+ */
+export const getProjects = async () => {
+  try {
+    const response = await api.get('/projects');
+    console.log('getProjects API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error('Error in getProjects API call:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get a specific project by ID
+ */
+export const getProject = async (projectId: string | number) => {
+  try {
+    console.log(`Attempting to get project with ID: ${projectId}`);
+    
+    // Check if token exists
+    const token = getToken();
+    if (!token) {
+      console.error('No authentication token found!');
+      throw new Error('Authentication required. Please log in.');
+    }
+
+    // Force adding token to headers manually
+    const response = await api.get(`/projects/${projectId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+    });
+    
+    console.log('getProject API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error: any) {
+    console.error(`Error in getProject API call for project ${projectId}:`, error);
+    console.error('Request details:', {
+      url: `/projects/${projectId}`,
+      error: error.response ? {
+        status: error.response.status,
+        data: error.response.data
+      } : 'No response'
+    });
+    throw error;
+  }
+};
+
+/**
+ * Create a new project
+ */
+export const createProject = async (project: Project) => {
+  try {
+    console.log('Attempting to create new project:', project.name);
+    
+    // Check if token exists
+    const token = getToken();
+    if (!token) {
+      console.error('No authentication token found!');
+      throw new Error('Authentication required. Please log in.');
+    }
+
+    // Force adding token to headers manually
+    const response = await api.post('/projects', project, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+    });
+    
+    console.log('createProject API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error: any) {
+    console.error('Error in createProject API call:', error);
+    console.error('Request details:', {
+      url: '/projects',
+      projectData: project,
+      error: error.response ? {
+        status: error.response.status,
+        data: error.response.data
+      } : 'No response'
+    });
+    throw error;
+  }
+};
+
+/**
+ * Update an existing project
+ */
+export const updateProject = async (projectId: string | number, project: Partial<Project>) => {
+  try {
+    console.log(`Attempting to update project with ID: ${projectId}`, project);
+    
+    // Check if token exists
+    const token = getToken();
+    if (!token) {
+      console.error('No authentication token found!');
+      throw new Error('Authentication required. Please log in.');
+    }
+
+    // Force adding token to headers manually
+    const response = await api.put(`/projects/${projectId}`, project, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+    });
+    
+    console.log('updateProject API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error: any) {
+    console.error(`Error in updateProject API call for project ${projectId}:`, error);
+    console.error('Request details:', {
+      url: `/projects/${projectId}`,
+      projectData: project,
+      error: error.response ? {
+        status: error.response.status,
+        data: error.response.data
+      } : 'No response'
+    });
+    throw error;
+  }
+};
+
+/**
+ * Delete a project
+ */
+export const deleteProject = async (projectId: string | number) => {
+  try {
+    const response = await api.delete(`/projects/${projectId}`);
+    console.log('deleteProject API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error(`Error in deleteProject API call for project ${projectId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Add a file to a project
+ */
+export const addProjectFile = async (projectId: string | number, file: ProjectFile) => {
+  try {
+    const response = await api.post(`/projects/${projectId}/files`, file);
+    console.log('addProjectFile API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error(`Error in addProjectFile API call for project ${projectId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Update a file in a project
+ */
+export const updateProjectFile = async (projectId: string | number, fileId: string | number, file: Partial<ProjectFile>) => {
+  try {
+    const response = await api.put(`/projects/${projectId}/files/${fileId}`, file);
+    console.log('updateProjectFile API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error(`Error in updateProjectFile API call for file ${fileId} in project ${projectId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a file from a project
+ */
+export const deleteProjectFile = async (projectId: string | number, fileId: string | number) => {
+  try {
+    const response = await api.delete(`/projects/${projectId}/files/${fileId}`);
+    console.log('deleteProjectFile API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data;
+  } catch (error) {
+    console.error(`Error in deleteProjectFile API call for file ${fileId} in project ${projectId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Export a project as a ZIP file
+ */
+export const exportProject = async (projectId: string | number) => {
+  try {
+    // Use a direct URL for downloading the file
+    window.location.href = `${API_URL}/projects/${projectId}/export`;
+    return true;
+  } catch (error) {
+    console.error(`Error in exportProject API call for project ${projectId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Import a project from a ZIP file
+ */
+export const importProject = async (name: string, description: string, zipFile: File) => {
+  try {
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('description', description || '');
+    formData.append('zip_file', zipFile);
+    
+    const response = await api.post('/projects/import', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    
+    console.log('importProject API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error('Error in importProject API call:', error);
+    throw error;
+  }
+};
+
+/**
+ * Test update for a project (bypasses auth)
+ * ONLY FOR TESTING - REMOVE IN PRODUCTION
+ */
+export const testUpdateProject = async (projectId: string | number, project: Partial<Project>) => {
+  try {
+    console.log(`Attempting to update project with test route. ID: ${projectId}`, project);
+    
+    const response = await api.put(`/test-projects/${projectId}`, project);
+    
+    console.log('testUpdateProject API response status:', response.status);
+    
+    if (!response.data || response.data.success === false) {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error: any) {
+    console.error(`Error in testUpdateProject API call for project ${projectId}:`, error);
+    console.error('Request details:', {
+      url: `/test-projects/${projectId}`,
+      projectData: project,
+      error: error.response ? {
+        status: error.response.status,
+        data: error.response.data
+      } : 'No response'
+    });
     throw error;
   }
 }; 
