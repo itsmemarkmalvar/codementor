@@ -1097,7 +1097,7 @@ const SoloRoomPage = () => {
       handleTabClose(fileId);
     }
   };
-
+  
   // Create function to get appropriate icon based on difficulty level
   const getDifficultyIcon = (level: string | undefined) => {
     switch(level?.toLowerCase()) {
@@ -1874,7 +1874,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
   
   // Project management utility functions
   const generateUniqueId = () => {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2);
+    return 'temp_' + Date.now().toString(36) + Math.random().toString(36).slice(2);
   };
   
   const createNewProject = (projectName: string, mainClassName: string = "Main") => {
@@ -2989,6 +2989,23 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
     );
   };
 
+  // Debug functions for testing
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Add the test function to the window object for debugging
+      (window as any).testCreateProject = async () => {
+        try {
+          const { createTestProject } = await import('@/services/api');
+          const result = await createTestProject();
+          console.log('Test project creation result:', result);
+          return result;
+        } catch (error) {
+          console.error('Error in test project creation:', error);
+        }
+      };
+    }
+  }, []);
+
   return (
     <div className="space-y-6">
       {/* Page Header with improved title that emphasizes AI tutoring */}
@@ -3303,7 +3320,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                     setActiveFileId={setActiveFileId}
                     setOpenFileTabs={setOpenFileTabs}
                   />
-                </div>
+                        </div>
                 
                 <div className="flex gap-4">
                   {/* File explorer */}
@@ -3315,7 +3332,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                           Project Files
                         </h3>
                         <div className="flex space-x-1">
-                          <button
+                    <button
                             onClick={() => {
                               setNewFileParentPath("/");
                               setNewFileName("");
@@ -3326,8 +3343,8 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                             title="New File"
                           >
                             <FileCode className="h-3.5 w-3.5" />
-                          </button>
-                          <button
+                    </button>
+                    <button
                             onClick={() => {
                               setNewFileParentPath("/");
                               setNewFileName("");
@@ -3338,9 +3355,9 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                             title="New Folder"
                           >
                             <FolderOpen className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
+                    </button>
+                  </div>
+                </div>
                       
                       <div className="space-y-1 max-h-[calc(70vh-60px)] overflow-y-auto">
                         {currentProject.files.map(file => {
@@ -3371,15 +3388,15 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                                     ) : (
                                       <FileCode className="h-4 w-4 text-gray-400" />
                                     )}
-                                  </span>
+                                    </span>
                                   <span className="truncate">
                                     {file.name}
                                     {currentProject.mainFile === file.id && (
                                       <span className="ml-1 text-xs text-blue-400">(main)</span>
                                     )}
                                   </span>
-                                </div>
-                                
+                  </div>
+                  
                                 {!file.isDirectory && currentProject.mainFile !== file.id && (
                                   <button
                                     onClick={(e) => {
@@ -3392,12 +3409,12 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 )}
-                              </div>
+                        </div>
                             );
                           }
                           return null;
                         })}
-                      </div>
+                        </div>
                     </div>
                   )}
                   
@@ -3429,7 +3446,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                           <option value="hc-black">High Contrast</option>
                         </select>
                         
-                        <button
+                  <button
                           onClick={formatCode}
                           disabled={isFormatting}
                           className="bg-white/10 text-gray-300 px-2 py-1 rounded text-sm flex items-center space-x-1 hover:bg-white/20 transition"
@@ -3437,9 +3454,9 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                         >
                           <PenLine className="h-3.5 w-3.5" />
                           <span>Format</span>
-                        </button>
-                      </div>
-                      
+                  </button>
+                  </div>
+                  
                       {/* Debug controls */}
                       <div className="flex space-x-3">
                         {isDebugging ? (
@@ -3469,8 +3486,8 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                             <span>Debug</span>
                           </button>
                         )}
-                      </div>
-                    </div>
+                  </div>
+                </div>
                     
                     {/* File tabs */}
                     {openFileTabs.length > 0 && (
@@ -3488,16 +3505,16 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                                   : 'text-gray-400 hover:bg-[#252525]'
                               }`}
                               onClick={() => handleFileSelect(file.id)}
-                            >
-                              <div className="flex items-center">
+                        >
+                          <div className="flex items-center">
                                 {file.name.endsWith('.java') ? (
                                   <FileCode className="h-3.5 w-3.5 mr-1.5 text-orange-500" />
                                 ) : (
                                   <FileCode className="h-3.5 w-3.5 mr-1.5 text-gray-400" />
                                 )}
                                 <span>{file.name}</span>
-                              </div>
-                              
+              </div>
+                    
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -3507,10 +3524,10 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                               >
                                 <X className="h-3.5 w-3.5" />
                               </button>
-                            </div>
+                    </div>
                           );
                         })}
-                      </div>
+                  </div>
                     )}
                     
                     {/* Monaco Editor */}
@@ -3535,27 +3552,27 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                           <Loader className="h-5 w-5 animate-spin text-[#2E5BFF]" />
                         </div>}
                       />
-                    </div>
-                    
+                  </div>
+                  
                     {/* Debug info panel - Show when debugging */}
                     {isDebugging && (
                       <div className="bg-[#1A2E42]/80 rounded p-2 mt-3 text-xs text-gray-300">
                         <div className="flex justify-between items-center">
                           <span className="font-semibold">Debug Info</span>
                           <span className="text-blue-400">Breakpoints: {breakpoints.join(', ')}</span>
-                        </div>
+                                </div>
                         <div className="mt-1">
                           <span>Current Step: {debugStep + 1}/{breakpoints.length}</span>
-                        </div>
-                      </div>
-                    )}
+                              </div>
+                            </div>
+                          )}
                     
                     {/* Code output */}
                     {codeOutput && (
                       <div className="bg-[#1a1a1a] rounded-lg p-3 mt-3 text-sm">
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-gray-400">Output (executed in {codeOutput.executionTime}ms)</span>
-                        </div>
+                  </div>
                         {codeOutput.stdout && (
                           <div className="mb-2">
                             <p className="text-green-400 mb-1">Standard Output:</p>
@@ -3568,9 +3585,9 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                             <pre className="text-white whitespace-pre-wrap max-h-[150px] overflow-y-auto bg-black/30 p-2 rounded">{codeOutput.stderr}</pre>
                           </div>
                         )}
-                      </div>
-                    )}
-                    
+                    </div>
+                  )}
+                  
                     {/* Action buttons */}
                     <div className="flex space-x-3 mt-3">
                       <button
@@ -3592,7 +3609,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                       </button>
                       
                       <button
-                        onClick={async () => {
+                            onClick={async () => {
                           if (!currentProject) {
                             toast.error('No active project');
                             return;
@@ -3625,10 +3642,10 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                             };
                             
                             setMessages(prev => [...prev, botMessage]);
-                          } catch (error) {
+                              } catch (error) {
                             console.error('Error evaluating code:', error);
                             toast.error('Failed to evaluate code');
-                          } finally {
+                              } finally {
                             setIsLoading(false);
                           }
                         }}
@@ -3638,10 +3655,10 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                         <Sparkles className="h-5 w-5" />
                         <span>Get AI Feedback</span>
                       </button>
-                    </div>
                   </div>
                 </div>
-              </section>
+              </div>
+            </section>
               
               {/* New File Dialog */}
               {showNewFileDialog && (
@@ -3669,31 +3686,31 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                           Tip: Include a file extension (e.g. .java)
                         </p>
                       )}
-                    </div>
-                    
+                </div>
+                
                     <div className="flex justify-end space-x-2">
-                      <button
+                    <button
                         onClick={() => setShowNewFileDialog(false)}
                         className="px-3 py-1 text-gray-300 hover:bg-white/10 rounded"
                       >
                         Cancel
-                      </button>
-                      <button
+                    </button>
+                    <button
                         onClick={handleCreateNewFile}
                         disabled={!newFileName.trim()}
                         className={`px-3 py-1 rounded ${
                           newFileName.trim() 
-                            ? 'bg-[#2E5BFF] text-white' 
+                          ? 'bg-[#2E5BFF] text-white' 
                             : 'bg-[#2E5BFF]/50 text-white/70 cursor-not-allowed'
-                        }`}
-                      >
+                      }`}
+                    >
                         Create
-                      </button>
-                    </div>
+                    </button>
                   </div>
                 </div>
+                </div>
               )}
-            </div>
+                </div>
           )}
         </div>
       </div>

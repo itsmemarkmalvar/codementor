@@ -8,7 +8,9 @@ import {
   updateProject,
   importProject,
   exportProject,
-  testUpdateProject
+  testUpdateProject,
+  addProjectFile,
+  updateProjectFile
 } from '@/services/api';
 
 interface ProjectHookResult {
@@ -38,16 +40,34 @@ export default function useProjectManagement(): ProjectHookResult {
 
   // Convert the client-side project format to the API format
   const prepareProjectData = (name: string, description: string, clientProject: any): Project => {
+    console.log('Converting client project to API format:', clientProject);
+    
     // Extract all files from the project, flattening the structure
-    const files: ProjectFile[] = clientProject.files.map((file: any) => ({
-      name: file.name,
-      path: file.path,
-      content: file.content || '',
-      is_directory: !!file.isDirectory,
-      language: file.language || null,
-      parent_path: file.parent_path || file.parentPath || null
-    }));
+    const files: ProjectFile[] = clientProject.files.map((file: any) => {
+      console.log('Processing file:', file.name, 'path:', file.path);
+      
+      // Determine parent path based on file path
+      let parentPath = null;
+      if (file.path !== '/') {
+        const pathParts = file.path.split('/');
+        pathParts.pop(); // Remove filename
+        parentPath = pathParts.join('/') || '/';
+        console.log('Calculated parent path:', parentPath, 'for file:', file.path);
+      }
+      
+      return {
+        name: file.name,
+        path: file.path,
+        content: file.isDirectory ? null : (file.content || ''),
+        is_directory: !!file.isDirectory,
+        language: file.language || null,
+        parent_path: parentPath
+      };
+    });
 
+    console.log('Processed files for API:', files.length);
+    console.log('Sample files:', files.slice(0, 3));
+    
     return {
       name,
       description,
@@ -116,26 +136,27 @@ export default function useProjectManagement(): ProjectHookResult {
 
   const saveProject = useCallback(async (name: string, description: string, clientProject: any) => {
     try {
+      // This is a new project that hasn't been saved to the server yet
       const projectData = prepareProjectData(name, description, clientProject);
+      console.log(`Creating new project "${name}" with ${projectData.files.length} files`);
+      console.log('Project data:', projectData);
       
-      // Check if this is an update or a new project
-      if (clientProject.id) {
-        // Use the test route for updating projects temporarily
-        await testUpdateProject(clientProject.id, {
-          name,
-          description,
-          main_file_id: clientProject.mainFile,
-        });
-        
-        // No need to update files individually as they're managed through the file endpoints
-        toast.success('Project updated successfully');
-      } else {
-        const savedProject = await createProject(projectData);
-        toast.success('Project saved successfully');
-        
-        // Update the client project with the new ID
-        return savedProject;
-      }
+      // Ensure projectData files are correctly formatted
+      projectData.files = projectData.files.map(file => ({
+        name: file.name,
+        path: file.path,
+        is_directory: !!file.is_directory,
+        content: file.is_directory ? undefined : (file.content || ''),
+        language: file.language,
+        parent_path: file.parent_path
+      })) as ProjectFile[];
+      
+      const savedProject = await createProject(projectData);
+      console.log(`Project created with ID: ${savedProject.id}, returned files:`, savedProject.files);
+      toast.success('Project saved successfully');
+      
+      // Return the server's representation
+      return savedProject;
     } catch (error: any) {
       console.error('Error saving project:', error);
       toast.error(`Failed to save project: ${error.message || 'Unknown error'}`);
@@ -180,7 +201,7 @@ export default function useProjectManagement(): ProjectHookResult {
 
   const createNewProject = useCallback((name: string = 'New Project') => {
     // Generate a simple Java project structure
-    const generateId = () => Date.now().toString() + Math.random().toString(36).substring(2, 9);
+    const generateId = () => 'temp_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
     
     const mainFileId = generateId();
     const srcDirId = generateId();
@@ -200,7 +221,7 @@ export default function useProjectManagement(): ProjectHookResult {
       name: 'src',
       path: '/src',
       isDirectory: true,
-      language: '',
+      language: null,
       children: [mainFile]
     };
     
@@ -209,12 +230,14 @@ export default function useProjectManagement(): ProjectHookResult {
       name: name,
       path: '/',
       isDirectory: true,
-      language: '',
+      language: null,
       children: [srcDir]
     };
     
     // Create a flattened list of all files and directories
     const files = [rootDir, srcDir, mainFile];
+    
+    console.log('Created new project structure with files:', files);
     
     return {
       id: null, // No ID until saved to the server

@@ -7,7 +7,7 @@ import ProjectManagementToolbar from './ProjectManagementToolbar';
 import useProjectManagement from '@/hooks/useProjectManagement';
 import { toast } from 'sonner';
 import { Project as ApiProject } from '@/services/api';
-import { isAuthenticated } from '@/lib/auth-utils';
+import { isAuthenticated, getToken, setTestToken } from '@/lib/auth-utils';
 
 interface ProjectIntegrationProps {
   currentProject: any;
@@ -28,7 +28,9 @@ const ProjectIntegration: React.FC<ProjectIntegrationProps> = ({
   
   useEffect(() => {
     // Check if user is authenticated
-    setUserAuthenticated(isAuthenticated());
+    const authStatus = isAuthenticated();
+    setUserAuthenticated(authStatus);
+    console.log('Authentication status on component mount:', authStatus, 'Token:', getToken() ? 'Token exists' : 'No token');
   }, []);
   
   // Helper function to check if we have a valid project
@@ -58,13 +60,19 @@ const ProjectIntegration: React.FC<ProjectIntegrationProps> = ({
   const handleSaveProject = async (name: string, description: string, project: any) => {
     try {
       // Check if user is authenticated
-      if (!userAuthenticated) {
+      const authStatus = isAuthenticated();
+      console.log('Authentication status on save:', authStatus, 'Token:', getToken() ? 'Token exists' : 'No token');
+      
+      if (!authStatus) {
         toast.error('You need to be logged in to save projects');
         // You might want to redirect to login page or open login modal
         return;
       }
       
+      console.log('Attempting to save project:', project);
       const result = await saveProject(name, description, project);
+      console.log('Save project result:', result);
+      
       // Only update if it's a new project (result contains the new project data)
       if (result && 'id' in result) {
         // Update the current project with the server-generated ID if it's a new project
@@ -230,6 +238,45 @@ const ProjectIntegration: React.FC<ProjectIntegrationProps> = ({
     
     toast.success('New project created');
   };
+
+  // Debug functions for the console
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).testCreateProject = async () => {
+        try {
+          const { createTestProject } = await import('@/services/api');
+          const result = await createTestProject();
+          console.log('Test project creation result:', result);
+          // Update the current project with the new project
+          if (result && result.id) {
+            setCurrentProject({
+              ...result,
+              files: result.files,
+              rootDirectory: result.files.find((f: any) => f.path === '/'),
+              mainFile: result.main_file_id,
+            });
+            console.log('Current project updated with test project');
+          }
+          return result;
+        } catch (error) {
+          console.error('Error in test project creation:', error);
+        }
+      };
+      
+      // Add debug function to set a test token
+      (window as any).setTestAuthToken = () => {
+        try {
+          const { setTestToken } = require('@/lib/auth-utils');
+          setTestToken();
+          console.log('Test authentication token set for debugging');
+          setUserAuthenticated(true);
+          return 'Token set';
+        } catch (error) {
+          console.error('Error setting test token:', error);
+        }
+      };
+    }
+  }, [setCurrentProject]);
 
   return (
     <>

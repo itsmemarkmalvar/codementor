@@ -17,19 +17,70 @@ api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = getToken();
     
-    // Debug log for auth issues
-    console.log(`API Request to: ${config.url}, Authentication:`, token ? 'Token present' : 'NO TOKEN');
+    // Improved debugging for authentication issues
+    const endpoint = config.url || 'unknown';
+    console.log(`API Request to: ${endpoint}`);
+    console.log(`Authentication: ${token ? `Token present (${token.substring(0, 10)}...)` : 'NO TOKEN'}`);
     
     if (token && config.headers) {
+      // Directly set the Authorization header with proper format
       config.headers.Authorization = `Bearer ${token}`;
+      
       // Make sure we always include Content-Type and Accept headers
       config.headers['Content-Type'] = config.headers['Content-Type'] || 'application/json';
       config.headers['Accept'] = config.headers['Accept'] || 'application/json';
+      
+      console.log('Request headers set:', {
+        Authorization: `Bearer ${token.substring(0, 10)}...`,
+        'Content-Type': config.headers['Content-Type'],
+        'Accept': config.headers['Accept']
+      });
+    } else if (!token) {
+      // Clear auth header if no token exists (to prevent stale headers)
+      if (config.headers.Authorization) {
+        delete config.headers.Authorization;
+        console.warn('Removed stale Authorization header');
+      }
+      console.warn('No auth token available for request to:', endpoint);
     }
+    
+    // Ensure CORS credentials are included
+    config.withCredentials = true;
+    
     return config;
   },
   (error: any) => {
     console.error('API interceptor error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor to handle auth errors
+api.interceptors.response.use(
+  (response) => {
+    // Log successful response
+    console.log(`API Response from ${response.config.url}: Status ${response.status}`);
+    return response;
+  },
+  (error) => {
+    // Enhanced error handling
+    if (error.response) {
+      const { status, config } = error.response;
+      console.error(`API Error ${status} for ${config.url}:`, error.response.data);
+      
+      // Handle authentication errors
+      if (status === 401 || status === 403) {
+        console.error('Authentication error detected');
+        // You could dispatch an action to clear auth state or redirect to login
+        // For now, we'll just log it
+      }
+    } else if (error.request) {
+      // Request was made but no response received
+      console.error('No response received:', error.request);
+    } else {
+      // Something else caused the error
+      console.error('API request error:', error.message);
+    }
     return Promise.reject(error);
   }
 );
@@ -489,14 +540,42 @@ export interface Project {
  */
 export const getProjects = async () => {
   try {
-    const response = await api.get('/projects');
+    console.log('Fetching projects with files...');
+    
+    // Check if token exists
+    const token = getToken();
+    if (!token) {
+      console.error('No authentication token found!');
+      throw new Error('Authentication required. Please log in.');
+    }
+
+    // Force adding token to headers manually
+    const response = await api.get('/projects', {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      params: {
+        include_files: true  // Request to include file counts in the response
+      }
+    });
+    
     console.log('getProjects API response status:', response.status);
+    console.log('Projects response data:', response.data);
     
     if (!response.data || response.data.success === false) {
       throw new Error(response.data?.message || 'Invalid response from API');
     }
     
-    return response.data.data;
+    // Ensure each project has a files array
+    const projectsWithFiles = response.data.data.map((project: any) => ({
+      ...project,
+      files: Array.isArray(project.files) ? project.files : []
+    }));
+    
+    console.log('Projects with files:', projectsWithFiles);
+    return projectsWithFiles;
   } catch (error) {
     console.error('Error in getProjects API call:', error);
     throw error;
@@ -527,12 +606,23 @@ export const getProject = async (projectId: string | number) => {
     });
     
     console.log('getProject API response status:', response.status);
+    console.log('getProject API response data:', response.data);
     
     if (!response.data || response.data.success === false) {
       throw new Error(response.data?.message || 'Invalid response from API');
     }
     
-    return response.data.data;
+    // Ensure the project has a files array and file_count
+    const project = response.data.data;
+    if (!project.files) {
+      project.files = [];
+    }
+    
+    // Add file_count property
+    project.file_count = project.files.length;
+    
+    console.log(`Project loaded with ${project.file_count} files`);
+    return project;
   } catch (error: any) {
     console.error(`Error in getProject API call for project ${projectId}:`, error);
     console.error('Request details:', {
@@ -552,6 +642,8 @@ export const getProject = async (projectId: string | number) => {
 export const createProject = async (project: Project) => {
   try {
     console.log('Attempting to create new project:', project.name);
+    console.log('Project data being sent:', JSON.stringify(project, null, 2));
+    console.log('Files count:', project.files.length);
     
     // Check if token exists
     const token = getToken();
@@ -560,16 +652,26 @@ export const createProject = async (project: Project) => {
       throw new Error('Authentication required. Please log in.');
     }
 
-    // Force adding token to headers manually
-    const response = await api.post('/projects', project, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      }
+    // Force adding token to headers manually and ensure correct Content-Type
+    const headers = {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+    
+    console.log('Sending request with headers:', {
+      Authorization: headers.Authorization.substring(0, 20) + '...',
+      'Content-Type': headers['Content-Type'],
+      'Accept': headers.Accept
+    });
+    
+    const response = await axios.post(`${API_URL}/projects`, project, {
+      headers: headers,
+      withCredentials: true  // Ensure cookies are sent with the request
     });
     
     console.log('createProject API response status:', response.status);
+    console.log('Response data:', JSON.stringify(response.data, null, 2));
     
     if (!response.data || response.data.success === false) {
       throw new Error(response.data?.message || 'Invalid response from API');
@@ -782,4 +884,109 @@ export const testUpdateProject = async (projectId: string | number, project: Par
     });
     throw error;
   }
-}; 
+};
+
+/**
+ * Debug function to test creating a project with minimal data
+ */
+export const createTestProject = async () => {
+  try {
+    // Create a minimal test project with just a main file
+    const testProject = {
+      name: 'Test Project ' + new Date().toISOString(),
+      description: 'Test project created via debug function',
+      main_file_id: 'main_file',
+      files: [
+        {
+          name: 'Root',
+          path: '/',
+          content: null,
+          is_directory: true,
+          language: null,
+          parent_path: null
+        },
+        {
+          name: 'src',
+          path: '/src',
+          content: null,
+          is_directory: true,
+          language: null,
+          parent_path: '/'
+        },
+        {
+          name: 'Main.java',
+          path: '/src/Main.java',
+          content: 'public class Main {\n  public static void main(String[] args) {\n    System.out.println("Hello, Java!");\n  }\n}',
+          is_directory: false,
+          language: 'java',
+          parent_path: '/src'
+        }
+      ]
+    };
+
+    console.log('Sending test project with direct API call:', testProject);
+
+    // Use the non-authenticated test route
+    const response = await axios.post(`${API_URL}/test-projects`, testProject, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      }
+    });
+    
+    console.log('Test project creation response:', response.data);
+    return response.data.data;
+  } catch (error) {
+    console.error('Error creating test project:', error);
+    throw error;
+  }
+};
+
+/**
+ * Test authentication status
+ */
+export const testAuthentication = async (): Promise<Record<string, any>> => {
+  try {
+    console.log('Testing authentication with backend...');
+    
+    // Get the current token
+    const token = getToken();
+    console.log(`Current token: ${token ? token.substring(0, 15) + '...' : 'None'}`);
+    
+    // Create request with manual auth header to test
+    const config = {
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      withCredentials: true
+    };
+    
+    console.log('Making test request with headers:', config.headers);
+    
+    const response = await axios.get(`${API_URL}/test-auth`, config);
+    
+    console.log('Authentication test response:', response.data);
+    
+    return {
+      success: true,
+      data: response.data,
+      token_status: token ? 'present' : 'missing',
+      auth_status: response.data.is_authenticated ? 'authenticated' : 'not authenticated'
+    };
+  } catch (error: any) {
+    console.error('Authentication test failed:', error);
+    return {
+      success: false,
+      error: error.message,
+      response: error.response?.data || null,
+      token_status: getToken() ? 'present' : 'missing'
+    };
+  }
+};
+
+// Add to window for console debugging
+if (typeof window !== 'undefined') {
+  (window as any).testAuth = testAuthentication;
+} 

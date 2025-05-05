@@ -11,11 +11,16 @@ import { Project, ProjectFile, getProjects } from '@/services/api';
 import { Save, FolderOpen, Upload, Download, FileCode, Search, Loader } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Extend the Project type to include file_count
+interface ExtendedProject extends Project {
+  file_count?: number;
+}
+
 interface ProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaveProject: (name: string, description: string, currentProject: any) => Promise<void>;
-  onLoadProject: (project: Project) => Promise<void>;
+  onLoadProject: (project: ExtendedProject) => Promise<void>;
   onImportProject: (name: string, description: string, file: File) => Promise<void>;
   currentProject: any;
 }
@@ -31,7 +36,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
   const [activeTab, setActiveTab] = useState('save');
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
-  const [savedProjects, setSavedProjects] = useState<Project[]>([]);
+  const [savedProjects, setSavedProjects] = useState<ExtendedProject[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -93,7 +98,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
       setIsLoading(true);
       const projectToLoad = savedProjects.find(p => p.id === selectedProjectId);
       if (projectToLoad) {
-        await onLoadProject(projectToLoad);
+        await onLoadProject(projectToLoad as ExtendedProject);
         onClose();
         toast.success('Project loaded successfully');
       } else {
@@ -243,7 +248,7 @@ const ProjectModal: React.FC<ProjectModalProps> = ({
                         <div className="flex justify-between items-center">
                           <h3 className="font-medium">{project.name}</h3>
                           <span className="text-xs text-gray-400">
-                            {project.files?.length || 0} files
+                            {project.file_count || project.files?.length || 0} files
                           </span>
                         </div>
                         {project.description && (
