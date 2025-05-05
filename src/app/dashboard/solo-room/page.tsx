@@ -649,7 +649,7 @@ const ModuleList: React.FC<{
 const SoloRoomPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
-  const [activeTab, setActiveTab] = useState<'chat' | 'lesson-plans' | 'sessions' | 'settings' | 'quiz'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'lesson-plans' | 'sessions' | 'quiz'>('chat');
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [codeInput, setCodeInput] = useState(`public class HelloWorld {
@@ -1645,41 +1645,45 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
     }
 
     setSelectedTopic(topic);
-    setMessages([]);
-    // Use the existing topic selection flow
-    const fetchTutorResponse = async () => {
-      setIsLoading(true);
-      try {
-        const response = await getTutorResponse({
-          question: `I'd like to learn about ${topic.title}. Please provide a brief introduction.`,
-          conversationHistory: [],
-          preferences: tutorPreferences,
-          topic: topic.title,
-          topic_id: topic.id
-        });
+    
+    // Only load messages and fetch tutor response if we're in the chat tab
+    if (activeTab === 'chat') {
+      setMessages([]);
+      // Use the existing topic selection flow
+      const fetchTutorResponse = async () => {
+        setIsLoading(true);
+        try {
+          const response = await getTutorResponse({
+            question: `I'd like to learn about ${topic.title}. Please provide a brief introduction.`,
+            conversationHistory: [],
+            preferences: tutorPreferences,
+            topic: topic.title,
+            topic_id: topic.id
+          });
 
-        // Add welcome message
-        const welcomeMessage: Message = {
-          id: Date.now(),
-          text: response.response || `Welcome to the ${topic.title} topic!`,
-          sender: 'ai',
-          timestamp: new Date(),
-        };
-        
-        setMessages([welcomeMessage]);
-        
-        // Save session ID if available
-        if (response.session_id) {
-          setCurrentSessionId(response.session_id);
+          // Add welcome message
+          const welcomeMessage: Message = {
+            id: Date.now(),
+            text: response.response || `Welcome to the ${topic.title} topic!`,
+            sender: 'ai',
+            timestamp: new Date(),
+          };
+          
+          setMessages([welcomeMessage]);
+          
+          // Save session ID if available
+          if (response.session_id) {
+            setCurrentSessionId(response.session_id);
+          }
+        } catch (error) {
+          console.error("Error getting tutor response:", error);
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error("Error getting tutor response:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+      };
 
-    fetchTutorResponse();
+      fetchTutorResponse();
+    }
   };
   
   const handleSessionSelect = async (session: Session) => {
@@ -2256,6 +2260,9 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
       return;
     }
     
+    // Ensure we switch to the chat tab when selecting a lesson plan
+    setActiveTab('chat');
+    
     setIsLoading(true);
     
     try {
@@ -2313,9 +2320,6 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
       
       // Reset session ID when selecting a new lesson plan
       setCurrentSessionId(null);
-      
-      // Switch to chat tab
-      setActiveTab('chat');
       
       // Get details about the lesson plan
       const lessonPlanDetails = await getLessonPlanDetails(lessonPlan.id);
@@ -3026,16 +3030,16 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
             onValueChange={(value) => setActiveTab(value as any)}
             className="w-full"
           >
-            <TabsList className="grid grid-cols-5 bg-transparent w-full relative overflow-visible">
+            <TabsList className="grid grid-cols-4 bg-transparent w-full relative overflow-visible">
               {/* Animated Background Indicator */}
               <motion.div 
                 className="absolute h-full bg-white/5 rounded-md top-0 z-0"
                 style={{ 
-                  width: '20%',
+                  width: '25%',
                   left: activeTab === 'chat' ? '0%' : 
-                       activeTab === 'lesson-plans' ? '20%' : 
-                       activeTab === 'quiz' ? '40%' : 
-                       activeTab === 'sessions' ? '60%' : '80%'
+                       activeTab === 'lesson-plans' ? '25%' : 
+                       activeTab === 'quiz' ? '50%' : 
+                       activeTab === 'sessions' ? '75%' : '0%'
                 }}
                 layout
                 transition={{ type: "spring", stiffness: 400, damping: 30 }}
@@ -3116,26 +3120,6 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                   <span>Sessions</span>
                 </div>
                 {activeTab === 'sessions' && (
-                  <motion.div 
-                    className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-400 to-indigo-600 rounded-t-full"
-                    layoutId="activeTabIndicator"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.3 }}
-                  />
-                )}
-              </TabsTrigger>
-              
-              <TabsTrigger
-                value="settings"
-                className={`px-3 py-2 text-sm z-10 relative overflow-visible transition-all hover:text-white
-                  ${activeTab === 'settings' ? 'text-white font-semibold' : 'text-gray-400'}`}
-              >
-                <div className="flex items-center gap-2">
-                  <SettingsIcon className="h-4 w-4" />
-                  <span>Settings</span>
-                </div>
-                {activeTab === 'settings' && (
                   <motion.div 
                     className="absolute bottom-0 left-0 right-0 h-[3px] bg-gradient-to-r from-blue-400 to-indigo-600 rounded-t-full"
                     layoutId="activeTabIndicator"
@@ -3712,10 +3696,667 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
               )}
                 </div>
           )}
+          
+          {/* Lesson Plans Tab Content */}
+          {activeTab === 'lesson-plans' && (
+            <div className="flex flex-col">
+              <section className="p-4 border-b border-white/10">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold flex items-center">
+                    <GraduationCap className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                    Lesson Plans
+                  </h2>
+                  
+                  {selectedTopic && (
+                    <div className="flex items-center space-x-2">
+                      <Badge variant="outline" className="bg-white/5 text-white">
+                        {selectedTopic.title}
+                      </Badge>
+                      <Badge
+                        className="bg-white/10"
+                        style={{ color: getDifficultyColor(selectedTopic.difficulty_level) }}
+                      >
+                        {selectedTopic.difficulty_level}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Choose a topic section - always visible */}
+                <div className="bg-white/5 rounded-lg p-6">
+                  <h3 className="text-lg font-medium mb-4">Learning Topics</h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl">
+                    {isLoadingTopics ? (
+                      <div className="col-span-3 flex justify-center py-10">
+                        <Loader className="h-8 w-8 animate-spin text-[#2E5BFF]" />
+                      </div>
+                    ) : (
+                      topics.map((topic) => (
+                        <div 
+                          key={topic.id}
+                          className={`bg-slate-700/70 backdrop-blur-sm rounded-lg p-4 ${
+                            topic.is_locked ? 'cursor-not-allowed' : 'cursor-pointer hover:bg-slate-700/90'
+                          } ${selectedTopic?.id === topic.id ? 'ring-2 ring-blue-500' : ''}`}
+                          onClick={() => !topic.is_locked && handleTopicSelect(topic)}
+                        >
+                          <div className="flex items-center space-x-3">
+                            <div className="flex-shrink-0">
+                              {topic.title === 'Java Basics' ? (
+                                <div className="text-green-500">
+                                  <BookOpen className="h-5 w-5" />
+                                </div>
+                              ) : topic.title === 'Java Advanced Concepts' ? (
+                                <div className="text-blue-500">
+                                  <Code className="h-5 w-5" />
+                                </div>
+                              ) : (
+                                <div className="text-purple-500">
+                                  <Layers className="h-5 w-5" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h4 className="font-medium text-sm text-white truncate">{topic.title}</h4>
+                              <div className="flex items-center text-xs mt-1">
+                                <span className="text-gray-400">{topic.progress || 0}% complete</span>
+                              </div>
+                            </div>
+                            {topic.is_locked && (
+                              <Lock className="h-4 w-4 text-amber-500" />
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                
+                {/* Display lesson plans for selected topic */}
+                {selectedTopic && topicLessonPlans[selectedTopic.id] && (
+                  <div className="mt-6">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-medium flex items-center">
+                        <GraduationCap className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                        Lesson Plans for {selectedTopic.title}
+                      </h3>
+                      <div className="flex items-center space-x-2">
+                        <Badge
+                          className="bg-white/10"
+                          style={{ color: getDifficultyColor(selectedTopic.difficulty_level) }}
+                        >
+                          {selectedTopic.difficulty_level}
+                        </Badge>
+                      </div>
+                    </div>
+                    
+                    {topicLessonPlans[selectedTopic.id].length === 0 ? (
+                      <div className="bg-white/5 rounded-lg p-8 text-center">
+                        <Lightbulb className="h-12 w-12 mx-auto mb-4 text-yellow-500/80" />
+                        <h3 className="text-lg font-medium mb-2">No Lesson Plans Yet</h3>
+                        <p className="text-gray-400">There are no lesson plans available for this topic yet.</p>
+                      </div>
+                    ) : (
+                      <HierarchicalLessonPlans 
+                        plans={topicLessonPlans[selectedTopic.id]} 
+                        onSelectPlan={handleLessonPlanSelect}
+                      />
+                    )}
+                  </div>
+                )}
+                
+                {/* Active Lesson Plan Details */}
+                {activeLessonPlan && (
+                  <div className="bg-white/5 rounded-lg p-4 mt-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="text-lg font-semibold">{activeLessonPlan.title}</h3>
+                        <p className="text-gray-400 text-sm mt-1">{activeLessonPlan.description}</p>
+                      </div>
+                      <Badge variant="outline" className="bg-[#2E5BFF]/20 text-blue-400 border-blue-500/20">
+                        {activeLessonPlan.modules_count} modules
+                      </Badge>
+                    </div>
+                    
+                    {activeLessonPlan.modules && activeLessonPlan.modules.length > 0 && (
+                      <div className="mt-4">
+                        <h4 className="text-md font-medium mb-2 flex items-center">
+                          <Layers className="h-4 w-4 mr-2 text-[#2E5BFF]" />
+                          Modules
+                        </h4>
+                        <ModuleList
+                          modules={activeLessonPlan.modules}
+                          activeLessonPlan={activeLessonPlan}
+                          activeModuleId={activeModule?.id || 0}
+                          onSelectModule={handleModuleSelect}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
+          
+          {/* Quiz Tab Content */}
+          {activeTab === 'quiz' && (
+            <div className="flex flex-col">
+              <section className="p-4 border-b border-white/10">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold flex items-center">
+                    <Lightbulb className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                    Knowledge Assessment
+                  </h2>
+                  
+                  {selectedTopic && (
+                    <div className="flex items-center space-x-2">
+                      <Badge variant="outline" className="bg-white/5 text-white">
+                        {selectedTopic.title}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+                
+                {!selectedTopic ? (
+                  <div className="bg-white/5 rounded-lg p-8 text-center">
+                    <Lightbulb className="h-12 w-12 mx-auto mb-4 text-amber-500" />
+                    <h3 className="text-lg font-medium mb-2">Select a Topic First</h3>
+                    <p className="text-gray-400 mb-4">Choose a learning topic to access its quizzes</p>
+                    <Button 
+                      onClick={() => setActiveTab('lesson-plans')}
+                      className="bg-[#2E5BFF] hover:bg-[#1E4BEF]"
+                    >
+                      Browse Topics
+                    </Button>
+                  </div>
+                ) : isLoadingQuiz ? (
+                  <div className="bg-white/5 rounded-lg p-12 flex justify-center">
+                    <div className="flex flex-col items-center">
+                      <Loader className="h-8 w-8 animate-spin text-[#2E5BFF] mb-4" />
+                      <p className="text-gray-400">Loading quiz...</p>
+                    </div>
+                  </div>
+                ) : activeQuiz ? (
+                  <div className="bg-white/5 rounded-lg p-4">
+                    {quizSubmitted ? (
+                      <div className="space-y-6">
+                        <div className="text-center p-4">
+                          <h3 className="text-xl font-semibold mb-2">{quizScore >= 70 ? 'Great Job!' : 'Quiz Completed'}</h3>
+                          <div className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-white/5 mb-4">
+                            <div className="text-2xl font-bold">
+                              {quizScore}%
+                            </div>
+                          </div>
+                          <p className="text-gray-300 mb-6">
+                            {quizScore >= 80 ? 'Excellent work! You have a solid understanding of this topic.' :
+                             quizScore >= 70 ? 'Good job! You\'re making great progress.' :
+                             quizScore >= 50 ? 'You\'re on the right track, but may need more practice.' :
+                             'This topic needs more review. Let\'s keep learning!'}
+                          </p>
+                          
+                          <div className="flex justify-center gap-3">
+                            <Button
+                              onClick={() => {
+                                setActiveQuiz(null);
+                                setQuizSubmitted(false);
+                              }}
+                              className="bg-white/10 hover:bg-white/20"
+                            >
+                              <ArrowLeft className="h-4 w-4 mr-2" />
+                              Back to Quizzes
+                            </Button>
+                            <Button 
+                              onClick={() => {
+                                setActiveTab('chat');
+                                // Reset the quiz state
+                                setActiveQuiz(null);
+                                setQuizSubmitted(false);
+                              }}
+                              className="bg-[#2E5BFF] hover:bg-[#1E4BEF]"
+                            >
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              Discuss with Tutor
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-6">
+                          <h4 className="text-lg font-medium flex items-center">
+                            <CheckCircle className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                            Review Your Answers
+                          </h4>
+                          
+                          {activeQuiz.questions.map((question, qIndex) => {
+                            const isCorrect = selectedOptions[qIndex] === question.correctOption;
+                            return (
+                              <div 
+                                key={question.id}
+                                className={`p-4 rounded-lg ${
+                                  isCorrect ? 'bg-green-900/20 border border-green-800/30' : 'bg-red-900/20 border border-red-800/30'
+                                }`}
+                              >
+                                <div className="flex items-start">
+                                  <div className={`flex-shrink-0 mt-1 p-1 rounded-full ${isCorrect ? 'text-green-500' : 'text-red-500'}`}>
+                                    {isCorrect ? <CheckCircle className="h-5 w-5" /> : <XCircle className="h-5 w-5" />}
+                                  </div>
+                                  <div className="ml-3 flex-1">
+                                    <p className="font-medium mb-3">{qIndex + 1}. {question.question}</p>
+                                    <div className="grid gap-2">
+                                      {question.options.map((option, oIndex) => (
+                                        <div 
+                                          key={oIndex}
+                                          className={`p-2 rounded ${
+                                            oIndex === question.correctOption ? 'bg-green-900/30 border border-green-800/30' :
+                                            oIndex === selectedOptions[qIndex] ? 'bg-red-900/30 border border-red-800/30' :
+                                            'bg-white/5'
+                                          }`}
+                                        >
+                                          <div className="flex items-center">
+                                            <div className="flex-shrink-0 w-6">
+                                              {oIndex === question.correctOption && <CheckCircle className="h-4 w-4 text-green-500" />}
+                                              {oIndex === selectedOptions[qIndex] && oIndex !== question.correctOption && <XCircle className="h-4 w-4 text-red-500" />}
+                                            </div>
+                                            <p className={`text-sm ${
+                                              oIndex === question.correctOption ? 'text-green-400' :
+                                              oIndex === selectedOptions[qIndex] ? 'text-red-400' :
+                                              'text-gray-300'
+                                            }`}>
+                                              {option}
+                                            </p>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                    {question.explanation && (
+                                      <div className="mt-3 text-sm bg-white/5 p-3 rounded">
+                                        <p className="font-medium text-blue-400 mb-1">Explanation:</p>
+                                        <p className="text-gray-300">{question.explanation}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        <div className="flex justify-between items-center mb-2">
+                          <div>
+                            <h3 className="text-xl font-semibold">{activeQuiz.title}</h3>
+                            <p className="text-gray-400 text-sm mt-1">{activeQuiz.description}</p>
+                          </div>
+                          <Badge variant="outline" className="bg-white/5 text-gray-300">
+                            {activeQuiz.questions.length} Questions
+                          </Badge>
+                        </div>
+                        
+                        <div className="flex items-center gap-3 text-sm text-gray-400 mb-6">
+                          <div className="flex items-center">
+                            <Award className="h-4 w-4 mr-1 text-[#2E5BFF]" />
+                            <span>Total: {activeQuiz.totalPoints} points</span>
+                          </div>
+                          <div className="flex items-center">
+                            <CheckCircle className="h-4 w-4 mr-1 text-green-500" />
+                            <span>Pass: 70%</span>
+                          </div>
+                        </div>
+                        
+                        <div className="p-4 bg-white/5 rounded-lg">
+                          <div className="flex justify-between items-center mb-4">
+                            <h4 className="font-medium">Question {currentQuestionIndex + 1} of {activeQuiz.questions.length}</h4>
+                            <div className="flex items-center text-sm text-gray-400">
+                              <Clock className="h-4 w-4 mr-1" />
+                              <span>Take your time</span>
+                            </div>
+                          </div>
+                          
+                          <div className="mb-6">
+                            <p className="text-lg mb-4">{activeQuiz.questions[currentQuestionIndex].question}</p>
+                            <div className="space-y-3">
+                              {activeQuiz.questions[currentQuestionIndex].options.map((option, index) => (
+                                <div
+                                  key={index}
+                                  className={`p-3 rounded-lg border cursor-pointer transition duration-200 ${
+                                    selectedOptions[currentQuestionIndex] === index 
+                                      ? 'bg-[#2E5BFF]/20 border-[#2E5BFF]' 
+                                      : 'bg-white/5 border-white/10 hover:bg-white/10'
+                                  }`}
+                                  onClick={() => {
+                                    const newSelectedOptions = [...selectedOptions];
+                                    newSelectedOptions[currentQuestionIndex] = index;
+                                    setSelectedOptions(newSelectedOptions);
+                                  }}
+                                >
+                                  <div className="flex items-center">
+                                    <div className={`w-6 h-6 rounded-full flex items-center justify-center mr-3 flex-shrink-0 ${
+                                      selectedOptions[currentQuestionIndex] === index 
+                                        ? 'bg-[#2E5BFF] text-white' 
+                                        : 'bg-white/10 text-gray-400'
+                                    }`}>
+                                      {String.fromCharCode(65 + index)}
+                                    </div>
+                                    <span>{option}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between">
+                            <Button
+                              onClick={() => setCurrentQuestionIndex(prev => Math.max(0, prev - 1))}
+                              disabled={currentQuestionIndex === 0}
+                              className="bg-white/10 hover:bg-white/20 disabled:opacity-50"
+                            >
+                              <ChevronLeft className="h-4 w-4 mr-2" />
+                              Previous
+                            </Button>
+                            
+                            {currentQuestionIndex < activeQuiz.questions.length - 1 ? (
+                              <Button
+                                onClick={() => setCurrentQuestionIndex(prev => Math.min(activeQuiz.questions.length - 1, prev + 1))}
+                                disabled={selectedOptions[currentQuestionIndex] === -1}
+                                className="bg-[#2E5BFF] hover:bg-[#1E4BEF] disabled:opacity-50"
+                              >
+                                Next
+                                <ChevronRight className="h-4 w-4 ml-2" />
+                              </Button>
+                            ) : (
+                              <Button
+                                onClick={handleQuizSubmit}
+                                disabled={selectedOptions.includes(-1)}
+                                className="bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                              >
+                                Submit Quiz
+                                <CheckCircle className="h-4 w-4 ml-2" />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : moduleQuizzes && moduleQuizzes.length > 0 ? (
+                  <div className="space-y-4">
+                    <h3 className="text-lg font-medium flex items-center">
+                      <Lightbulb className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                      Available Module Quizzes
+                    </h3>
+                    
+                    <div className="space-y-3">
+                      {moduleQuizzes.map(quiz => (
+                        <div 
+                          key={quiz.id}
+                          className="bg-white/5 hover:bg-white/10 rounded-lg p-4 cursor-pointer transition"
+                          onClick={() => startModuleQuiz(quiz.id)}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h4 className="font-medium mb-1">{quiz.title}</h4>
+                              <p className="text-sm text-gray-400">{quiz.description}</p>
+                              
+                              <div className="flex flex-wrap gap-3 mt-3 text-xs">
+                                <Badge variant="outline" className="bg-white/5 text-blue-400 border-blue-400/20">
+                                  {quiz.questions.length} Questions
+                                </Badge>
+                                <div className="flex items-center text-gray-400">
+                                  <Clock className="h-3.5 w-3.5 mr-1" />
+                                  <span>{quiz.time_limit_minutes} minutes</span>
+                                </div>
+                                <div className="flex items-center text-gray-400">
+                                  <Award className="h-3.5 w-3.5 mr-1" />
+                                  <span>Pass: {quiz.passing_score_percent}%</span>
+                                </div>
+                              </div>
+                            </div>
+                            <Badge className={`${
+                              quiz.passed 
+                                ? 'bg-green-900/20 text-green-400' 
+                                : 'bg-blue-900/20 text-blue-400'
+                            }`}>
+                              {quiz.passed ? 'Passed' : 'Available'}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-white/5 rounded-lg p-6 text-center">
+                      <Lightbulb className="h-12 w-12 mx-auto mb-4 text-[#2E5BFF]" />
+                      <h3 className="text-lg font-medium mb-2">No Quizzes Available Yet</h3>
+                      <p className="text-gray-400 mb-6">Generate a quiz to test your knowledge on this topic</p>
+                      
+                      <Button 
+                        onClick={() => generateQuizForTopic(selectedTopic.id, selectedTopic.title)}
+                        className="bg-[#2E5BFF] hover:bg-[#1E4BEF]"
+                        disabled={isLoadingQuiz}
+                      >
+                        {isLoadingQuiz ? (
+                          <>
+                            <Loader className="h-4 w-4 mr-2 animate-spin" />
+                            Generating Quiz
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="h-4 w-4 mr-2" />
+                            Generate Quiz
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-lg font-medium flex items-center mb-4">
+                        <BarChart className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                        Quiz Performance
+                      </h3>
+                      
+                      <div className="bg-white/5 rounded-lg p-4">
+                        {isLoadingAnalysis ? (
+                          <div className="flex justify-center py-8">
+                            <Loader className="h-8 w-8 animate-spin text-[#2E5BFF]" />
+                          </div>
+                        ) : quizAnalysis ? (
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                              <div className="bg-white/5 rounded-lg p-3 text-center">
+                                <p className="text-sm text-gray-400 mb-1">Quizzes Taken</p>
+                                <p className="text-2xl font-semibold">{quizAnalysis.quizzes_taken || 0}</p>
+                              </div>
+                              <div className="bg-white/5 rounded-lg p-3 text-center">
+                                <p className="text-sm text-gray-400 mb-1">Avg. Score</p>
+                                <p className="text-2xl font-semibold">{quizAnalysis.average_score || 0}%</p>
+                              </div>
+                              <div className="bg-white/5 rounded-lg p-3 text-center">
+                                <p className="text-sm text-gray-400 mb-1">Passed</p>
+                                <p className="text-2xl font-semibold text-green-500">{quizAnalysis.quizzes_passed || 0}</p>
+                              </div>
+                              <div className="bg-white/5 rounded-lg p-3 text-center">
+                                <p className="text-sm text-gray-400 mb-1">Failed</p>
+                                <p className="text-2xl font-semibold text-red-500">{quizAnalysis.quizzes_failed || 0}</p>
+                              </div>
+                            </div>
+                            
+                            {quizAnalysis.feedback && (
+                              <div className="bg-blue-900/20 rounded-lg p-4 text-sm">
+                                <p className="font-medium text-blue-400 mb-2">Performance Insights:</p>
+                                <p className="text-gray-300">{quizAnalysis.feedback}</p>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-center py-6">
+                            <p className="text-gray-400 mb-4">No quiz data available yet</p>
+                            <Button 
+                              onClick={getQuizAnalysis} 
+                              className="bg-white/10 hover:bg-white/20"
+                              disabled={isLoadingAnalysis}
+                            >
+                              <RefreshCw className="h-4 w-4 mr-2" />
+                              Refresh Data
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
+          
+          {/* Sessions Tab Content */}
+          {activeTab === 'sessions' && (
+            <div className="flex flex-col">
+              <section className="p-4 border-b border-white/10">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold flex items-center">
+                    <Clock className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                    Learning Sessions
+                  </h2>
+                </div>
+                
+                <div className="space-y-6">
+                  {/* Recent sessions section */}
+                  <div>
+                    <h3 className="text-lg font-medium flex items-center mb-4">
+                      <Activity className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                      Recent Sessions
+                    </h3>
+                    
+                    {previousSessions.length > 0 ? (
+                      <div className="space-y-3">
+                        {previousSessions.map((session) => (
+                          <div 
+                            key={session.id}
+                            onClick={() => handleSessionSelect(session)}
+                            className="bg-white/5 hover:bg-white/10 rounded-lg p-4 cursor-pointer transition"
+                          >
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <h4 className="font-medium">{session.topic}</h4>
+                                <p className="text-sm text-gray-400 mt-1">{session.date}</p>
+                              </div>
+                              <div className="flex items-center">
+                                <div className="hidden sm:flex items-center mr-4 text-gray-400 text-sm">
+                                  <Clock className="h-4 w-4 mr-1.5" />
+                                  <span>{session.duration}</span>
+                                </div>
+                                <Button size="sm" className="bg-[#2E5BFF] hover:bg-[#1E4BEF]">
+                                  <ArrowRight className="h-4 w-4 mr-1.5" />
+                                  Resume
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="bg-white/5 rounded-lg p-6 text-center">
+                        <Clock className="h-12 w-12 mx-auto mb-4 text-[#2E5BFF]" />
+                        <h3 className="text-lg font-medium mb-2">No Recent Sessions</h3>
+                        <p className="text-gray-400 mb-6">Start a new learning session by selecting a topic</p>
+                        
+                        <Button 
+                          onClick={() => setActiveTab('lesson-plans')}
+                          className="bg-[#2E5BFF] hover:bg-[#1E4BEF]"
+                        >
+                          <BookOpen className="h-4 w-4 mr-2" />
+                          Browse Topics
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Learning statistics section */}
+                  {previousSessions.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-medium flex items-center mb-4">
+                        <PieChart className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                        Learning Statistics
+                      </h3>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="bg-white/5 rounded-lg p-4 text-center">
+                          <p className="text-sm text-gray-400 mb-1">Total Sessions</p>
+                          <p className="text-3xl font-semibold">{previousSessions.length}</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-4 text-center">
+                          <p className="text-sm text-gray-400 mb-1">Total Learning Time</p>
+                          <p className="text-3xl font-semibold">
+                            {previousSessions.reduce((total, session) => {
+                              const minutes = parseInt(session.duration.split(' ')[0]);
+                              return isNaN(minutes) ? total : total + minutes;
+                            }, 0)} min
+                          </p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-4 text-center">
+                          <p className="text-sm text-gray-400 mb-1">Topics Explored</p>
+                          <p className="text-3xl font-semibold">
+                            {new Set(previousSessions.map(session => session.topic)).size}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Learning streak section */}
+                  {previousSessions.length > 0 && (
+                    <div>
+                      <h3 className="text-lg font-medium flex items-center mb-4">
+                        <Zap className="h-5 w-5 mr-2 text-[#2E5BFF]" />
+                        Learning Streak
+                      </h3>
+                      
+                      <div className="bg-white/5 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <p className="text-gray-400 text-sm">Current Streak</p>
+                            <p className="text-2xl font-semibold flex items-center">
+                              3 days
+                              <span className="text-yellow-500 ml-2">
+                                <Zap className="h-5 w-5 inline" />
+                              </span>
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-gray-400 text-sm">Longest Streak</p>
+                            <p className="text-2xl font-semibold">7 days</p>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-7 gap-1">
+                          {[...Array(7)].map((_, i) => {
+                            const isActive = i < 3;
+                            return (
+                              <div key={i} className="flex flex-col items-center">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${
+                                  isActive ? 'bg-[#2E5BFF] text-white' : 'bg-white/10 text-gray-400'
+                                }`}>
+                                  {isActive && <Check className="h-4 w-4" />}
+                                </div>
+                                <span className="text-xs text-gray-400">
+                                  {new Date(Date.now() - (6 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { weekday: 'short' })}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-export default SoloRoomPage; 
+export default SoloRoomPage;
