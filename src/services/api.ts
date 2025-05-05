@@ -119,28 +119,136 @@ export const getTutorResponse = async (params: {
   try {
     // Ensure conversationHistory is an array and convert to the format expected by the API
     const requestParams: any = {
-      question: params.question,
+      question: params.question || '',
       conversation_history: Array.isArray(params.conversationHistory) ? params.conversationHistory : [],
-      preferences: params.preferences
+      preferences: params.preferences || {}
     };
     
-    // Only add optional parameters if they exist
-    if (params.topic_id !== undefined) requestParams.topic_id = params.topic_id;
-    if (params.session_id !== undefined) requestParams.session_id = params.session_id;
-    if (params.lesson_context) requestParams.lesson_context = params.lesson_context;
-    
-    console.log('Calling getTutorResponse API with params:', JSON.stringify(requestParams, null, 2));
-    const response = await api.post('/tutor/chat', requestParams);
-    console.log('getTutorResponse API response:', response.data);
-    
-    if (!response.data || response.data.status === 'error') {
-      throw new Error(response.data?.message || 'Invalid response from API');
+    // Make sure question is a non-empty string
+    if (!requestParams.question || typeof requestParams.question !== 'string') {
+      requestParams.question = 'Hello';
     }
     
-    return response.data.data;
-  } catch (error) {
+    // Ensure conversation_history items have both role and content as strings
+    requestParams.conversation_history = requestParams.conversation_history.map((item: any) => ({
+      role: (typeof item.role === 'string' && (item.role === 'user' || item.role === 'assistant')) 
+        ? item.role 
+        : item.role === 'ai' || item.role === 'bot' 
+          ? 'assistant'
+          : 'user',
+      content: typeof item.content === 'string' ? item.content : String(item.content || '')
+    }));
+    
+    // Only add optional parameters if they exist and are valid
+    if (params.topic_id !== undefined && params.topic_id !== null) {
+      requestParams.topic_id = Number(params.topic_id);
+    }
+    if (params.session_id !== undefined && params.session_id !== null) {
+      requestParams.session_id = Number(params.session_id);
+    }
+    if (params.lesson_context && typeof params.lesson_context === 'string') {
+      requestParams.lesson_context = params.lesson_context;
+    }
+    
+    console.log('Calling getTutorResponse API with params:', { 
+      question: requestParams.question,
+      conversation_history_length: requestParams.conversation_history?.length || 0,
+      topic_id: requestParams.topic_id,
+      session_id: requestParams.session_id
+    });
+    
+    // Set a timeout to prevent hanging requests
+    const response = await api.post('/tutor/chat', requestParams, {
+      timeout: 30000 // 30 second timeout (reduced from 60s for better UX)
+    });
+    
+    console.log('getTutorResponse API response status:', response.status);
+    
+    if (!response.data) {
+      throw new Error('Empty response from API');
+    }
+    
+    // More comprehensive detection of error/fallback responses
+    const isError = response.data.status === 'error';
+    const isFallback = 
+      response.data.status === 'partial' || 
+      (response.data.data && (
+        response.data.data.is_fallback === true || 
+        response.data.data.fallback === true ||
+        (response.data.data.response && (
+          response.data.data.response.includes('temporarily unavailable') ||
+          response.data.data.response.includes('having trouble') ||
+          response.data.data.response.includes('connectivity issues')
+        ))
+      ));
+    
+    if (isError) {
+      throw new Error(response.data?.message || 'Error response from API');
+    }
+    
+    // Add the error and fallback flags to the response data
+    return {
+      ...response.data.data,
+      error: false,
+      is_fallback: isFallback,
+      fallback: isFallback
+    };
+  } catch (error: any) {
     console.error('Error in getTutorResponse API call:', error);
-    throw error;
+    
+    // Create a more user-friendly error message
+    let errorMessage = 'Failed to get AI tutor response. Please try again.';
+    
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      console.error('API error response:', error.response.data);
+      
+      if (error.response.status === 500) {
+        errorMessage = 'Server error: The AI service is currently unavailable. Please try again later.';
+      } else if (error.response.status === 503) {
+        errorMessage = 'The AI service is temporarily unavailable. Please try again in a few minutes.';
+      } else if (error.response.status === 504) {
+        errorMessage = 'The request timed out. The AI service might be overloaded. Please try again in a few minutes.';
+      } else if (error.response.status === 206) {
+        // 206 Partial Content is used for fallback responses in our API
+        errorMessage = error.response.data?.data?.response || 
+                      'The AI service is temporarily unavailable. Please try again in a few minutes.';
+        
+        // Return the actual fallback message from the API if available
+        if (error.response.data?.data) {
+          return {
+            ...error.response.data.data,
+            error: false,
+            fallback: true,
+            is_fallback: true
+          };
+        }
+      } else if (error.response.data && error.response.data.message) {
+        errorMessage = `Error: ${error.response.data.message}`;
+      }
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error('No response received:', error.request);
+      
+      // Check if this is a timeout error
+      if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Request timed out. The AI service might be taking too long to respond. Please try again with a simpler query.';
+      } else {
+        errorMessage = 'Network error: No response from server. Please check your connection.';
+      }
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      errorMessage = `Error: ${error.message}`;
+    }
+    
+    // Return a fallback response instead of throwing, allowing the UI to continue functioning
+    return {
+      response: errorMessage,
+      error: true,
+      fallback: true,
+      is_fallback: true
+    };
   }
 };
 
@@ -167,9 +275,40 @@ export const executeJavaCode = async (params: {
     }
     
     return response.data.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in executeJavaCode API call:', error);
-    throw error;
+    
+    let errorMessage = 'Failed to execute code. Please try again.';
+    
+    if (error.response) {
+      console.error('API error response:', error.response.data);
+      
+      if (error.response.status === 500) {
+        errorMessage = 'Server error: The code execution service is currently unavailable.';
+      } else if (error.response.status === 503) {
+        errorMessage = 'The code execution service is temporarily unavailable.';
+      } else if (error.response.data && error.response.data.message) {
+        errorMessage = `Error: ${error.response.data.message}`;
+      }
+    } else if (error.request) {
+      console.error('No response received:', error.request);
+      errorMessage = 'Network error: No response from server. Please check your connection.';
+    } else {
+      errorMessage = `Error: ${error.message}`;
+    }
+    
+    // Return a fallback response instead of throwing
+    return {
+      execution: {
+        stdout: '',
+        stderr: errorMessage,
+        success: false,
+        executionTime: 0
+      },
+      feedback: 'There was an error executing your code.',
+      error: true,
+      fallback: true
+    };
   }
 };
 
@@ -198,9 +337,40 @@ export const executeJavaProject = async (params: {
     }
     
     return response.data.data;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in executeJavaProject API call:', error);
-    throw error;
+    
+    let errorMessage = 'Failed to execute project. Please try again.';
+    
+    if (error.response) {
+      console.error('API error response:', error.response.data);
+      
+      if (error.response.status === 500) {
+        errorMessage = 'Server error: The project execution service is currently unavailable.';
+      } else if (error.response.status === 503) {
+        errorMessage = 'The project execution service is temporarily unavailable.';
+      } else if (error.response.data && error.response.data.message) {
+        errorMessage = `Error: ${error.response.data.message}`;
+      }
+    } else if (error.request) {
+      console.error('No response received:', error.request);
+      errorMessage = 'Network error: No response from server. Please check your connection.';
+    } else {
+      errorMessage = `Error: ${error.message}`;
+    }
+    
+    // Return a fallback response instead of throwing
+    return {
+      execution: {
+        stdout: '',
+        stderr: errorMessage,
+        success: false,
+        executionTime: 0
+      },
+      feedback: 'There was an error executing your project.',
+      error: true,
+      fallback: true
+    };
   }
 };
 

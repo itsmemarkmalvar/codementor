@@ -646,6 +646,41 @@ const ModuleList: React.FC<{
   );
 };
 
+// Add this function after the interface definitions and before the SoloRoomPage component
+const parseMessageWithCodeBlocks = (text: string) => {
+  if (!text) return { text: '', code: undefined };
+  
+  // Check if the message contains code blocks
+  const codeBlockRegex = /```(java|javascript|python|html|css|json)?\s*\n([\s\S]*?)\n```/g;
+  let match;
+  let result = text;
+  let codeBlocks: Array<{language: string, code: string}> = [];
+  
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    const language = match[1] || 'java';
+    const code = match[2];
+    codeBlocks.push({ language, code });
+    // Replace the code block with a placeholder
+    result = result.replace(match[0], `[CODE_BLOCK_${codeBlocks.length - 1}]`);
+  }
+  
+  // If we found code blocks, return both text and the first code block
+  if (codeBlocks.length > 0) {
+    // Replace placeholders with cleaner text
+    codeBlocks.forEach((block, index) => {
+      result = result.replace(`[CODE_BLOCK_${index}]`, `[Code snippet: ${block.language}]`);
+    });
+    
+    return {
+      text: result,
+      code: codeBlocks[0].code // Return the first code block
+    };
+  }
+  
+  // No code blocks found
+  return { text: result, code: undefined };
+};
+
 const SoloRoomPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -1489,13 +1524,18 @@ const SoloRoomPage = () => {
   const requestKnowledgeCheck = async () => {
     setIsLoading(true);
     try {
+      // Ensure preferences is a valid object
+      const safePreferences = {
+        responseLength: tutorPreferences?.responseLength || 'medium',
+        codeExamples: tutorPreferences?.codeExamples !== undefined ? tutorPreferences.codeExamples : true,
+        explanationDetail: tutorPreferences?.explanationDetail || 'detailed',
+        challengeDifficulty: tutorPreferences?.challengeDifficulty || 'medium'
+      };
+      
       const response = await getTutorResponse({
         question: `Generate a short quiz with 3 multiple-choice questions covering the key concepts of ${selectedTopic?.title}. Format it clearly with questions and answer choices.`,
         conversationHistory: [],
-        preferences: {
-          ...tutorPreferences,
-          responseLength: 'medium',
-        },
+        preferences: safePreferences,
         topic: selectedTopic?.title,
         topic_id: selectedTopic?.id,
         session_id: currentSessionId !== null ? currentSessionId : undefined
@@ -1535,14 +1575,15 @@ const SoloRoomPage = () => {
     setIsLoading(true);
 
     try {
-      // Format conversation history for the AI API - ensure proper format for Gemini
+      // Format conversation history for the AI API
       // Only take the last 10 messages to avoid too large requests
       const conversationHistory = messages
         .slice(-10)
         .map(msg => ({
-          role: msg.sender === 'user' ? 'user' : 'assistant',
-          content: msg.text
-        }));
+          role: msg.sender === 'user' ? 'user' : 'assistant', // Consistent mapping
+          content: msg.text || '' // Ensure content is never null or undefined
+        }))
+        .filter(msg => msg.content.trim() !== ''); // Filter out empty messages
 
       // Create context from lesson plan if available
       let lessonContext = "";
@@ -1555,64 +1596,87 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
 `;
       }
 
+      // Ensure preferences is a valid object
+      const safePreferences = {
+        responseLength: tutorPreferences?.responseLength || 'medium',
+        codeExamples: tutorPreferences?.codeExamples !== undefined ? tutorPreferences.codeExamples : true,
+        explanationDetail: tutorPreferences?.explanationDetail || 'detailed',
+        challengeDifficulty: tutorPreferences?.challengeDifficulty || 'medium'
+      };
+
       // Get response from AI tutor with lesson context
       const response = await getTutorResponse({
         question: inputMessage,
         conversationHistory,
-        preferences: tutorPreferences,
+        preferences: safePreferences,
         topic: selectedTopic?.title,
         topic_id: selectedTopic?.id,
         session_id: currentSessionId !== null ? currentSessionId : undefined,
         lesson_context: lessonContext // Add lesson context
       });
 
+      // Check if we got an error or fallback response
+      const isError = response.error === true;
+      const isFallback = response.is_fallback === true || response.fallback === true;
+      
+      // Parse the response to extract any code blocks
+      const responseText = isError || isFallback
+        ? response.response || "Sorry, I'm having trouble connecting to the AI service. Please try again later."
+        : response.response || "I'm sorry, I don't have a response for that.";
+      
+      const parsedResponse = parseMessageWithCodeBlocks(responseText);
+      
       // Add AI's response to the chat
       const aiMessage: Message = {
         id: Date.now() + 1,
-        text: response.response || "I'm sorry, I don't have a response for that.",
+        text: parsedResponse.text,
+        code: parsedResponse.code,
         sender: 'ai',
         timestamp: new Date(),
       };
 
       setMessages(prev => [...prev, aiMessage]);
       
-      // Check if this seems to be a knowledge check response
-      if (knowledgeCheckRequested && 
-          (inputMessage.toLowerCase().includes('answer') || 
-           inputMessage.toLowerCase().includes('option') || 
-           inputMessage.match(/[a-d]\s*:/i))) {
-        // This might be an answer to a knowledge check question - award higher points for quizzes
-        await updateUserProgress(5, 'knowledge_check');
-        
-        // After a few knowledge check answers, consider the check complete
-        knowledgeCheckAnswersCount++;
-        if (knowledgeCheckAnswersCount >= 3) {
-          setKnowledgeCheckRequested(false);
-          knowledgeCheckAnswersCount = 0;
-        }
-      } else {
-        // Regular chat message progress - small increments to avoid abuse
-        // Determine message quality based on length and content
-        const messageLength = inputMessage.length;
-        
-        // Base the progress increment on the quality of the interaction
-        let progressIncrement = 1; // Default minimal increment
-        
-        // More substantial questions get slightly more progress
-        if (messageLength > 50) {
-          // Check if this is a meaningful message with programming-related terms
-          const hasProgrammingTerms = /\b(java|code|function|method|class|variable|loop|if|else|algorithm|data|structure)\b/i.test(inputMessage);
-          if (hasProgrammingTerms) {
-            progressIncrement = 2; // More substantial programming questions
+      // Only attempt to update progress or session if it wasn't an error or fallback response
+      if (!isError && !isFallback) {
+        // Check if this seems to be a knowledge check response
+        if (knowledgeCheckRequested && 
+            (inputMessage.toLowerCase().includes('answer') || 
+             inputMessage.toLowerCase().includes('option') || 
+             inputMessage.match(/[a-d]\s*:/i))) {
+          // This might be an answer to a knowledge check question - award higher points for quizzes
+          await updateUserProgress(5, 'knowledge_check');
+          
+          // After a few knowledge check answers, consider the check complete
+          knowledgeCheckAnswersCount++;
+          if (knowledgeCheckAnswersCount >= 3) {
+            setKnowledgeCheckRequested(false);
+            knowledgeCheckAnswersCount = 0;
           }
+        } else {
+          // Regular chat message progress - small increments to avoid abuse
+          // Determine message quality based on length and content
+          const messageLength = inputMessage.length;
+          
+          // Base the progress increment on the quality of the interaction
+          let progressIncrement = 1; // Default minimal increment
+          
+          // More substantial questions get slightly more progress
+          if (messageLength > 50) {
+            // Check if this is a meaningful message with programming-related terms
+            const hasProgrammingTerms = /\b(java|code|function|method|class|variable|loop|if|else|algorithm|data|structure)\b/i.test(inputMessage);
+            if (hasProgrammingTerms) {
+              progressIncrement = 2; // More substantial programming questions
+            }
+          }
+          
+          await updateUserProgress(progressIncrement, 'interaction');
         }
         
-        await updateUserProgress(progressIncrement, 'interaction');
-      }
-      
-      // If the session has an ID now, update the current session ID
-      if (response.session_id && currentSessionId === null) {
-        setCurrentSessionId(response.session_id);
+        // If the session has an ID now, update the current session ID
+        if (response.session_id && currentSessionId === null) {
+          setCurrentSessionId(response.session_id);
+        }
       }
     } catch (error) {
       console.error("Error getting AI response:", error);
@@ -1653,30 +1717,52 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
       const fetchTutorResponse = async () => {
         setIsLoading(true);
         try {
+          // Ensure preferences is a valid object
+          const safePreferences = {
+            responseLength: tutorPreferences?.responseLength || 'medium',
+            codeExamples: tutorPreferences?.codeExamples !== undefined ? tutorPreferences.codeExamples : true,
+            explanationDetail: tutorPreferences?.explanationDetail || 'detailed',
+            challengeDifficulty: tutorPreferences?.challengeDifficulty || 'medium'
+          };
+          
           const response = await getTutorResponse({
             question: `I'd like to learn about ${topic.title}. Please provide a brief introduction.`,
             conversationHistory: [],
-            preferences: tutorPreferences,
+            preferences: safePreferences,
             topic: topic.title,
             topic_id: topic.id
           });
 
+          // Check if we got an error or fallback response
+          const isError = response.error === true;
+          const isFallback = response.is_fallback === true || response.fallback === true;
+
           // Add welcome message
           const welcomeMessage: Message = {
             id: Date.now(),
-            text: response.response || `Welcome to the ${topic.title} topic!`,
+            text: isError || isFallback
+              ? response.response || `Welcome to the ${topic.title} topic! (Note: AI services are currently experiencing issues.)`
+              : response.response || `Welcome to the ${topic.title} topic!`,
             sender: 'ai',
             timestamp: new Date(),
           };
           
           setMessages([welcomeMessage]);
           
-          // Save session ID if available
-          if (response.session_id) {
+          // Only update session if it wasn't an error or fallback
+          if (!isError && !isFallback && response.session_id) {
             setCurrentSessionId(response.session_id);
           }
         } catch (error) {
           console.error("Error getting tutor response:", error);
+          // Add a fallback welcome message
+          const fallbackMessage: Message = {
+            id: Date.now(),
+            text: `Welcome to the ${topic.title} topic! I'm experiencing some technical difficulties right now, but feel free to ask questions.`,
+            sender: 'ai',
+            timestamp: new Date(),
+          };
+          setMessages([fallbackMessage]);
         } finally {
           setIsLoading(false);
         }
@@ -1691,11 +1777,19 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
     setIsLoading(true);
     
     try {
+      // Ensure preferences is a valid object
+      const safePreferences = {
+        responseLength: tutorPreferences?.responseLength || 'medium',
+        codeExamples: tutorPreferences?.codeExamples !== undefined ? tutorPreferences.codeExamples : true,
+        explanationDetail: tutorPreferences?.explanationDetail || 'detailed',
+        challengeDifficulty: tutorPreferences?.challengeDifficulty || 'medium'
+      };
+      
       // Get response from AI tutor about the selected session
       console.log('Requesting session resumption:', {
         question: `I want to continue our previous session on ${session.topic}`,
         conversationHistory: [],
-        preferences: tutorPreferences,
+        preferences: safePreferences,
         topic: session.topic,
         topic_id: topics.find(t => t.title === session.topic)?.id, // Look up topic ID
         session_id: session.id
@@ -1704,7 +1798,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
       const response = await getTutorResponse({
         question: `I want to continue our previous session on ${session.topic}`,
         conversationHistory: [], // Empty array for new session
-        preferences: tutorPreferences,
+        preferences: safePreferences,
         topic: session.topic,
         topic_id: topics.find(t => t.title === session.topic)?.id, // Look up topic ID
         session_id: session.id
@@ -2329,23 +2423,34 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
       const response = await getTutorResponse({
         question: `I'd like to learn about ${lessonPlan.title}. This is a lesson plan for ${lessonPlan.topic_title || 'a programming topic'}. Please provide a brief introduction to this lesson plan and what I'll be learning.`,
         conversationHistory: [], // Empty array for new conversation
-        preferences: tutorPreferences,
+        preferences: {
+          responseLength: tutorPreferences?.responseLength || 'medium',
+          codeExamples: tutorPreferences?.codeExamples !== undefined ? tutorPreferences.codeExamples : true,
+          explanationDetail: tutorPreferences?.explanationDetail || 'detailed',
+          challengeDifficulty: tutorPreferences?.challengeDifficulty || 'medium'
+        },
         topic: lessonPlan.topic_title || '',
         topic_id: lessonPlan.topic_id
       });
 
+      // Check if we got an error or fallback response
+      const isError = response.error === true;
+      const isFallback = response.is_fallback === true || response.fallback === true;
+
       // Clear previous messages and add welcome message
       const welcomeMessage: Message = {
         id: Date.now(),
-        text: response.response || `Welcome to the ${lessonPlan.title} lesson plan!`,
+        text: isError || isFallback
+          ? response.response || `Welcome to the ${lessonPlan.title} lesson plan! (Note: AI services are currently experiencing issues.)`
+          : response.response || `Welcome to the ${lessonPlan.title} lesson plan!`,
         sender: 'ai',
         timestamp: new Date(),
       };
       
       setMessages([welcomeMessage]);
       
-      // If the response includes a session ID, set it
-      if (response.session_id) {
+      // If the response includes a session ID and it's not an error or fallback, set it
+      if (!isError && !isFallback && response.session_id) {
         setCurrentSessionId(response.session_id);
       }
     } catch (error) {
@@ -2353,7 +2458,7 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
       setMessages([
         {
           id: Date.now(),
-          text: `I'm having trouble loading the ${lessonPlan.title} lesson plan. Please try again later.`,
+          text: `Welcome to the ${lessonPlan.title} lesson plan! I'm experiencing some technical difficulties right now, but feel free to explore the content.`,
           sender: 'ai',
           timestamp: new Date(),
         },
@@ -2382,8 +2487,10 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
         Note: correctOption must be the index (0-3) of the correct answer, not a letter.`,
         conversationHistory: [],
         preferences: {
-          ...tutorPreferences,
           responseLength: 'detailed',
+          codeExamples: tutorPreferences?.codeExamples !== undefined ? tutorPreferences.codeExamples : true,
+          explanationDetail: 'detailed',
+          challengeDifficulty: tutorPreferences?.challengeDifficulty || 'medium'
         },
         topic: selectedTopic?.title,
         topic_id: topicId
@@ -2624,8 +2731,10 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
           Which concepts were they strong in and which need more attention?`,
           conversationHistory: [],
           preferences: {
-            ...tutorPreferences,
             responseLength: 'medium',
+            codeExamples: tutorPreferences?.codeExamples !== undefined ? tutorPreferences.codeExamples : true,
+            explanationDetail: tutorPreferences?.explanationDetail || 'detailed',
+            challengeDifficulty: tutorPreferences?.challengeDifficulty || 'medium'
           },
           topic: selectedTopic?.title,
           topic_id: selectedTopic?.id,
@@ -3212,7 +3321,15 @@ Learning Objectives: ${activeLessonPlan.learning_objectives || 'Not specified'}
                               : 'bg-white/10 text-white'
                           }`}
                         >
-                          <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                          <p className="text-sm whitespace-pre-wrap break-words" 
+                             style={{ overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+                            {message.text.split('\n').map((line, i) => (
+                              <React.Fragment key={i}>
+                                {i > 0 && <br />}
+                                {line}
+                              </React.Fragment>
+                            ))}
+                          </p>
                           
                           {message.code && (
                             <div className="mt-2 bg-[#1a1a1a] rounded-lg p-3 font-mono text-xs overflow-x-auto">
