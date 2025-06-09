@@ -115,6 +115,7 @@ export const getTutorResponse = async (params: {
   topic_id?: number;
   session_id?: number;
   lesson_context?: string;
+  model?: 'together' | 'gemini'; // Add model selection parameter
 }) => {
   try {
     // Ensure conversationHistory is an array and convert to the format expected by the API
@@ -150,11 +151,17 @@ export const getTutorResponse = async (params: {
       requestParams.lesson_context = params.lesson_context;
     }
     
+    // Add model selection if provided
+    if (params.model && (params.model === 'together' || params.model === 'gemini')) {
+      requestParams.model = params.model;
+    }
+    
     console.log('Calling getTutorResponse API with params:', { 
       question: requestParams.question,
       conversation_history_length: requestParams.conversation_history?.length || 0,
       topic_id: requestParams.topic_id,
-      session_id: requestParams.session_id
+      session_id: requestParams.session_id,
+      model: requestParams.model || 'together' // Log which model is being used
     });
     
     // Set a timeout to prevent hanging requests

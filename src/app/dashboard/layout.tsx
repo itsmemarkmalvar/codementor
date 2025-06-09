@@ -15,12 +15,19 @@ import {
   X,
   Code,
   BookOpen,
+  ChevronDown,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AuthGuard from "@/components/AuthGuard";
 import { auth } from "@/lib/api";
 import { removeToken } from "@/lib/auth-utils";
 import { toast, Toaster } from "sonner";
+import { getTopics } from "@/services/api";
+
+interface Topic {
+  id: number;
+  title: string;
+}
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: Home },
@@ -28,7 +35,6 @@ const navItems = [
   { href: "/dashboard/practice", label: "Practice", icon: GraduationCap },
   { href: "/dashboard/progress", label: "Progress", icon: LineChart },
   { href: "/dashboard/solo-room", label: "AI Tutor Room", icon: Code },
-  { href: "/dashboard/lesson-plans", label: "Lesson Library", icon: BookOpen },
 ];
 
 export default function DashboardLayout({
@@ -39,6 +45,21 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [isLessonDropdownOpen, setIsLessonDropdownOpen] = useState(false);
+  
+  useEffect(() => {
+    const fetchTopics = async () => {
+      try {
+        const topicsData = await getTopics();
+        setTopics(topicsData);
+      } catch (error) {
+        console.error("Error fetching topics:", error);
+      }
+    };
+    
+    fetchTopics();
+  }, []);
 
   const handleLogout = async () => {
     try {
@@ -72,8 +93,9 @@ export default function DashboardLayout({
           initial={{ x: -300 }}
           animate={{ x: isSidebarOpen ? 0 : -300 }}
           transition={{ type: "spring", damping: 20 }}
-          className="fixed top-0 left-0 h-screen w-64 bg-white/5 backdrop-blur-sm border-r border-white/10 z-50"
+          className="fixed top-0 left-0 h-screen w-64 bg-white/5 backdrop-blur-sm border-r border-white/10 z-50 flex flex-col"
         >
+          {/* Top section with logo */}
           <div className="p-6">
             <div className="flex items-center justify-between">
               <Link href="/dashboard" className="text-2xl font-bold">
@@ -88,7 +110,11 @@ export default function DashboardLayout({
                 <X className="h-6 w-6" />
               </Button>
             </div>
-            <nav className="mt-8 space-y-2">
+          </div>
+          
+          {/* Main navigation - scrollable */}
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-6">
+            <nav className="space-y-2 pb-4">
               {navItems.map(({ href, label, icon: Icon }) => (
                 <Link key={href} href={href}>
                   <motion.div
@@ -105,9 +131,59 @@ export default function DashboardLayout({
                   </motion.div>
                 </Link>
               ))}
+              
+              {/* Lesson Library with Dropdown */}
+              <div className="relative">
+                <motion.div
+                  className={`flex items-center justify-between px-4 py-3 rounded-lg transition-colors cursor-pointer ${
+                    pathname.startsWith('/dashboard/lesson-plans')
+                      ? "bg-[#2E5BFF] text-white"
+                      : "hover:bg-white/5 text-gray-400 hover:text-white"
+                  }`}
+                  whileHover={{ x: 5 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setIsLessonDropdownOpen(!isLessonDropdownOpen)}
+                >
+                  <div className="flex items-center space-x-3">
+                    <BookOpen className="h-5 w-5" />
+                    <span>Lesson Library</span>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${isLessonDropdownOpen ? 'rotate-180' : ''}`} />
+                </motion.div>
+                
+                {/* Dropdown Menu */}
+                {isLessonDropdownOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="pl-12 mt-1 space-y-1 max-h-[180px] overflow-y-auto pr-2 custom-scrollbar"
+                  >
+                    <Link href="/dashboard/lesson-plans">
+                      <div className={`py-2 px-3 rounded-lg text-sm transition-colors ${
+                        pathname === '/dashboard/lesson-plans' ? 'text-[#2E5BFF] font-medium' : 'text-gray-400 hover:text-white'
+                      }`}>
+                        All Lessons
+                      </div>
+                    </Link>
+                    
+                    {topics.map((topic) => (
+                      <Link key={topic.id} href={`/dashboard/lesson-plans?topic=${topic.id}`}>
+                        <div className={`py-2 px-3 rounded-lg text-sm transition-colors ${
+                          pathname.includes(`topic=${topic.id}`) ? 'text-[#2E5BFF] font-medium' : 'text-gray-400 hover:text-white'
+                        }`}>
+                          {topic.title}
+                        </div>
+                      </Link>
+                    ))}
+                  </motion.div>
+                )}
+              </div>
             </nav>
           </div>
-          <div className="absolute bottom-0 left-0 right-0 p-6 border-t border-white/10">
+          
+          {/* Bottom navigation - fixed */}
+          <div className="p-6 border-t border-white/10">
             <div className="space-y-2">
               <Link href="/dashboard/settings">
                 <motion.div
