@@ -537,22 +537,23 @@ const SoloRoomRefactored = () => {
                     <Book className="h-5 w-5 text-[#2E5BFF]" />
                     Choose Your Learning Path
                   </h3>
-                  <div className="flex gap-4 flex-wrap">
+                  <div className="flex gap-4 flex-wrap p-1">
                     {topics.slice(0, 3).map((topic) => (
-                      <motion.button
-                        key={topic.id}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => handleTopicSelect(topic)}
-                        className={`
-                          px-6 py-3 rounded-lg font-medium transition-all duration-200
-                          ${selectedTopic?.id === topic.id 
-                            ? 'bg-[#2E5BFF] text-white shadow-lg shadow-[#2E5BFF]/25' 
-                            : 'bg-white/10 text-gray-300 hover:bg-white/20 border border-white/10'}
-                        `}
-                      >
-                        {topic.title}
-                      </motion.button>
+                      <div key={topic.id} className="p-1">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => handleTopicSelect(topic)}
+                          className={`
+                            px-6 py-3 rounded-lg font-medium transition-all duration-200
+                            ${selectedTopic?.id === topic.id 
+                              ? 'bg-[#2E5BFF] text-white shadow-lg shadow-[#2E5BFF]/25' 
+                              : 'bg-white/10 text-gray-300 hover:bg-white/20 border border-white/10'}
+                          `}
+                        >
+                          {topic.title}
+                        </motion.button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -597,7 +598,7 @@ const SoloRoomRefactored = () => {
                         </p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 p-2">
                         {lessonPlans.map((lesson: any, index: number) => (
                           <motion.div
                             key={lesson.id}
@@ -608,10 +609,10 @@ const SoloRoomRefactored = () => {
                               duration: 0.5,
                               ease: "easeOut"
                             }}
-                            className="group relative overflow-hidden h-[420px]"
+                            className="group relative h-[340px] p-1"
                           >
                             {/* Main Card */}
-                            <div className="bg-gradient-to-br from-white/8 to-white/3 backdrop-blur-sm border border-white/10 rounded-2xl p-6 hover:border-[#2E5BFF]/50 hover:shadow-2xl hover:shadow-[#2E5BFF]/10 transition-all duration-300 ease-out h-full flex flex-col transform hover:scale-[1.02] hover:-translate-y-1">
+                            <div className="bg-gradient-to-br from-white/8 to-white/3 backdrop-blur-sm border border-white/10 rounded-xl p-4 hover:border-[#2E5BFF]/50 hover:shadow-2xl hover:shadow-[#2E5BFF]/10 transition-all duration-300 ease-out h-full flex flex-col transform hover:scale-[1.02] hover:-translate-y-1 overflow-hidden">
                               {/* Difficulty Badge */}
                               <div className="absolute top-4 right-4 z-10">
                                 <span className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors duration-200 ${
@@ -631,14 +632,14 @@ const SoloRoomRefactored = () => {
                                 </span>
                               </div>
 
-                              {/* Header - Fixed Height */}
-                              <div className="mb-4">
-                                <div className="flex items-start gap-3 mb-3">
-                                  <div className="w-12 h-12 bg-gradient-to-br from-[#2E5BFF] to-[#1E40AF] rounded-xl flex items-center justify-center flex-shrink-0 transition-transform duration-200 group-hover:scale-105">
-                                    <BookOpen className="h-6 w-6 text-white" />
+                              {/* Header - Compact */}
+                              <div className="mb-3">
+                                <div className="flex items-start gap-2 mb-2">
+                                  <div className="w-8 h-8 bg-gradient-to-br from-[#2E5BFF] to-[#1E40AF] rounded-lg flex items-center justify-center flex-shrink-0 transition-transform duration-200 group-hover:scale-105">
+                                    <BookOpen className="h-4 w-4 text-white" />
                                   </div>
                                   <div className="flex-1 min-w-0 pr-20">
-                                    <h4 className="text-lg font-bold text-white mb-1 transition-colors duration-200 group-hover:text-[#2E5BFF] line-clamp-2 h-[56px] flex items-center">
+                                    <h4 className="text-base font-bold text-white mb-1 transition-colors duration-200 group-hover:text-[#2E5BFF] line-clamp-2">
                                       {lesson.title}
                                     </h4>
                                     <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -646,79 +647,52 @@ const SoloRoomRefactored = () => {
                                         <GraduationCap className="h-3 w-3" />
                                         Lesson {index + 1}
                                       </span>
-                                      <span>•</span>
-                                      <span className="flex items-center gap-1">
-                                        <Trophy className="h-3 w-3" />
-                                        {lesson.learning_objectives ? lesson.learning_objectives.split(',').length : 3} objectives
-                                      </span>
                                     </div>
                                   </div>
                                 </div>
                               </div>
 
-                              {/* Description - Fixed Height */}
-                              <div className="mb-4">
-                                <p className="text-gray-300 text-sm leading-relaxed line-clamp-3 h-[60px] flex items-start">
+                              {/* Description - Compact */}
+                              <div className="mb-3">
+                                <p className="text-gray-300 text-sm leading-relaxed line-clamp-2">
                                   {lesson.description}
                                 </p>
                               </div>
 
-                              {/* Learning Objectives - Fixed Height */}
-                              <div className="mb-4 flex-1">
-                                <div className="p-3 bg-white/5 rounded-lg border border-white/10 h-[100px] flex flex-col">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <Target className="h-4 w-4 text-[#2E5BFF]" />
-                                    <span className="text-sm font-medium text-white">Key Learning Goals</span>
-                                  </div>
-                                  <div className="space-y-1 flex-1 overflow-hidden">
-                                    {lesson.learning_objectives ? (
-                                      lesson.learning_objectives.split('.').slice(0, 2).map((objective: string, i: number) => (
-                                        objective.trim() && (
-                                          <div key={i} className="flex items-start gap-2 text-xs text-gray-400">
-                                            <div className="w-1 h-1 bg-[#2E5BFF] rounded-full mt-2 flex-shrink-0"></div>
-                                            <span className="line-clamp-1">{objective.trim()}</span>
-                                          </div>
-                                        )
-                                      ))
-                                    ) : (
-                                      <div className="flex items-center justify-center h-full text-xs text-gray-500">
-                                        Objectives will be revealed during the lesson
-                                      </div>
-                                    )}
-                                  </div>
+                              {/* Key Stats - Compact */}
+                              <div className="mb-3">
+                                <div className="flex items-center justify-between text-xs text-gray-400">
+                                  {lesson.modules_count && (
+                                    <span className="flex items-center gap-1 bg-white/5 px-2 py-1 rounded">
+                                      <Clock className="h-3 w-3 text-[#2E5BFF]" />
+                                      {lesson.modules_count} modules
+                                    </span>
+                                  )}
+                                  {lesson.estimated_minutes && (
+                                    <span className="flex items-center gap-1 bg-white/5 px-2 py-1 rounded">
+                                      <Timer className="h-3 w-3 text-[#2E5BFF]" />
+                                      {lesson.estimated_minutes} min
+                                    </span>
+                                  )}
+                                  <span className="flex items-center gap-1 bg-white/5 px-2 py-1 rounded">
+                                    <Target className="h-3 w-3 text-[#2E5BFF]" />
+                                    {lesson.learning_objectives ? lesson.learning_objectives.split(',').length : 3} goals
+                                  </span>
                                 </div>
                               </div>
 
-                              {/* Lesson Stats - Fixed Height */}
-                              <div className="mb-4">
-                                <div className="flex items-center justify-between h-[32px]">
-                                  <div className="flex items-center gap-4 text-xs text-gray-400">
-                                    {lesson.modules_count && (
-                                      <span className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg">
-                                        <Clock className="h-3 w-3 text-[#2E5BFF]" />
-                                        {lesson.modules_count} modules
-                                      </span>
-                                    )}
-                                    {lesson.estimated_minutes && (
-                                      <span className="flex items-center gap-1.5 bg-white/5 px-2 py-1 rounded-lg">
-                                        <Timer className="h-3 w-3 text-[#2E5BFF]" />
-                                        {lesson.estimated_minutes} min
-                                      </span>
-                                    )}
+                              {/* Progress - Compact */}
+                              <div className="mb-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                    <div className="w-0 h-full bg-gradient-to-r from-[#2E5BFF] to-[#60A5FA] rounded-full transition-all duration-500"></div>
                                   </div>
-                                  
-                                  {/* Progress Preview (placeholder) */}
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-16 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                      <div className="w-0 h-full bg-gradient-to-r from-[#2E5BFF] to-[#60A5FA] rounded-full transition-all duration-500"></div>
-                                    </div>
-                                    <span className="text-xs text-gray-500">0%</span>
-                                  </div>
+                                  <span className="text-xs text-gray-500 min-w-[20px]">0%</span>
                                 </div>
                               </div>
 
-                              {/* Prerequisites - Fixed Height */}
-                              <div className="mb-4 h-[36px] flex items-center">
+                              {/* Prerequisites - Compact */}
+                              <div className="mb-3 flex-1">
                                 {lesson.prerequisites ? (
                                   <div className="w-full p-2 bg-amber-500/10 border border-amber-500/20 rounded-lg">
                                     <div className="flex items-center gap-2">
@@ -741,7 +715,7 @@ const SoloRoomRefactored = () => {
                               <div className="mt-auto">
                                 <button
                                   onClick={() => handleLessonClick(lesson)}
-                                  className="w-full bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] text-white font-semibold py-3 px-4 rounded-xl transition-all duration-200 ease-out flex items-center justify-center gap-2 group-hover:shadow-lg group-hover:shadow-[#2E5BFF]/25 transform hover:scale-[1.01] active:scale-[0.99]"
+                                  className="w-full bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 ease-out flex items-center justify-center gap-2 text-sm group-hover:shadow-lg group-hover:shadow-[#2E5BFF]/25 transform hover:scale-[1.01] active:scale-[0.99]"
                                 >
                                   <MessageSquare className="h-4 w-4" />
                                   Start Learning
@@ -750,7 +724,7 @@ const SoloRoomRefactored = () => {
                               </div>
 
                               {/* Subtle Hover Glow Effect */}
-                              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#2E5BFF]/0 via-[#2E5BFF]/5 to-[#2E5BFF]/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
+                              <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#2E5BFF]/0 via-[#2E5BFF]/5 to-[#2E5BFF]/0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"></div>
                             </div>
                           </motion.div>
                         ))}
