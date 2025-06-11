@@ -618,6 +618,22 @@ export const getLessonModules = async (lessonPlanId: number) => {
   }
 };
 
+export const getModuleDetails = async (moduleId: number) => {
+  try {
+    const response = await api.get(`/modules/${moduleId}`);
+    console.log('getModuleDetails API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error(`Error in getModuleDetails API call for module ${moduleId}:`, error);
+    return null;
+  }
+};
+
 export const getLessonExercises = async (moduleId: number) => {
   try {
     const response = await api.get(`/lesson-modules/${moduleId}/exercises`);
@@ -631,6 +647,22 @@ export const getLessonExercises = async (moduleId: number) => {
   } catch (error) {
     console.error(`Error in getLessonExercises API call for module ${moduleId}:`, error);
     return [];
+  }
+};
+
+export const getExerciseDetails = async (exerciseId: number) => {
+  try {
+    const response = await api.get(`/exercises/${exerciseId}`);
+    console.log('getExerciseDetails API response status:', response.status);
+    
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    
+    return response.data.data;
+  } catch (error) {
+    console.error(`Error in getExerciseDetails API call for exercise ${exerciseId}:`, error);
+    return null;
   }
 };
 

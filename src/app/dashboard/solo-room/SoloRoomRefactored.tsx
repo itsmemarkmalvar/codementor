@@ -177,13 +177,16 @@ const SoloRoomRefactored = () => {
   };
 
   // Message sending handler
-  const handleSendMessage = async (message: string) => {
-    if (!selectedTopic) {
+  const handleSendMessage = async (message: string, topicId?: number, topicTitle?: string) => {
+    // Use provided topic info or fall back to selected topic
+    const topicToUse = selectedTopic || (topicId ? { id: topicId, title: topicTitle } : null);
+    
+    if (!topicToUse) {
       toast.error('Please select a topic first');
       return;
     }
     
-    await sendMessage(message, selectedTopic.id, selectedTopic.title);
+    await sendMessage(message, topicToUse.id, topicToUse.title || 'Learning Session');
     
     // Track progress for sending a message
     updateProgress(1, 'interaction');
@@ -278,36 +281,60 @@ const SoloRoomRefactored = () => {
   // Lesson click handler - Switch to chat and start AI conversation about the lesson
   const handleLessonClick = async (lesson: any) => {
     try {
+      console.log('Lesson clicked:', lesson);
+      
+      // Find the topic for this lesson
+      const topicForLesson = topics.find(t => t.id === lesson.topic_id) || selectedTopic;
+      console.log('Topic for lesson:', topicForLesson);
+      
       // Set the selected topic if not already set
-      if (!selectedTopic) {
-        const topicForLesson = topics.find(t => t.id === lesson.topic_id);
-        if (topicForLesson) {
-          setSelectedTopic(topicForLesson);
-        }
+      if (!selectedTopic && topicForLesson) {
+        setSelectedTopic(topicForLesson);
       }
+      
+      // Use the found topic or the already selected one
+      const topicToUse = topicForLesson || selectedTopic;
+      
+      if (!topicToUse) {
+        console.error('No topic found for lesson:', lesson);
+        toast.error('Unable to find topic for this lesson');
+        return;
+      }
+      
+      // Switch to chat tab FIRST
+      setActiveTab('chat');
       
       // Start a session for this topic and lesson
-      const topicToUse = selectedTopic || topics.find(t => t.id === lesson.topic_id);
-      if (topicToUse) {
+      try {
         await startTopicSession(topicToUse);
+        console.log('Session started successfully');
+      } catch (sessionError) {
+        console.warn('Session start failed, continuing anyway:', sessionError);
       }
-      
-      // Switch to chat tab
-      setActiveTab('chat');
       
       // Start AI conversation about this specific lesson
       const welcomeMessage = `Hello! I'd like to start learning about "${lesson.title}". ${lesson.description ? `Here's what I understand about it: ${lesson.description}. ` : ''}Can you help me understand this topic and guide me through the key concepts step by step?`;
       
       // Send the initial message to start the conversation
-      await sendMessage(welcomeMessage, topicToUse?.id || lesson.topic_id, topicToUse?.title || lesson.title);
+      try {
+        await handleSendMessage(welcomeMessage, topicToUse.id, topicToUse.title);
+        console.log('Welcome message sent successfully');
+      } catch (messageError) {
+        console.error('Failed to send welcome message:', messageError);
+        // Continue anyway - user can manually start conversation
+      }
       
       // Track progress for lesson selection
-      updateProgress(1, 'interaction');
+      try {
+        updateProgress(1, 'interaction');
+      } catch (progressError) {
+        console.warn('Progress tracking failed:', progressError);
+      }
       
-      toast.success(`Started learning session for: ${lesson.title}`);
+      toast.success(`Switched to AI Tutor for: ${lesson.title}`);
     } catch (error) {
-      console.error('Error starting lesson conversation:', error);
-      toast.error('Failed to start lesson conversation');
+      console.error('Error in handleLessonClick:', error);
+      toast.error(`Failed to start lesson: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -397,11 +424,11 @@ const SoloRoomRefactored = () => {
                     <span className="text-xs text-gray-400">Online</span>
                   </div>
                 </div>
-                <div className="flex-1 p-4 min-h-0">
+                <div className="flex-1 p-4 min-h-0 h-[600px] max-h-[600px] overflow-hidden">
               <ChatInterface
                 messages={messages}
                 isLoading={isChatLoading}
-                onSendMessage={handleSendMessage}
+                onSendMessage={(message) => handleSendMessage(message)}
                 topic={selectedTopic}
                 preferences={tutorPreferences}
                 onUpdatePreferences={updatePreferences}
