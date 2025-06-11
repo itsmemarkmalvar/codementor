@@ -3,223 +3,462 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import { Code, Timer, Trophy, Star, Users, Zap, Brain, Target, Flame, Filter, Search, BookOpen, AlertCircle, ArrowUpDown, Check } from "lucide-react";
+import { Code, Timer, Trophy, Star, Brain, Target, BookOpen, AlertCircle, Check, Play, ChevronRight, Filter, Search } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import axios from "axios";
 import Link from "next/link";
+import { getTopics, getLessonPlans, getLessonModules, getLessonExercises } from "@/services/api";
 
-interface Category {
-  id: number;
-  name: string;
-  description: string;
-  icon: string;
-  color: string;
-  problem_counts: Record<string, number>;
-  total_problems: number;
-  required_level: number;
-}
-
-interface Problem {
+interface Topic {
   id: number;
   title: string;
   description: string;
   difficulty_level: string;
-  estimated_time_minutes: number;
-  points: number;
-  topic_tags: string[];
-  success_rate: number;
-  attempts_count: number;
-  user_status?: string;
-  user_points?: number;
-  is_featured: boolean;
 }
 
-// Get icon component by name
-const getIconByName = (iconName: string) => {
-  const iconMap: Record<string, React.ElementType> = {
-    'Brain': Brain,
-    'Code': Code,
-    'Target': Target,
-    'Flame': Flame,
-    'BookOpen': BookOpen,
-    'Zap': Zap
-  };
-  
-  return iconMap[iconName] || Code;
-};
+interface Exercise {
+  id: number;
+  module_id: number;
+  title: string;
+  description: string;
+  instructions: string;
+  type: string;
+  difficulty: number;
+  points: number;
+  order_index: number;
+  is_required: boolean;
+  module_title?: string;
+  lesson_title?: string;
+  topic_title?: string;
+}
+
+interface ModuleWithExercises {
+  id: number;
+  title: string;
+  description: string;
+  lesson_plan_id: number;
+  lesson_title?: string;
+  topic_id?: number;
+  topic_title?: string;
+  exercises: Exercise[];
+  estimated_minutes: number;
+}
 
 export default function PracticePage() {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
-  const [problems, setProblems] = useState<Problem[]>([]);
-  const [filteredProblems, setFilteredProblems] = useState<Problem[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [selectedTopic, setSelectedTopic] = useState<number | null>(null);
+  const [modules, setModules] = useState<ModuleWithExercises[]>([]);
+  const [filteredModules, setFilteredModules] = useState<ModuleWithExercises[]>([]);
+  const [allExercises, setAllExercises] = useState<Exercise[]>([]);
+  const [filteredExercises, setFilteredExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState("all");
-  const [sort, setSort] = useState("difficulty_asc");
-  const [activeTab, setActiveTab] = useState("categories");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [activeTab, setActiveTab] = useState("modules");
 
-  // Fetch categories when component mounts
+  // Fetch topics and exercises when component mounts
   useEffect(() => {
-    const fetchCategories = async () => {
+    const fetchData = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/practice/categories`);
-        if (response.data.status === 'success') {
-          setCategories(response.data.data);
+        
+        // Get all topics
+        const topicsData = await getTopics();
+        setTopics(topicsData);
+        
+        // Get all lesson plans for all topics
+        const allModulesData: ModuleWithExercises[] = [];
+        const allExercisesData: Exercise[] = [];
+        
+        for (const topic of topicsData) {
+          try {
+            const lessonPlans = await getLessonPlans(topic.id);
+            
+            for (const plan of lessonPlans) {
+              try {
+                const modulesData = await getLessonModules(plan.id);
+                
+                for (const module of modulesData) {
+                  try {
+                    const exercisesData = await getLessonExercises(module.id);
+                    
+                    const moduleWithExercises: ModuleWithExercises = {
+                      ...module,
+                      lesson_title: plan.title,
+                      topic_id: topic.id,
+                      topic_title: topic.title,
+                      exercises: exercisesData.map((ex: any) => ({
+                        ...ex,
+                        module_title: module.title,
+                        lesson_title: plan.title,
+                        topic_title: topic.title
+                      }))
+                    };
+                    
+                    allModulesData.push(moduleWithExercises);
+                    allExercisesData.push(...moduleWithExercises.exercises);
+                  } catch (error) {
+                    console.error(`Error fetching exercises for module ${module.id}:`, error);
+                  }
+                }
+              } catch (error) {
+                console.error(`Error fetching modules for plan ${plan.id}:`, error);
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching lesson plans for topic ${topic.id}:`, error);
+          }
         }
+        
+        setModules(allModulesData);
+        setFilteredModules(allModulesData);
+        setAllExercises(allExercisesData);
+        setFilteredExercises(allExercisesData);
+        
       } catch (error) {
-        console.error("Error fetching categories:", error);
-        toast.error("Failed to load practice categories");
+        console.error("Error fetching practice data:", error);
+        toast.error("Failed to load practice data");
       } finally {
         setLoading(false);
       }
     };
 
-    fetchCategories();
+    fetchData();
   }, []);
 
-  // Fetch problems when category is selected
+  // Filter data when search or filters change
   useEffect(() => {
-    const fetchProblems = async () => {
-      if (!selectedCategory) return;
-      
-      try {
-        setLoading(true);
-        const response = await axios.get(
-          `${process.env.NEXT_PUBLIC_API_URL}/practice/categories/${selectedCategory}/problems`,
-          { params: { sort } }
-        );
-        
-        if (response.data.status === 'success') {
-          setProblems(response.data.data.data);
-          setFilteredProblems(response.data.data.data);
-        }
-      } catch (error) {
-        console.error("Error fetching problems:", error);
-        toast.error("Failed to load practice problems");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchProblems();
-  }, [selectedCategory, sort]);
-
-  // Filter problems when search or difficulty filter changes
-  useEffect(() => {
-    if (!problems.length) return;
+    let filteredMods = [...modules];
+    let filteredExs = [...allExercises];
     
-    let filtered = [...problems];
+    // Apply topic filter
+    if (selectedTopic) {
+      filteredMods = filteredMods.filter(mod => mod.topic_id === selectedTopic);
+      filteredExs = filteredExs.filter(ex => ex.topic_title === topics.find(t => t.id === selectedTopic)?.title);
+    }
     
     // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(problem => 
-        problem.title.toLowerCase().includes(query) || 
-        problem.description.toLowerCase().includes(query) ||
-        (problem.topic_tags && problem.topic_tags.some(tag => tag.toLowerCase().includes(query)))
+      filteredMods = filteredMods.filter(mod => 
+        mod.title.toLowerCase().includes(query) || 
+        mod.description.toLowerCase().includes(query) ||
+        mod.lesson_title?.toLowerCase().includes(query) ||
+        mod.topic_title?.toLowerCase().includes(query)
+      );
+      
+      filteredExs = filteredExs.filter(ex => 
+        ex.title.toLowerCase().includes(query) || 
+        ex.description.toLowerCase().includes(query) ||
+        ex.module_title?.toLowerCase().includes(query) ||
+        ex.lesson_title?.toLowerCase().includes(query) ||
+        ex.topic_title?.toLowerCase().includes(query)
       );
     }
     
     // Apply difficulty filter
     if (difficultyFilter !== 'all') {
-      filtered = filtered.filter(problem => problem.difficulty_level === difficultyFilter);
+      const diffLevel = parseInt(difficultyFilter);
+      filteredMods = filteredMods.filter(mod => 
+        mod.exercises.some(ex => ex.difficulty === diffLevel)
+      );
+      filteredExs = filteredExs.filter(ex => ex.difficulty === diffLevel);
     }
     
-    setFilteredProblems(filtered);
-  }, [searchQuery, difficultyFilter, problems]);
-
-  // Handle category selection
-  const selectCategory = (categoryId: number) => {
-    setSelectedCategory(categoryId);
-    setActiveTab("problems");
-  };
+    // Apply type filter
+    if (typeFilter !== 'all') {
+      filteredMods = filteredMods.filter(mod => 
+        mod.exercises.some(ex => ex.type === typeFilter)
+      );
+      filteredExs = filteredExs.filter(ex => ex.type === typeFilter);
+    }
+    
+    setFilteredModules(filteredMods);
+    setFilteredExercises(filteredExs);
+  }, [searchQuery, difficultyFilter, typeFilter, selectedTopic, modules, allExercises, topics]);
 
   // Get difficulty color based on level
-  const getDifficultyColor = (level: string) => {
-    const colors: Record<string, string> = {
-      'beginner': 'bg-emerald-500/20 text-emerald-400',
-      'easy': 'bg-green-500/20 text-green-400',
-      'medium': 'bg-yellow-500/20 text-yellow-400',
-      'hard': 'bg-orange-500/20 text-orange-400',
-      'expert': 'bg-red-500/20 text-red-400'
+  const getDifficultyColor = (level: number) => {
+    const colors: Record<number, string> = {
+      1: 'bg-emerald-500/20 text-emerald-400',
+      2: 'bg-green-500/20 text-green-400',
+      3: 'bg-yellow-500/20 text-yellow-400',
+      4: 'bg-orange-500/20 text-orange-400',
+      5: 'bg-red-500/20 text-red-400'
     };
     
     return colors[level] || 'bg-gray-500/20 text-gray-400';
   };
-  
-  // Convert time in minutes to readable format
-  const formatTime = (minutes: number) => {
-    if (minutes < 60) {
-      return `${minutes} min`;
-    }
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours}h ${mins > 0 ? `${mins}m` : ''}`;
+
+  const getDifficultyText = (level: number) => {
+    const texts: Record<number, string> = {
+      1: 'Beginner',
+      2: 'Easy', 
+      3: 'Medium',
+      4: 'Hard',
+      5: 'Expert'
+    };
+    return texts[level] || 'Unknown';
+  };
+
+  const getTypeIcon = (type: string) => {
+    const icons: Record<string, React.ElementType> = {
+      'coding': Code,
+      'multiple_choice': Target,
+      'fill_in_blank': BookOpen,
+      'debugging': AlertCircle,
+      'code_review': Brain
+    };
+    return icons[type] || Code;
+  };
+
+  const getTypeColor = (type: string) => {
+    const colors: Record<string, string> = {
+      'coding': 'bg-blue-500/20 text-blue-400',
+      'multiple_choice': 'bg-purple-500/20 text-purple-400',
+      'fill_in_blank': 'bg-indigo-500/20 text-indigo-400',
+      'debugging': 'bg-orange-500/20 text-orange-400',
+      'code_review': 'bg-pink-500/20 text-pink-400'
+    };
+    return colors[type] || 'bg-gray-500/20 text-gray-400';
   };
 
   return (
     <div className="space-y-8">
       {/* Header */}
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold text-white">Practice Arena</h1>
-        <p className="text-gray-400">Challenge yourself with Java coding problems</p>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <Trophy className="h-6 w-6 text-[#2E5BFF]" />
+          Practice Arena
+        </h1>
+        <p className="text-gray-400">Master programming concepts with hands-on exercises from your lessons</p>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          <Input
+            type="text"
+            placeholder="Search exercises and modules..."
+            className="pl-10 bg-white/5 border-white/10 focus:border-[#2E5BFF] text-white"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <Filter className="h-5 w-5 text-gray-400" />
+          
+          <Select value={selectedTopic?.toString() || "all"} onValueChange={(value) => setSelectedTopic(value === "all" ? null : parseInt(value))}>
+            <SelectTrigger className="w-[180px] bg-white/5 border-white/10 text-white">
+              <SelectValue placeholder="All Topics" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Topics</SelectItem>
+              {topics.map((topic) => (
+                <SelectItem key={topic.id} value={topic.id.toString()}>
+                  {topic.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Select value={difficultyFilter} onValueChange={setDifficultyFilter}>
+            <SelectTrigger className="w-[140px] bg-white/5 border-white/10 text-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Levels</SelectItem>
+              <SelectItem value="1">Beginner</SelectItem>
+              <SelectItem value="2">Easy</SelectItem>
+              <SelectItem value="3">Medium</SelectItem>
+              <SelectItem value="4">Hard</SelectItem>
+              <SelectItem value="5">Expert</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className="w-[140px] bg-white/5 border-white/10 text-white">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="coding">Coding</SelectItem>
+              <SelectItem value="multiple_choice">Multiple Choice</SelectItem>
+              <SelectItem value="fill_in_blank">Fill in Blank</SelectItem>
+              <SelectItem value="debugging">Debugging</SelectItem>
+              <SelectItem value="code_review">Code Review</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Main Content Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="bg-white/5 border-white/10">
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="problems" disabled={!selectedCategory}>Problems</TabsTrigger>
+          <TabsTrigger value="modules">By Modules ({filteredModules.length})</TabsTrigger>
+          <TabsTrigger value="exercises">All Exercises ({filteredExercises.length})</TabsTrigger>
         </TabsList>
         
-        {/* Categories Tab */}
-        <TabsContent value="categories" className="space-y-6">
+        {/* Modules Tab */}
+        <TabsContent value="modules" className="space-y-6">
           {loading ? (
             // Loading skeleton
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {[1, 2, 3, 4].map((i) => (
-                <Card key={i} className="bg-white/5 backdrop-blur-sm animate-pulse h-[140px]"></Card>
+                <Card key={i} className="bg-white/5 backdrop-blur-sm animate-pulse h-[200px]"></Card>
               ))}
             </div>
+          ) : filteredModules.length === 0 ? (
+            <div className="text-center py-12">
+              <BookOpen className="h-12 w-12 text-gray-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-white mb-2">No modules found</h3>
+              <p className="text-gray-400">Try adjusting your search or filters</p>
+            </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {categories.map((category, index) => {
-                const Icon = getIconByName(category.icon);
-                
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {filteredModules.map((module, index) => (
+                <motion.div
+                  key={module.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                >
+                  <Card className="relative overflow-hidden border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-all group">
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#2E5BFF]/20 to-purple-500/20 opacity-10 group-hover:opacity-20 transition-opacity" />
+                    <div className="relative p-6">
+                      {/* Header */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="space-y-1 flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="text-[#2E5BFF] border-[#2E5BFF]/30">
+                              {module.topic_title}
+                            </Badge>
+                          </div>
+                          <h3 className="font-semibold text-white">{module.title}</h3>
+                          <p className="text-sm text-gray-400 line-clamp-2">{module.description}</p>
+                          <p className="text-xs text-gray-500">from {module.lesson_title}</p>
+                        </div>
+                        <BookOpen className="h-6 w-6 text-[#2E5BFF] group-hover:text-white transition-colors" />
+                      </div>
+                      
+                      {/* Stats */}
+                      <div className="flex items-center justify-between text-sm mb-4">
+                        <div className="flex items-center space-x-4">
+                          <div className="flex items-center gap-1">
+                            <Code className="h-4 w-4 text-[#2E5BFF]" />
+                            <span className="text-gray-400">{module.exercises.length} exercises</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Timer className="h-4 w-4 text-[#2E5BFF]" />
+                            <span className="text-gray-400">{module.estimated_minutes}m</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Star className="h-4 w-4 text-yellow-500" />
+                          <span className="text-gray-400">{module.exercises.reduce((sum, ex) => sum + ex.points, 0)} pts</span>
+                        </div>
+                      </div>
+                      
+                      {/* Exercise Types */}
+                      <div className="flex flex-wrap gap-2 mb-4">
+                        {[...new Set(module.exercises.map(ex => ex.type))].map(type => {
+                          const TypeIcon = getTypeIcon(type);
+                          return (
+                            <Badge key={type} className={`${getTypeColor(type)} border-0`}>
+                              <TypeIcon className="h-3 w-3 mr-1" />
+                              {type.replace('_', ' ')}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                      
+                      {/* Action Button */}
+                      <Link href={`/dashboard/lesson-plans/${module.lesson_plan_id}/${module.id}`}>
+                        <Button className="w-full bg-[#2E5BFF] hover:bg-[#2E5BFF]/80 text-white">
+                          <Play className="h-4 w-4 mr-2" />
+                          Start Practice
+                          <ChevronRight className="h-4 w-4 ml-2" />
+                        </Button>
+                      </Link>
+                    </div>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+        
+        {/* Exercises Tab */}
+        <TabsContent value="exercises" className="space-y-6">
+          {loading ? (
+            // Loading skeleton
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Card key={i} className="bg-white/5 backdrop-blur-sm animate-pulse h-[120px]"></Card>
+              ))}
+            </div>
+          ) : filteredExercises.length === 0 ? (
+            <div className="text-center py-12">
+              <Code className="h-12 w-12 text-gray-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-white mb-2">No exercises found</h3>
+              <p className="text-gray-400">Try adjusting your search or filters</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredExercises.map((exercise, index) => {
+                const TypeIcon = getTypeIcon(exercise.type);
                 return (
                   <motion.div
-                    key={category.id}
+                    key={exercise.id}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                    onClick={() => selectCategory(category.id)}
+                    transition={{ delay: index * 0.05 }}
                   >
-                    <Card className="relative overflow-hidden border-white/10 bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-all cursor-pointer group">
-                      <div className={`absolute inset-0 bg-gradient-to-br ${category.color} opacity-10`} />
+                    <Card className="relative overflow-hidden border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-all group">
+                      <div className="absolute inset-0 bg-gradient-to-br from-[#2E5BFF]/20 to-purple-500/20 opacity-10 group-hover:opacity-20 transition-opacity" />
                       <div className="relative p-6">
-                        <div className="flex items-center justify-between">
-                          <h3 className="font-semibold text-white">{category.name}</h3>
-                          <Icon className="h-5 w-5 text-gray-400 group-hover:text-white transition-colors" />
-                        </div>
-                        <p className="mt-2 text-2xl font-bold text-white">{category.total_problems}</p>
-                        <p className="text-sm text-gray-400">Available Problems</p>
-                        
-                        {/* Difficulty distribution */}
-                        <div className="mt-4 flex items-center space-x-1">
-                          {Object.entries(category.problem_counts).map(([level, count]) => (
-                            <div 
-                              key={level}
-                              className={`h-1 flex-1 rounded-full ${getDifficultyColor(level).split(' ')[0]}`} 
-                              title={`${level}: ${count} problems`}
-                            />
-                          ))}
+                        <div className="flex items-start justify-between">
+                          <div className="space-y-1 flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline" className="text-[#2E5BFF] border-[#2E5BFF]/30">
+                                {exercise.topic_title}
+                              </Badge>
+                              <Badge className={`${getTypeColor(exercise.type)} border-0`}>
+                                <TypeIcon className="h-3 w-3 mr-1" />
+                                {exercise.type.replace('_', ' ')}
+                              </Badge>
+                              <Badge className={`${getDifficultyColor(exercise.difficulty)} border-0`}>
+                                {getDifficultyText(exercise.difficulty)}
+                              </Badge>
+                            </div>
+                            <h3 className="font-semibold text-white">{exercise.title}</h3>
+                            <p className="text-sm text-gray-400 line-clamp-2">{exercise.description}</p>
+                            <p className="text-xs text-gray-500">
+                              {exercise.module_title} • {exercise.lesson_title}
+                            </p>
+                          </div>
+                          
+                          <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-1">
+                              <Star className="h-4 w-4 text-yellow-500" />
+                              <span className="text-gray-400 text-sm">{exercise.points} pts</span>
+                            </div>
+                            <Link href={`/dashboard/lesson-plans/${exercise.module_id}`}>
+                              <Button size="sm" className="bg-[#2E5BFF] hover:bg-[#2E5BFF]/80 text-white">
+                                <Play className="h-4 w-4 mr-1" />
+                                Start
+                              </Button>
+                            </Link>
+                          </div>
                         </div>
                       </div>
                     </Card>
@@ -227,141 +466,6 @@ export default function PracticePage() {
                 );
               })}
             </div>
-          )}
-        </TabsContent>
-        
-        {/* Problems Tab */}
-        <TabsContent value="problems" className="space-y-6">
-          {selectedCategory && (
-            <>
-              {/* Filter Controls */}
-              <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-                <div className="flex flex-1 max-w-md items-center space-x-2">
-                  <Search className="h-4 w-4 text-gray-400" />
-                  <Input
-                    placeholder="Search problems..."
-                    className="bg-white/5 border-white/10 text-white"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-                
-                <div className="flex items-center space-x-2">
-                  <Select value={difficultyFilter} onValueChange={setDifficultyFilter}>
-                    <SelectTrigger className="bg-white/5 border-white/10 text-white w-[140px]">
-                      <Filter className="h-4 w-4 mr-2 text-gray-400" />
-                      <SelectValue placeholder="Difficulty" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1E293B] border-white/10 text-white">
-                      <SelectItem value="all">All Levels</SelectItem>
-                      <SelectItem value="beginner">Beginner</SelectItem>
-                      <SelectItem value="easy">Easy</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="hard">Hard</SelectItem>
-                      <SelectItem value="expert">Expert</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  
-                  <Select value={sort} onValueChange={setSort}>
-                    <SelectTrigger className="bg-white/5 border-white/10 text-white w-[140px]">
-                      <ArrowUpDown className="h-4 w-4 mr-2 text-gray-400" />
-                      <SelectValue placeholder="Sort By" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-[#1E293B] border-white/10 text-white">
-                      <SelectItem value="difficulty_asc">Easiest First</SelectItem>
-                      <SelectItem value="difficulty_desc">Hardest First</SelectItem>
-                      <SelectItem value="popularity">Most Popular</SelectItem>
-                      <SelectItem value="success_rate">Highest Success</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              
-              {/* Problem Cards */}
-              {loading ? (
-                // Loading skeleton
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {[1, 2, 3, 4].map((i) => (
-                    <Card key={i} className="bg-white/5 backdrop-blur-sm animate-pulse h-[180px]"></Card>
-                  ))}
-                </div>
-              ) : filteredProblems.length > 0 ? (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {filteredProblems.map((problem, index) => (
-                    <motion.div
-                      key={problem.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                    >
-                      <Link href={`/dashboard/practice/${problem.id}`}>
-                        <Card className="relative overflow-hidden border-white/10 bg-white/5 backdrop-blur-sm group hover:bg-white/10 transition-all h-full">
-                          <div className="absolute top-2 right-2">
-                            {problem.is_featured && (
-                              <Badge className="bg-[#2E5BFF] text-white">Featured</Badge>
-                            )}
-                            {problem.user_status === 'completed' && (
-                              <Badge className="ml-2 bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
-                                <Check className="h-3 w-3 mr-1" />
-                                Completed
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="relative p-6">
-                            <div className="flex items-start justify-between">
-                              <div className="space-y-1">
-                                <div className="flex items-center space-x-2">
-                                  <span className={`px-2 py-1 rounded text-xs ${getDifficultyColor(problem.difficulty_level)}`}>
-                                    {problem.difficulty_level.charAt(0).toUpperCase() + problem.difficulty_level.slice(1)}
-                                  </span>
-                                  {problem.topic_tags && problem.topic_tags.length > 0 && (
-                                    <span className="text-xs text-gray-400">{problem.topic_tags.join(', ')}</span>
-                                  )}
-                                </div>
-                                <h3 className="font-semibold text-white">{problem.title}</h3>
-                                <p className="text-sm text-gray-400 line-clamp-2">{problem.description}</p>
-                              </div>
-                            </div>
-                            <div className="mt-4 space-y-3">
-                              <div className="flex items-center justify-between text-sm text-gray-400">
-                                <div className="flex items-center space-x-2">
-                                  <Timer className="h-4 w-4" />
-                                  <span>{formatTime(problem.estimated_time_minutes)}</span>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                  <Trophy className="h-4 w-4" />
-                                  <span>{problem.points} pts</span>
-                                </div>
-                              </div>
-                              <div className="flex items-center justify-between text-sm text-gray-400">
-                                <div className="flex items-center space-x-2">
-                                  <Users className="h-4 w-4" />
-                                  <span>{problem.attempts_count || 0} attempts</span>
-                                </div>
-                                <div className="flex items-center space-x-2">
-                                  <Star className="h-4 w-4" />
-                                  <span>{Math.round(problem.success_rate || 0)}% success</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        </Card>
-                      </Link>
-                    </motion.div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <AlertCircle className="h-12 w-12 text-gray-500 mb-4" />
-                  <h3 className="text-xl font-semibold text-white mb-2">No problems found</h3>
-                  <p className="text-gray-400">
-                    {searchQuery || difficultyFilter !== 'all' 
-                      ? "Try adjusting your filters or search query"
-                      : "There are no problems in this category yet"}
-                  </p>
-                </div>
-              )}
-            </>
           )}
         </TabsContent>
       </Tabs>
