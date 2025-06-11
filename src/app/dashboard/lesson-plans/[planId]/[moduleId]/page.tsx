@@ -34,9 +34,9 @@ interface Exercise {
   starter_code: string;
   solution_code: string;
   test_cases: string;
-  type: "code" | "multiple_choice" | "text" | "quiz";
+  type: string;
   points: number;
-  difficulty: "beginner" | "intermediate" | "advanced";
+  difficulty: number; // 1-5 scale from database
   is_completed: boolean;
 }
 

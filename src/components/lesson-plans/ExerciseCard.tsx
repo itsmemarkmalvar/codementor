@@ -3,17 +3,17 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
-import { CheckCircle, Code, PenSquare, PlayCircle, Star } from "lucide-react";
+import { AlertCircle, BookOpen, Brain, CheckCircle, Code, PenSquare, PlayCircle, Star, Target } from "lucide-react";
 import { useState } from "react";
 
 interface ExerciseCardProps {
   id: number;
   title: string;
   description: string;
-  type: "code" | "multiple_choice" | "text" | "quiz";
+  type: string;
   points: number;
   is_completed?: boolean;
-  difficulty?: "beginner" | "intermediate" | "advanced";
+  difficulty?: "beginner" | "intermediate" | "advanced" | number;
   onStart: (id: number) => void;
   index?: number; // For animation staggering
 }
@@ -31,20 +31,48 @@ export default function ExerciseCard({
 }: ExerciseCardProps) {
   const [isHovering, setIsHovering] = useState(false);
   
+  // Convert number difficulty to string
+  const getDifficultyString = (diff: "beginner" | "intermediate" | "advanced" | number): "beginner" | "intermediate" | "advanced" => {
+    if (typeof diff === 'number') {
+      switch (diff) {
+        case 1:
+        case 2:
+          return "beginner";
+        case 3:
+          return "intermediate";
+        case 4:
+        case 5:
+        default:
+          return "advanced";
+      }
+    }
+    return diff;
+  };
+  
+  const difficultyString = getDifficultyString(difficulty);
+  
   const difficultyColor = {
     beginner: "text-green-500",
     intermediate: "text-yellow-500",
     advanced: "text-red-500"
   };
   
-  const typeIcon = {
-    code: Code,
-    multiple_choice: PenSquare,
-    text: PenSquare,
-    quiz: Star
+  const getTypeIcon = (type: string) => {
+    const icons: Record<string, React.ElementType> = {
+      'coding': Code,
+      'multiple_choice': Target,
+      'fill_in_blank': BookOpen,
+      'debugging': AlertCircle,
+      'code_review': Brain,
+      // Legacy types for backward compatibility
+      'code': Code,
+      'text': PenSquare,
+      'quiz': Star
+    };
+    return icons[type] || Code;
   };
   
-  const TypeIcon = typeIcon[type];
+  const TypeIcon = getTypeIcon(type);
   
   return (
     <motion.div
@@ -72,8 +100,8 @@ export default function ExerciseCard({
           
           <div className="mt-4 flex items-center justify-between">
             <div className="flex items-center space-x-4 text-sm">
-              <span className={`${difficultyColor[difficulty]}`}>
-                {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)}
+              <span className={`${difficultyColor[difficultyString]}`}>
+                {difficultyString.charAt(0).toUpperCase() + difficultyString.slice(1)}
               </span>
               <div className="flex items-center space-x-1 text-yellow-500">
                 <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />

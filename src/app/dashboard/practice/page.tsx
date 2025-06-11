@@ -34,6 +34,7 @@ interface Exercise {
   module_title?: string;
   lesson_title?: string;
   topic_title?: string;
+  lesson_plan_id?: number;
 }
 
 interface ModuleWithExercises {
@@ -87,18 +88,19 @@ export default function PracticePage() {
                   try {
                     const exercisesData = await getLessonExercises(module.id);
                     
-                    const moduleWithExercises: ModuleWithExercises = {
-                      ...module,
-                      lesson_title: plan.title,
-                      topic_id: topic.id,
-                      topic_title: topic.title,
-                      exercises: exercisesData.map((ex: any) => ({
-                        ...ex,
-                        module_title: module.title,
-                        lesson_title: plan.title,
-                        topic_title: topic.title
-                      }))
-                    };
+                                         const moduleWithExercises: ModuleWithExercises = {
+                       ...module,
+                       lesson_title: plan.title,
+                       topic_id: topic.id,
+                       topic_title: topic.title,
+                       exercises: exercisesData.map((ex: any) => ({
+                         ...ex,
+                         module_title: module.title,
+                         lesson_title: plan.title,
+                         topic_title: topic.title,
+                         lesson_plan_id: plan.id
+                       }))
+                     };
                     
                     allModulesData.push(moduleWithExercises);
                     allExercisesData.push(...moduleWithExercises.exercises);
@@ -452,7 +454,7 @@ export default function PracticePage() {
                               <Star className="h-4 w-4 text-yellow-500" />
                               <span className="text-gray-400 text-sm">{exercise.points} pts</span>
                             </div>
-                            <Link href={`/dashboard/lesson-plans/${exercise.module_id}`}>
+                            <Link href={`/dashboard/lesson-plans/${exercise.lesson_plan_id}/${exercise.module_id}`}>
                               <Button size="sm" className="bg-[#2E5BFF] hover:bg-[#2E5BFF]/80 text-white">
                                 <Play className="h-4 w-4 mr-1" />
                                 Start
