@@ -32,6 +32,7 @@ const SoloRoomRefactored = () => {
   // Core state
   const [activeTab, setActiveTab] = useState<'chat' | 'lesson-plans' | 'sessions' | 'quiz'>('chat');
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
+  const [selectedLesson, setSelectedLesson] = useState<any | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   
@@ -282,6 +283,9 @@ const SoloRoomRefactored = () => {
   const handleLessonClick = async (lesson: any) => {
     try {
       console.log('Lesson clicked:', lesson);
+      
+      // Set the selected lesson for quiz tab
+      setSelectedLesson(lesson);
       
       // Find the topic for this lesson
       const topicForLesson = topics.find(t => t.id === lesson.topic_id) || selectedTopic;
@@ -854,131 +858,197 @@ const SoloRoomRefactored = () => {
             animate={{ opacity: 1, y: 0 }}
             className="h-full"
           >
-            {!selectedTopic ? (
+            {!selectedLesson ? (
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-8 h-full flex flex-col items-center justify-center">
                 <div className="w-16 h-16 bg-[#2E5BFF] rounded-2xl flex items-center justify-center mb-6">
                   <Brain className="h-8 w-8 text-white" />
                 </div>
-                <h3 className="text-2xl font-bold text-white mb-3">Knowledge Testing</h3>
+                <h3 className="text-2xl font-bold text-white mb-3">Quiz Mode</h3>
                 <p className="text-gray-400 text-center max-w-md mb-6">
-                  Select a topic to start testing your knowledge with interactive quizzes and challenges.
+                  Select a lesson from the "Lessons" tab to take a quiz on that specific topic.
                 </p>
                 <div className="flex items-center gap-4 text-sm text-gray-500">
                   <div className="flex items-center gap-2">
-                    <Lightbulb className="h-4 w-4 text-[#2E5BFF]" />
-                    <span>Interactive Quizzes</span>
+                    <Book className="h-4 w-4 text-[#2E5BFF]" />
+                    <span>Choose Lesson First</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Trophy className="h-4 w-4 text-[#2E5BFF]" />
-                    <span>Skill Assessment</span>
+                    <ArrowRight className="h-4 w-4 text-[#2E5BFF]" />
+                    <span>Then Take Quiz</span>
                   </div>
                 </div>
               </div>
             ) : (
               <div className="space-y-6">
-                {/* Quiz Header */}
+                {/* Quiz Header - Selected Lesson */}
                 <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
                   <div className="flex items-center gap-3 mb-4">
                     <div className="w-12 h-12 bg-[#2E5BFF] rounded-xl flex items-center justify-center">
                       <Brain className="h-6 w-6 text-white" />
                     </div>
-                    <div>
-                      <h3 className="text-xl font-bold text-white">{selectedTopic.title} Quizzes</h3>
-                      <p className="text-gray-400">Test your knowledge with exercises from your lessons</p>
+                    <div className="flex-1">
+                      <h3 className="text-xl font-bold text-white">Quiz: {selectedLesson.title}</h3>
+                      <p className="text-gray-400">Test your understanding of this lesson</p>
+                    </div>
+                    <div className="text-right">
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                        selectedLesson.difficulty_level === 1 ? 'bg-green-500/20 text-green-400' :
+                        selectedLesson.difficulty_level === 2 ? 'bg-yellow-500/20 text-yellow-400' :
+                        selectedLesson.difficulty_level === 3 ? 'bg-orange-500/20 text-orange-400' :
+                        selectedLesson.difficulty_level === 4 ? 'bg-red-500/20 text-red-400' :
+                        selectedLesson.difficulty_level === 5 ? 'bg-purple-500/20 text-purple-400' :
+                        'bg-gray-500/20 text-gray-400'
+                      }`}>
+                        {selectedLesson.difficulty_level === 1 ? 'Beginner' :
+                         selectedLesson.difficulty_level === 2 ? 'Easy' :
+                         selectedLesson.difficulty_level === 3 ? 'Medium' :
+                         selectedLesson.difficulty_level === 4 ? 'Hard' :
+                         selectedLesson.difficulty_level === 5 ? 'Expert' :
+                         'Beginner'}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Quiz Content */}
-                {isLoadingLessonPlans ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {[1, 2, 3, 4].map((i) => (
-                      <div key={i} className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6 animate-pulse">
-                        <div className="h-4 bg-white/10 rounded mb-3"></div>
-                        <div className="h-3 bg-white/10 rounded mb-2"></div>
-                        <div className="h-3 bg-white/10 rounded w-3/4"></div>
+                {/* Quiz Content - Lesson Details */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Left Column - Lesson Overview */}
+                  <div className="space-y-6">
+                    <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
+                      <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                        <BookOpen className="h-5 w-5 text-[#2E5BFF]" />
+                        Lesson Overview
+                      </h4>
+                      <p className="text-gray-300 text-sm leading-relaxed mb-4">
+                        {selectedLesson.description}
+                      </p>
+                      
+                      {/* Lesson Stats */}
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        {selectedLesson.modules_count && (
+                          <div className="bg-white/5 rounded-lg p-3 text-center">
+                            <div className="text-[#2E5BFF] font-semibold text-lg">{selectedLesson.modules_count}</div>
+                            <div className="text-gray-400 text-xs">Modules</div>
+                          </div>
+                        )}
+                        {selectedLesson.estimated_minutes && (
+                          <div className="bg-white/5 rounded-lg p-3 text-center">
+                            <div className="text-[#2E5BFF] font-semibold text-lg">{selectedLesson.estimated_minutes}</div>
+                            <div className="text-gray-400 text-xs">Minutes</div>
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                ) : lessonPlans.length === 0 ? (
-                  <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-8 text-center">
-                    <Brain className="h-12 w-12 text-gray-500 mx-auto mb-4" />
-                    <h4 className="text-lg font-semibold text-white mb-2">No Quizzes Available</h4>
-            <p className="text-gray-400">
-                      No lesson plans found for this topic. Select a different topic to access quizzes.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {lessonPlans.map((lesson, index) => (
-                      <motion.div
-                        key={lesson.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className="group"
-                      >
-                        <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6 hover:bg-white/10 transition-all group-hover:border-[#2E5BFF]/50">
-                          {/* Quiz Card Header */}
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="flex-1">
-                              <h4 className="text-lg font-semibold text-white mb-2 group-hover:text-[#2E5BFF] transition-colors">
-                                {lesson.title}
-                              </h4>
-                              <p className="text-gray-400 text-sm line-clamp-2 mb-3">
-                                {lesson.description}
-            </p>
-          </div>
-                            <div className="w-10 h-10 bg-gradient-to-br from-[#2E5BFF] to-[#1E40AF] rounded-lg flex items-center justify-center flex-shrink-0 ml-4">
-                              <BookOpen className="h-5 w-5 text-white" />
-                            </div>
-                          </div>
 
-                          {/* Quiz Stats */}
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-4 text-xs text-gray-400">
-                              {lesson.modules_count && (
-                                <span className="flex items-center gap-1">
-                                  <Target className="h-3 w-3 text-[#2E5BFF]" />
-                                  {lesson.modules_count} modules
-                                </span>
-                              )}
-                              <span className="flex items-center gap-1">
-                                <Brain className="h-3 w-3 text-[#2E5BFF]" />
-                                Quiz Ready
-                              </span>
-                            </div>
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold transition-colors duration-200 ${
-                              lesson.difficulty_level === 1 ? 'bg-green-500/20 text-green-400' :
-                              lesson.difficulty_level === 2 ? 'bg-yellow-500/20 text-yellow-400' :
-                              lesson.difficulty_level === 3 ? 'bg-orange-500/20 text-orange-400' :
-                              lesson.difficulty_level === 4 ? 'bg-red-500/20 text-red-400' :
-                              lesson.difficulty_level === 5 ? 'bg-purple-500/20 text-purple-400' :
-                              'bg-gray-500/20 text-gray-400'
-                            }`}>
-                              {lesson.difficulty_level === 1 ? 'Beginner' :
-                               lesson.difficulty_level === 2 ? 'Easy' :
-                               lesson.difficulty_level === 3 ? 'Medium' :
-                               lesson.difficulty_level === 4 ? 'Hard' :
-                               lesson.difficulty_level === 5 ? 'Expert' :
-                               'Beginner'}
-                            </span>
+                      {/* Learning Objectives */}
+                      {selectedLesson.learning_objectives && (
+                        <div className="mb-4">
+                          <h5 className="text-sm font-medium text-white mb-2">Learning Objectives:</h5>
+                          <div className="text-gray-300 text-sm">
+                            {selectedLesson.learning_objectives.split(',').map((objective: string, index: number) => (
+                              <div key={index} className="flex items-start gap-2 mb-1">
+                                <Target className="h-3 w-3 text-[#2E5BFF] mt-0.5 flex-shrink-0" />
+                                <span>{objective.trim()}</span>
+                              </div>
+                            ))}
                           </div>
-
-                          {/* Action Button */}
-                          <button
-                            onClick={() => handleQuizStart(lesson)}
-                            className="w-full bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 ease-out flex items-center justify-center gap-2 text-sm group-hover:shadow-lg group-hover:shadow-[#2E5BFF]/25 transform hover:scale-[1.02] active:scale-[0.98]"
-                          >
-                            <Brain className="h-4 w-4" />
-                            Start Quiz
-                            <ArrowRight className="h-4 w-4 ml-1 transition-transform duration-200 group-hover:translate-x-1" />
-                          </button>
                         </div>
-                      </motion.div>
-                    ))}
+                      )}
+
+                      {/* Prerequisites */}
+                      {selectedLesson.prerequisites ? (
+                        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Info className="h-4 w-4 text-amber-400" />
+                            <span className="text-sm font-medium text-amber-300">Prerequisites:</span>
+                          </div>
+                          <span className="text-sm text-amber-200">{selectedLesson.prerequisites}</span>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <Trophy className="h-4 w-4 text-green-400" />
+                            <span className="text-sm font-medium text-green-300">No prerequisites required</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
+
+                  {/* Right Column - Quiz Options */}
+                  <div className="space-y-6">
+                    <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
+                      <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                        <Brain className="h-5 w-5 text-[#2E5BFF]" />
+                        Quiz Options
+                      </h4>
+                      
+                      {/* Quiz Type Selection */}
+                      <div className="space-y-4 mb-6">
+                        <div className="p-4 bg-white/5 rounded-lg border border-white/10 hover:border-[#2E5BFF]/50 transition-colors cursor-pointer">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-8 h-8 bg-[#2E5BFF]/20 rounded-lg flex items-center justify-center">
+                              <MessageSquare className="h-4 w-4 text-[#2E5BFF]" />
+                            </div>
+                            <h5 className="font-medium text-white">AI Interactive Quiz</h5>
+                          </div>
+                          <p className="text-gray-400 text-sm">
+                            Dynamic questions with AI tutor guidance and explanations
+                          </p>
+                        </div>
+                        
+                        <div className="p-4 bg-white/5 rounded-lg border border-white/10 opacity-50">
+                          <div className="flex items-center gap-3 mb-2">
+                            <div className="w-8 h-8 bg-gray-500/20 rounded-lg flex items-center justify-center">
+                              <ScrollText className="h-4 w-4 text-gray-500" />
+                            </div>
+                            <h5 className="font-medium text-gray-500">Formal Quiz</h5>
+                            <span className="text-xs bg-gray-500/20 text-gray-400 px-2 py-1 rounded">Coming Soon</span>
+                          </div>
+                          <p className="text-gray-500 text-sm">
+                            Structured multiple-choice and coding questions
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Quiz Features */}
+                      <div className="mb-6">
+                        <h5 className="text-sm font-medium text-white mb-3">What to Expect:</h5>
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2 text-sm text-gray-300">
+                            <Lightbulb className="h-3 w-3 text-[#2E5BFF]" />
+                            <span>Concept-based questions</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-300">
+                            <Code2 className="h-3 w-3 text-[#2E5BFF]" />
+                            <span>Code analysis challenges</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-300">
+                            <Target className="h-3 w-3 text-[#2E5BFF]" />
+                            <span>Practical applications</span>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-300">
+                            <Trophy className="h-3 w-3 text-[#2E5BFF]" />
+                            <span>Instant feedback & explanations</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Start Quiz Button */}
+                      <button
+                        onClick={() => handleQuizStart(selectedLesson)}
+                        className="w-full bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] text-white font-semibold py-4 px-6 rounded-lg transition-all duration-200 ease-out flex items-center justify-center gap-3 text-base shadow-lg hover:shadow-[#2E5BFF]/25 transform hover:scale-[1.02] active:scale-[0.98]"
+                      >
+                        <Brain className="h-5 w-5" />
+                        Start Quiz on {selectedLesson.title}
+                        <ArrowRight className="h-5 w-5 ml-1 transition-transform duration-200 group-hover:translate-x-1" />
+                      </button>
+                      
+                      <p className="text-center text-gray-400 text-xs mt-3">
+                        This will switch to the AI Tutor tab and begin an interactive quiz
+                      </p>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </motion.div>
