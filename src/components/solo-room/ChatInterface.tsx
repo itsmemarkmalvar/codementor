@@ -160,7 +160,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
     const parts = parseMessageWithCodeBlocks(message.text);
     const isUser = message.sender === 'user';
     
-          return (
+    return (
         <div key={`${message.id}-${index || 0}-${message.timestamp.getTime()}`} className={`flex gap-4 mb-6 ${isUser ? 'justify-end' : 'justify-start'}`}>
         {!isUser && (
           <div className="flex-shrink-0">
@@ -181,23 +181,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <span className="font-medium text-xs text-gray-300">AI Tutor</span>
                 {preferences?.aiModel && (
                   <Badge variant="secondary" className="text-xs py-0 h-4 bg-[#2E5BFF]/20 text-[#2E5BFF] border-[#2E5BFF]/30">
-                    {preferences.aiModel === 'gemini' ? 'Gemini' : 'Together AI'}
-                  </Badge>
+                {preferences.aiModel === 'gemini' ? 'Gemini' : 'Together AI'}
+              </Badge>
                 )}
               </div>
             )}
-            
-            <div className="message-content">
+          
+          <div className="message-content">
               {parts.map((part, partIndex) => {
-                if (part.type === 'code') {
-                  return (
+              if (part.type === 'code') {
+                return (
                     <div key={partIndex} className="my-2 relative group">
                       <pre className="bg-black/50 p-3 rounded-lg overflow-x-auto border border-white/10">
-                        <code className="text-sm font-mono text-gray-200">{part.content}</code>
-                      </pre>
-                    </div>
-                  );
-                } else {
+                      <code className="text-sm font-mono text-gray-200">{part.content}</code>
+                    </pre>
+                  </div>
+                );
+              } else {
                   return (
                     <p key={partIndex} className={`whitespace-pre-wrap text-sm leading-relaxed ${
                       isUser ? 'text-white' : 'text-gray-200'
@@ -205,8 +205,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
                       {part.content}
                     </p>
                   );
-                }
-              })}
+              }
+            })}
             </div>
           </div>
           
@@ -214,25 +214,25 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
             <span>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
             {!isUser && onUpdatePreferences && (
               <div className="flex gap-1">
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+              <Button 
+                variant="ghost" 
+                size="sm" 
                   className="h-6 px-1 text-gray-400 hover:text-green-400"
-                  onClick={() => {/* Handle feedback */}}
-                >
+                onClick={() => {/* Handle feedback */}}
+              >
                   <ThumbsUp className="h-3 w-3" />
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
                   className="h-6 px-1 text-gray-400 hover:text-red-400"
-                  onClick={() => {/* Handle feedback */}}
-                >
+                onClick={() => {/* Handle feedback */}}
+              >
                   <ThumbsDown className="h-3 w-3" />
-                </Button>
-              </div>
-            )}
-          </div>
+              </Button>
+            </div>
+          )}
+        </div>
         </div>
         
         {isUser && (
@@ -289,11 +289,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <h3 className="font-medium text-white">
-                {topic.title}
-              </h3>
-              {topic.description && (
-                <p className="text-sm text-gray-400 mt-1">{topic.description}</p>
-              )}
+            {topic.title}
+          </h3>
+          {topic.description && (
+            <p className="text-sm text-gray-400 mt-1">{topic.description}</p>
+          )}
             </div>
             {messages.length > 0 && (
               <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -387,23 +387,23 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
       {/* Input area */}
       <div className="bg-white/5 rounded-xl border border-white/10 p-3">
         <div className="relative flex items-end gap-3">
-          <Textarea
-            ref={inputRef}
-            value={inputMessage}
-            onChange={(e) => setInputMessage(e.target.value)}
-            onKeyDown={handleKeyPress}
-            placeholder={topic ? `Ask about ${topic.title}...` : 'Type a message...'}
+        <Textarea
+          ref={inputRef}
+          value={inputMessage}
+          onChange={(e) => setInputMessage(e.target.value)}
+          onKeyDown={handleKeyPress}
+          placeholder={topic ? `Ask about ${topic.title}...` : 'Type a message...'}
             className="flex-1 min-h-[40px] max-h-[120px] bg-transparent border-0 text-white placeholder:text-gray-400 focus:ring-0 focus:outline-none resize-none"
-            disabled={isLoading}
-          />
-          <Button
+          disabled={isLoading}
+        />
+        <Button
             className="bg-[#2E5BFF] hover:bg-[#2E5BFF]/90 rounded-full w-10 h-10 p-0 flex items-center justify-center flex-shrink-0"
-            size="sm"
-            disabled={inputMessage.trim() === '' || isLoading}
-            onClick={handleSend}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+          size="sm"
+          disabled={inputMessage.trim() === '' || isLoading}
+          onClick={handleSend}
+        >
+          <Send className="h-4 w-4" />
+        </Button>
         </div>
       </div>
     </div>

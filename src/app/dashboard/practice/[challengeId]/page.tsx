@@ -299,7 +299,7 @@ export default function ChallengePage() {
       ) : problem ? (
         <>
       {/* Header */}
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <Link href="/dashboard/practice">
@@ -383,274 +383,76 @@ export default function ChallengePage() {
       </div>
 
       {/* Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="practice-grid grid grid-cols-1 lg:grid-cols-2 gap-6 h-[calc(100vh-16rem)]">
         {/* Left Panel - Instructions and Test Cases */}
         <motion.div
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
+          className="h-full"
         >
-              <Card className="relative overflow-hidden border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm h-[calc(100vh-14rem)]">
+          <Card className="practice-panel relative overflow-hidden border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm h-full">
             <div className="absolute inset-0 bg-gradient-to-br from-[#2E5BFF]/20 to-purple-500/20 opacity-10" />
             <div className="relative p-6 space-y-4 h-full flex flex-col">
-                  <Tabs value={activeTab} onValueChange={setActiveTab}>
-                    <TabsList className="bg-white/5 border-white/10">
-                      <TabsTrigger value="instructions">Instructions</TabsTrigger>
-                      <TabsTrigger value="testCases">Test Cases</TabsTrigger>
-                      {testResults.length > 0 && (
-                        <TabsTrigger value="testResults">
-                          Results
-                          {testResults.some(r => !r.passed) && <AlertCircle className="h-3 w-3 ml-1 text-red-400" />}
-                        </TabsTrigger>
-                      )}
-                      {errorMessages.length > 0 && (
-                        <TabsTrigger value="errors">
-                          Problems
-                          <AlertCircle className="h-3 w-3 ml-1 text-red-400" />
-                        </TabsTrigger>
-                      )}
-                    </TabsList>
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+                <TabsList className="bg-white/5 border-white/10 shrink-0">
+                  <TabsTrigger value="instructions">Instructions</TabsTrigger>
+                  <TabsTrigger value="testCases">Test Cases</TabsTrigger>
+                  {testResults.length > 0 && (
+                    <TabsTrigger value="testResults">
+                      Results
+                      {testResults.some(r => !r.passed) && <AlertCircle className="h-3 w-3 ml-1 text-red-400" />}
+                    </TabsTrigger>
+                  )}
+                  {errorMessages.length > 0 && (
+                    <TabsTrigger value="errors">
+                      Problems
+                      <AlertCircle className="h-3 w-3 ml-1 text-red-400" />
+                    </TabsTrigger>
+                  )}
+                </TabsList>
 
-                    <div className="mt-4 flex-1 overflow-y-auto">
-                      <TabsContent value="instructions" className="space-y-6 mt-0">
+                <div className="mt-4 flex-1 overflow-y-auto min-h-0 practice-scroll">
+                  <TabsContent value="instructions" className="space-y-6 mt-0 h-full">
                     <div className="space-y-4">
                       <h3 className="text-lg font-semibold text-white">Requirements:</h3>
                       <ul className="space-y-2">
-                            {problem.requirements.map((req, index) => (
+                        {problem.requirements.map((req, index) => (
                           <li key={index} className="flex items-start space-x-2 text-gray-300">
-                                <CheckCircle className="h-5 w-5 text-[#2E5BFF] mt-0.5 shrink-0" />
+                            <CheckCircle className="h-5 w-5 text-[#2E5BFF] mt-0.5 shrink-0" />
                             <span>{req}</span>
                           </li>
                         ))}
                       </ul>
                     </div>
-                        
-                        {problem.learning_concepts && problem.learning_concepts.length > 0 && (
-                    <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-white">Key Concepts:</h3>
-                            <div className="flex flex-wrap gap-2">
-                              {problem.learning_concepts.map((concept, index) => (
-                                <Badge key={index} className="bg-[#2E5BFF]/20 text-[#2E5BFF] border-none">
-                                  <Book className="h-3 w-3 mr-1" />
-                                  {concept}
-                                </Badge>
-                        ))}
-                    </div>
-                  </div>
-                        )}
-                      </TabsContent>
-                      
-                      <TabsContent value="testCases" className="space-y-4 mt-0">
-                        {problem.starter_code && (
-                          <div className="bg-black/30 rounded p-4">
-                            <h3 className="text-sm font-semibold text-white mb-2">Starting Code:</h3>
-                            <pre className="text-xs text-gray-300 overflow-x-auto max-h-40 custom-scrollbar">
-                              {problem.starter_code}
-                            </pre>
-                          </div>
-                        )}
-                      </TabsContent>
-                      
-                      <TabsContent value="testResults" className="space-y-4 mt-0">
-                        {testResults.map((result, index) => (
-                          <div 
-                            key={index} 
-                            className={`p-4 rounded-md ${
-                              result.passed 
-                                ? 'bg-green-500/10 border border-green-500/30' 
-                                : 'bg-red-500/10 border border-red-500/30'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <h4 className="font-medium text-white">Test Case {result.test_case + 1}</h4>
-                              {result.passed ? (
-                                <Badge className="bg-green-500/20 text-green-400">
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Passed
-                                </Badge>
-                              ) : (
-                                <Badge className="bg-red-500/20 text-red-400">
-                                  <X className="h-3 w-3 mr-1" />
-                                  Failed
-                                </Badge>
-                              )}
-                            </div>
-                            
-                            {!result.passed && (
-                              <div className="grid grid-cols-2 gap-4 mt-3">
-                                <div>
-                                  <p className="text-xs text-gray-400 mb-1">Expected:</p>
-                                  <pre className="text-xs text-white bg-black/20 p-2 rounded">
-                                    {result.expected}
-                                  </pre>
-                                </div>
-                                <div>
-                                  <p className="text-xs text-gray-400 mb-1">Actual:</p>
-                                  <pre className="text-xs text-white bg-black/20 p-2 rounded">
-                                    {result.actual || 'No output'}
-                          </pre>
+                    
+                    {problem.learning_concepts && problem.learning_concepts.length > 0 && (
+                      <div className="space-y-4">
+                        <h3 className="text-lg font-semibold text-white">Key Concepts:</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {problem.learning_concepts.map((concept, index) => (
+                            <Badge key={index} className="bg-[#2E5BFF]/20 text-[#2E5BFF] border-none">
+                              <Book className="h-3 w-3 mr-1" />
+                              {concept}
+                            </Badge>
+                          ))}
                         </div>
                       </div>
-                            )}
-                            
-                            {result.error && (
-                              <div className="mt-2">
-                                <p className="text-xs text-gray-400 mb-1">Error:</p>
-                                <pre className="text-xs text-red-400 bg-black/20 p-2 rounded">
-                                  {result.error}
-                                </pre>
-                  </div>
-                )}
-              </div>
-                        ))}
-                      </TabsContent>
-                      
-                      <TabsContent value="errors" className="space-y-4 mt-0">
-                        {errorMessages.map((error, index) => (
-                          <div key={index} className="p-4 bg-red-500/10 border border-red-500/30 rounded-md">
-                            <pre className="text-xs text-red-400 whitespace-pre-wrap">
-                              {error}
-                            </pre>
-                          </div>
-                        ))}
-                        
-                        {errorMessages.length > 0 && suggestedResources.length === 0 && (
-                          <div className="mt-4">
-                            <Button 
-                              variant="outline"
-                              className="border-[#2E5BFF] text-[#2E5BFF] hover:bg-[#2E5BFF] hover:text-white transition-colors"
-                              onClick={fetchSuggestedResources}
-                            >
-                              <Info className="h-4 w-4 mr-2" />
-                              Get Learning Resources
-                            </Button>
-                </div>
-              )}
-
-                        {suggestedResources.length > 0 && (
-                          <div className="mt-4 space-y-3">
-                            <h3 className="font-medium text-white">Suggested Resources</h3>
-                            {suggestedResources.map((resource, index) => (
-                              <Link href={resource.url} key={index}>
-                                <Card className="p-3 bg-white/5 hover:bg-white/10 transition-colors">
-                                  <div className="flex items-start space-x-3">
-                                    <div className={`p-2 rounded-md ${
-                                      resource.type === 'course' 
-                                        ? 'bg-blue-500/20 text-blue-400' 
-                                        : 'bg-purple-500/20 text-purple-400'
-                                    }`}>
-                                      {resource.type === 'course' 
-                                        ? <Book className="h-4 w-4" /> 
-                                        : <ExternalLink className="h-4 w-4" />}
-                                    </div>
-                                    <div className="flex-1">
-                                      <h4 className="text-sm font-medium text-white">{resource.title}</h4>
-                                      <p className="text-xs text-gray-400">{resource.description}</p>
-                                    </div>
-                                    <ChevronRight className="h-4 w-4 text-gray-400" />
-                                  </div>
-                                </Card>
-                              </Link>
-                            ))}
-                          </div>
-                        )}
-                      </TabsContent>
-                    </div>
-
-                    {isRunning && (
-                      <div className="pt-4 flex justify-between items-center space-x-4">
-                <Button
-                  variant="outline"
-                  className="border-[#2E5BFF] text-[#2E5BFF] hover:bg-[#2E5BFF] hover:text-white transition-colors"
-                          onClick={handleRequestHint}
-                          disabled={!isRunning}
-                        >
-                          <Lightbulb className="h-4 w-4 mr-2" />
-                          Get Hint {hintsUsed.length > 0 ? `(${hintsUsed.length} used)` : ''}
-                        </Button>
-                        
-                        <Button
-                          variant="outline"
-                          className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-                          onClick={handleResetCode}
-                        >
-                          <RotateCcw className="h-4 w-4 mr-2" />
-                          Reset Code
-                        </Button>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="testCases" className="space-y-4 mt-0 h-full">
+                    {problem.starter_code && (
+                      <div className="bg-black/30 rounded p-4">
+                        <h3 className="text-sm font-semibold text-white mb-2">Starting Code:</h3>
+                        <pre className="text-xs text-gray-300 overflow-x-auto max-h-60 custom-scrollbar">
+                          {problem.starter_code}
+                        </pre>
                       </div>
                     )}
-                    
-                    {showHint && currentHint && (
-                      <div className="mt-4 p-4 bg-[#2E5BFF]/10 rounded-lg">
-                        <div className="flex justify-between items-center mb-2">
-                          <span className="text-xs text-[#2E5BFF]">
-                            Hint {currentHint.number} of {currentHint.total}
-                          </span>
-                          <Button 
-                            variant="ghost" 
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={() => setShowHint(false)}
-                          >
-                            <X className="h-4 w-4 text-gray-400" />
-                </Button>
-                </div>
-                        <p className="text-gray-300">
-                          <Lightbulb className="h-5 w-5 text-[#2E5BFF] inline mr-2" />
-                          {currentHint.content}
-                        </p>
-              </div>
-                    )}
-                  </Tabs>
-            </div>
-          </Card>
-        </motion.div>
-
-            {/* Right Panel - Code Editor and Output */}
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-        >
-              <Card className="relative overflow-hidden border-white/10 bg-white/5 backdrop-blur-sm h-[calc(100vh-14rem)]">
-                <div className="relative h-full flex flex-col">
-                  <div className="flex-1">
-                <Editor
-                  height="100%"
-                      width="100%"
-                      language="java"
-                  theme={theme}
-                  value={code}
-                      onChange={(value) => setCode(value || '')}
-                  options={{
-                    minimap: { enabled: false },
-                        scrollBeyondLastLine: false,
-                        fontFamily: 'JetBrains Mono, monospace',
-                    fontSize: 14,
-                        lineHeight: 1.5,
-                    automaticLayout: true,
-                  }}
-                />
-              </div>
-
-                  <Tabs value={activeRightTab} onValueChange={setActiveRightTab} className="h-full flex flex-col">
-                    <div className="flex justify-between px-4 pt-2">
-                      <TabsList>
-                        <TabsTrigger value="output">Output</TabsTrigger>
-                        <TabsTrigger value="tests">Test Results</TabsTrigger>
-                        <TabsTrigger value="problems">Problems</TabsTrigger>
-                        <TabsTrigger value="resources">
-                          <BookOpen className="h-4 w-4 mr-1.5" />
-                          Resources
-                        </TabsTrigger>
-                      </TabsList>
-                    </div>
-                    
-                    <TabsContent value="output" className="mt-0">
-                      <pre className="text-sm text-white overflow-auto max-h-[200px] custom-scrollbar p-2 bg-black/30 rounded-md">
-                        {output || 'Run your code to see output here'}
-                      </pre>
-                    </TabsContent>
-                    
-                    <TabsContent value="tests" className="mt-0">
+                  </TabsContent>
+                  
+                  <TabsContent value="testResults" className="space-y-4 mt-0 h-full">
+                    <div className="space-y-4 max-h-full overflow-y-auto practice-scroll">
                       {testResults.map((result, index) => (
                         <div 
                           key={index} 
@@ -676,16 +478,16 @@ export default function ChallengePage() {
                           </div>
                           
                           {!result.passed && (
-                            <div className="grid grid-cols-2 gap-4 mt-3">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
                               <div>
                                 <p className="text-xs text-gray-400 mb-1">Expected:</p>
-                                <pre className="text-xs text-white bg-black/20 p-2 rounded">
+                                <pre className="text-xs text-white bg-black/20 p-2 rounded max-h-32 overflow-y-auto practice-scroll practice-code-block">
                                   {result.expected}
                                 </pre>
                               </div>
                               <div>
                                 <p className="text-xs text-gray-400 mb-1">Actual:</p>
-                                <pre className="text-xs text-white bg-black/20 p-2 rounded">
+                                <pre className="text-xs text-white bg-black/20 p-2 rounded max-h-32 overflow-y-auto practice-scroll practice-code-block">
                                   {result.actual || 'No output'}
                                 </pre>
                               </div>
@@ -695,7 +497,227 @@ export default function ChallengePage() {
                           {result.error && (
                             <div className="mt-2">
                               <p className="text-xs text-gray-400 mb-1">Error:</p>
-                              <pre className="text-xs text-red-400 bg-black/20 p-2 rounded">
+                              <pre className="text-xs text-red-400 bg-black/20 p-2 rounded max-h-32 overflow-y-auto practice-scroll practice-code-block">
+                                {result.error}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </TabsContent>
+                  
+                  <TabsContent value="errors" className="space-y-4 mt-0 h-full">
+                    <div className="space-y-4 max-h-full overflow-y-auto practice-scroll">
+                      {errorMessages.map((error, index) => (
+                        <div key={index} className="p-4 bg-red-500/10 border border-red-500/30 rounded-md">
+                          <pre className="text-xs text-red-400 whitespace-pre-wrap max-h-40 overflow-y-auto practice-scroll practice-code-block">
+                            {error}
+                          </pre>
+                        </div>
+                      ))}
+                      
+                      {errorMessages.length > 0 && suggestedResources.length === 0 && (
+                        <div className="mt-4">
+                          <Button 
+                            variant="outline"
+                            className="border-[#2E5BFF] text-[#2E5BFF] hover:bg-[#2E5BFF] hover:text-white transition-colors"
+                            onClick={fetchSuggestedResources}
+                          >
+                            <Info className="h-4 w-4 mr-2" />
+                            Get Learning Resources
+                          </Button>
+                        </div>
+                      )}
+
+                      {suggestedResources.length > 0 && (
+                        <div className="mt-4 space-y-3">
+                          <h3 className="font-medium text-white">Suggested Resources</h3>
+                          {suggestedResources.map((resource, index) => (
+                            <Link href={resource.url} key={index}>
+                              <Card className="p-3 bg-white/5 hover:bg-white/10 transition-colors">
+                                <div className="flex items-start space-x-3">
+                                  <div className={`p-2 rounded-md ${
+                                    resource.type === 'course' 
+                                      ? 'bg-blue-500/20 text-blue-400' 
+                                      : 'bg-purple-500/20 text-purple-400'
+                                  }`}>
+                                    {resource.type === 'course' 
+                                      ? <Book className="h-4 w-4" /> 
+                                      : <ExternalLink className="h-4 w-4" />}
+                                  </div>
+                                  <div className="flex-1">
+                                    <h4 className="text-sm font-medium text-white">{resource.title}</h4>
+                                    <p className="text-xs text-gray-400">{resource.description}</p>
+                                  </div>
+                                  <ChevronRight className="h-4 w-4 text-gray-400" />
+                                </div>
+                              </Card>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </TabsContent>
+                </div>
+
+                {isRunning && (
+                  <div className="pt-4 flex justify-between items-center space-x-4 shrink-0 border-t border-white/10">
+                    <Button
+                      variant="outline"
+                      className="border-[#2E5BFF] text-[#2E5BFF] hover:bg-[#2E5BFF] hover:text-white transition-colors"
+                      onClick={handleRequestHint}
+                      disabled={!isRunning}
+                    >
+                      <Lightbulb className="h-4 w-4 mr-2" />
+                      Get Hint {hintsUsed.length > 0 ? `(${hintsUsed.length} used)` : ''}
+                    </Button>
+                    
+                    <Button
+                      variant="outline"
+                      className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                      onClick={handleResetCode}
+                    >
+                      <RotateCcw className="h-4 w-4 mr-2" />
+                      Reset Code
+                    </Button>
+                  </div>
+                )}
+                
+                {showHint && currentHint && (
+                  <div className="mt-4 p-4 bg-[#2E5BFF]/10 rounded-lg shrink-0">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-xs text-[#2E5BFF]">
+                        Hint {currentHint.number} of {currentHint.total}
+                      </span>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        className="h-6 w-6 p-0"
+                        onClick={() => setShowHint(false)}
+                      >
+                        <X className="h-4 w-4 text-gray-400" />
+                      </Button>
+                    </div>
+                    <p className="text-gray-300">
+                      <Lightbulb className="h-5 w-5 text-[#2E5BFF] inline mr-2" />
+                      {currentHint.content}
+                    </p>
+                  </div>
+                )}
+              </Tabs>
+            </div>
+          </Card>
+        </motion.div>
+
+        {/* Right Panel - Code Editor and Output */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="h-full"
+        >
+          <Card className="practice-panel relative overflow-hidden border-white/10 bg-white/5 backdrop-blur-sm h-full">
+            <div className="relative h-full flex flex-col">
+              {/* Code Editor Section */}
+              <div className="flex-1 min-h-0 h-3/5 monaco-editor-container">
+                <Editor
+                  height="100%"
+                  width="100%"
+                  language="java"
+                  theme={theme}
+                  value={code}
+                  onChange={(value) => setCode(value || '')}
+                  loading={<div className="flex items-center justify-center h-full bg-black/20 text-white">Loading editor...</div>}
+                  options={{
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontFamily: 'JetBrains Mono, Consolas, Monaco, monospace',
+                    fontSize: 14,
+                    lineHeight: 1.5,
+                    automaticLayout: true,
+                    wordWrap: 'on',
+                    renderLineHighlight: 'line',
+                    cursorBlinking: 'blink',
+                    tabSize: 2,
+                    suggest: {
+                      showKeywords: true,
+                      showSnippets: true,
+                    },
+                    bracketPairColorization: {
+                      enabled: true
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Output Section */}
+              <div className="h-2/5 border-t border-white/10 flex flex-col">
+                <Tabs value={activeRightTab} onValueChange={setActiveRightTab} className="h-full flex flex-col">
+                  <div className="flex justify-between px-4 pt-2 shrink-0">
+                    <TabsList>
+                      <TabsTrigger value="output">Output</TabsTrigger>
+                      <TabsTrigger value="tests">Test Results</TabsTrigger>
+                      <TabsTrigger value="problems">Problems</TabsTrigger>
+                      <TabsTrigger value="resources">
+                        <BookOpen className="h-4 w-4 mr-1.5" />
+                        Resources
+                      </TabsTrigger>
+                    </TabsList>
+                  </div>
+                  
+                  <div className="flex-1 overflow-hidden p-4">
+                    <TabsContent value="output" className="mt-0 h-full">
+                      <pre className="text-sm text-white overflow-auto h-full practice-scroll p-4 bg-black/30 rounded-md practice-code-block">
+                        {output || 'Run your code to see output here'}
+                      </pre>
+                    </TabsContent>
+                    
+                    <TabsContent value="tests" className="mt-0 h-full overflow-y-auto space-y-4 practice-scroll">
+                      {testResults.map((result, index) => (
+                        <div 
+                          key={index} 
+                          className={`p-4 rounded-md ${
+                            result.passed 
+                              ? 'bg-green-500/10 border border-green-500/30' 
+                              : 'bg-red-500/10 border border-red-500/30'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium text-white">Test Case {result.test_case + 1}</h4>
+                            {result.passed ? (
+                              <Badge className="bg-green-500/20 text-green-400">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Passed
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-red-500/20 text-red-400">
+                                <X className="h-3 w-3 mr-1" />
+                                Failed
+                              </Badge>
+                            )}
+                          </div>
+                          
+                          {!result.passed && (
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
+                              <div>
+                                <p className="text-xs text-gray-400 mb-1">Expected:</p>
+                                <pre className="text-xs text-white bg-black/20 p-2 rounded max-h-24 overflow-y-auto practice-scroll practice-code-block">
+                                  {result.expected}
+                                </pre>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-400 mb-1">Actual:</p>
+                                <pre className="text-xs text-white bg-black/20 p-2 rounded max-h-24 overflow-y-auto practice-scroll practice-code-block">
+                                  {result.actual || 'No output'}
+                                </pre>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {result.error && (
+                            <div className="mt-2">
+                              <p className="text-xs text-gray-400 mb-1">Error:</p>
+                              <pre className="text-xs text-red-400 bg-black/20 p-2 rounded max-h-24 overflow-y-auto practice-scroll practice-code-block">
                                 {result.error}
                               </pre>
                             </div>
@@ -704,10 +726,10 @@ export default function ChallengePage() {
                       ))}
                     </TabsContent>
                     
-                    <TabsContent value="problems" className="mt-0">
+                    <TabsContent value="problems" className="mt-0 h-full overflow-y-auto space-y-4 practice-scroll">
                       {errorMessages.map((error, index) => (
                         <div key={index} className="p-4 bg-red-500/10 border border-red-500/30 rounded-md">
-                          <pre className="text-xs text-red-400 whitespace-pre-wrap">
+                          <pre className="text-xs text-red-400 whitespace-pre-wrap max-h-32 overflow-y-auto practice-scroll practice-code-block">
                             {error}
                           </pre>
                         </div>
@@ -715,14 +737,14 @@ export default function ChallengePage() {
                       
                       {errorMessages.length > 0 && suggestedResources.length === 0 && (
                         <div className="mt-4">
-                  <Button
+                          <Button
                             variant="outline"
                             className="border-[#2E5BFF] text-[#2E5BFF] hover:bg-[#2E5BFF] hover:text-white transition-colors"
                             onClick={fetchSuggestedResources}
-                  >
+                          >
                             <Info className="h-4 w-4 mr-2" />
                             Get Learning Resources
-                  </Button>
+                          </Button>
                         </div>
                       )}
                       
@@ -755,8 +777,8 @@ export default function ChallengePage() {
                       )}
                     </TabsContent>
                     
-                    <TabsContent value="resources" className="flex-1 overflow-y-auto p-0">
-                      <div className="p-4">
+                    <TabsContent value="resources" className="h-full overflow-y-auto practice-scroll">
+                      <div>
                         <h3 className="text-sm font-semibold mb-2">Learning Resources</h3>
                         <p className="text-xs text-muted-foreground mb-4">
                           The following resources are recommended to help you solve this problem
@@ -767,11 +789,13 @@ export default function ChallengePage() {
                         <PracticeResourcesList resources={problem?.resources || []} isLoading={loading} />
                       </div>
                     </TabsContent>
-                  </Tabs>
-                </div>
-              </Card>
-            </motion.div>
-          </div>
+                  </div>
+                </Tabs>
+              </div>
+            </div>
+          </Card>
+        </motion.div>
+      </div>
           
           {/* Completion Dialog */}
           <Dialog open={showCompletionDialog} onOpenChange={setShowCompletionDialog}>

@@ -146,3 +146,58 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(46, 91, 255, 0.7);
 }
+
+/* Enhanced scrollbar for practice page content areas */
+.practice-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.practice-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.practice-scroll::-webkit-scrollbar-thumb {
+  background: rgba(46, 91, 255, 0.4);
+  border-radius: 3px;
+}
+
+.practice-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(46, 91, 255, 0.6);
+}
+
+.practice-scroll::-webkit-scrollbar-corner {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Ensure proper text wrapping in code blocks */
+.practice-code-block {
+  word-break: break-word;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* Smooth transitions for tab content */
+.practice-tab-content {
+  transition: opacity 0.2s ease-in-out;
+}
+
+/* Fix for Monaco Editor container */
+.monaco-editor-container {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Responsive grid adjustments */
+@media (max-width: 1024px) {
+  .practice-grid {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+  
+  .practice-panel {
+    height: 50vh;
+    min-height: 400px;
+  }
+}

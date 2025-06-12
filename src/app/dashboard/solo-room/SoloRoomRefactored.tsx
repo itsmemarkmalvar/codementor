@@ -904,7 +904,7 @@ const SoloRoomRefactored = () => {
                   <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-8 text-center">
                     <Brain className="h-12 w-12 text-gray-500 mx-auto mb-4" />
                     <h4 className="text-lg font-semibold text-white mb-2">No Quizzes Available</h4>
-                    <p className="text-gray-400">
+            <p className="text-gray-400">
                       No lesson plans found for this topic. Select a different topic to access quizzes.
                     </p>
                   </div>
@@ -927,8 +927,8 @@ const SoloRoomRefactored = () => {
                               </h4>
                               <p className="text-gray-400 text-sm line-clamp-2 mb-3">
                                 {lesson.description}
-                              </p>
-                            </div>
+            </p>
+          </div>
                             <div className="w-10 h-10 bg-gradient-to-br from-[#2E5BFF] to-[#1E40AF] rounded-lg flex items-center justify-center flex-shrink-0 ml-4">
                               <BookOpen className="h-5 w-5 text-white" />
                             </div>
