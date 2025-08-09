@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { getTutorResponse } from '@/services/api';
 
 interface Message {
@@ -23,9 +23,17 @@ export interface TutorPreferences {
 }
 
 export function useTutorChat(initialMessages: Message[] = []) {
-  const [messages, setMessages] = useState<Message[]>(initialMessages);
+  // Maintain separate histories per model so switching models shows independent conversations
+  const [messagesByModel, setMessagesByModel] = useState<Record<'together' | 'gemini', Message[]>>({
+    together: initialMessages,
+    gemini: [],
+  });
   const [isLoading, setIsLoading] = useState(false);
-  const [currentSessionId, setCurrentSessionId] = useState<number | null>(null);
+  // Maintain separate session IDs per model
+  const [sessionIdByModel, setSessionIdByModel] = useState<Record<'together' | 'gemini', number | null>>({
+    together: null,
+    gemini: null,
+  });
   const [tutorPreferences, setTutorPreferences] = useState<TutorPreferences>({
     responseLength: 'medium',
     codeExamples: true,
@@ -33,6 +41,10 @@ export function useTutorChat(initialMessages: Message[] = []) {
     challengeDifficulty: 'medium',
     aiModel: 'together' // Default to Together AI
   });
+
+  const currentModel = useMemo(() => (tutorPreferences.aiModel ?? 'together') as 'together' | 'gemini', [tutorPreferences.aiModel]);
+  const currentMessages = messagesByModel[currentModel];
+  const currentSessionId = sessionIdByModel[currentModel];
 
   // Convert frontend message format to API format
   const formatConversationHistory = useCallback((messagesToFormat: Message[]): ConversationMessage[] => {
@@ -58,12 +70,16 @@ export function useTutorChat(initialMessages: Message[] = []) {
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    // Append to current model's history
+    setMessagesByModel(prev => ({
+      ...prev,
+      [currentModel]: [...prev[currentModel], userMessage]
+    }));
     setIsLoading(true);
 
     try {
       // Get the last 10 messages for context
-      const recentMessages = [...messages.slice(-9), userMessage];
+      const recentMessages = [...currentMessages.slice(-9), userMessage];
       const conversationHistory = formatConversationHistory(recentMessages);
 
       // Make API call with selected model
@@ -72,7 +88,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
         conversationHistory: conversationHistory,
         preferences: {
           ...tutorPreferences,
-          model: tutorPreferences.aiModel // Pass selected model
+          model: currentModel // Pass selected model
         },
         topic_id: topicId,
         topic: topicTitle,
@@ -92,12 +108,18 @@ export function useTutorChat(initialMessages: Message[] = []) {
         sender: 'ai',
         timestamp: new Date(),
       };
-
-      setMessages(prev => [...prev, aiMessage]);
+      // Append AI message to current model's history
+      setMessagesByModel(prev => ({
+        ...prev,
+        [currentModel]: [...prev[currentModel], aiMessage]
+      }));
 
       // Update session ID if provided in response
       if (!isError && !isFallback && response.session_id) {
-        setCurrentSessionId(response.session_id);
+        setSessionIdByModel(prev => ({
+          ...prev,
+          [currentModel]: response.session_id
+        }));
       }
 
       return {
@@ -115,8 +137,11 @@ export function useTutorChat(initialMessages: Message[] = []) {
         sender: 'ai',
         timestamp: new Date(),
       };
-      
-      setMessages(prev => [...prev, errorMessage]);
+      // Append error message to current model's history
+      setMessagesByModel(prev => ({
+        ...prev,
+        [currentModel]: [...prev[currentModel], errorMessage]
+      }));
       
       return {
         success: false,
@@ -126,7 +151,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, currentSessionId, formatConversationHistory, tutorPreferences]);
+  }, [currentMessages, currentModel, currentSessionId, formatConversationHistory, tutorPreferences]);
 
   // Start a new topic session
   const startTopicSession = useCallback(async (topic: { id: number, title: string }) => {
@@ -138,7 +163,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
         conversationHistory: [],
         preferences: {
           ...tutorPreferences,
-          model: tutorPreferences.aiModel
+          model: currentModel
         },
         topic: topic.title,
         topic_id: topic.id
@@ -158,11 +183,18 @@ export function useTutorChat(initialMessages: Message[] = []) {
         timestamp: new Date(),
       };
       
-      setMessages([welcomeMessage]);
+      // Reset current model's history to the welcome message
+      setMessagesByModel(prev => ({
+        ...prev,
+        [currentModel]: [welcomeMessage]
+      }));
       
       // Update session ID if provided
       if (!isError && !isFallback && response.session_id) {
-        setCurrentSessionId(response.session_id);
+        setSessionIdByModel(prev => ({
+          ...prev,
+          [currentModel]: response.session_id
+        }));
       }
 
       return {
@@ -180,8 +212,11 @@ export function useTutorChat(initialMessages: Message[] = []) {
         sender: 'ai',
         timestamp: new Date(),
       };
-      
-      setMessages([fallbackMessage]);
+      // Reset current model's history on error as well
+      setMessagesByModel(prev => ({
+        ...prev,
+        [currentModel]: [fallbackMessage]
+      }));
       
       return {
         success: false,
@@ -191,7 +226,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
     } finally {
       setIsLoading(false);
     }
-  }, [tutorPreferences]);
+  }, [currentModel, tutorPreferences]);
 
   // Update preferences
   const updatePreferences = useCallback((newPreferences: Partial<TutorPreferences>) => {
@@ -202,15 +237,18 @@ export function useTutorChat(initialMessages: Message[] = []) {
   }, []);
 
   return {
-    messages,
+    messages: currentMessages,
     isLoading,
     currentSessionId,
     tutorPreferences,
     sendMessage,
     startTopicSession,
     updatePreferences,
-    setMessages,
-    setCurrentSessionId
+    // setters act on the currently selected model to preserve separation
+    setMessages: (msgs: Message[]) => setMessagesByModel(prev => ({ ...prev, [currentModel]: msgs })),
+    setCurrentSessionId: (id: number | null) => setSessionIdByModel(prev => ({ ...prev, [currentModel]: id })),
+    // optional debug accessors
+    _debug: { messagesByModel, sessionIdByModel },
   };
 }
 
