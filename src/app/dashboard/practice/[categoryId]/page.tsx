@@ -321,7 +321,7 @@ export default function CategoryPracticePage() {
                               <Star className="h-4 w-4 text-yellow-500" />
                               <span className="text-gray-400 text-sm">{problem.points} pts</span>
                             </div>
-                            <Link href={`/dashboard/practice/${problem.id}`}>
+                             <Link href={`/dashboard/practice/problems/${problem.id}`}>
                               <Button size="sm" className="bg-[#2E5BFF] hover:bg-[#2E5BFF]/80 text-white">
                                 <Play className="h-4 w-4 mr-1" />
                                 Solve
