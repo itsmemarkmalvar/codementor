@@ -383,36 +383,30 @@ export const executeJavaProject = async (params: {
 
 export const updateProgress = async (params: {
   topic_id: number;
-  progress_percentage: number;
+  // server computes weighted progress; we send only signals
   status?: 'not_started' | 'in_progress' | 'completed';
   time_spent_minutes?: number;
   exercises_completed?: number;
   exercises_total?: number;
   completed_subtopics?: string[];
-  progress_data?: string;
+  progress_data?: Record<string, number>;
 }) => {
   try {
-    // Create a clean object with default values for all parameters
-    const cleanParams = {
+    const cleanParams: any = {
       topic_id: Number(params.topic_id),
-      progress_percentage: Math.round(Number(params.progress_percentage)), // Ensure it's an integer
       status: params.status || 'in_progress',
       time_spent_minutes: Number(params.time_spent_minutes || 0),
       exercises_completed: Number(params.exercises_completed || 0),
       exercises_total: Number(params.exercises_total || 0),
-      // Use empty array for completed_subtopics if not provided
-      completed_subtopics: '[]', // Always send as a string representation of an array
-      progress_data: params.progress_data || null
+      completed_subtopics: '[]',
     };
-    
-    // Replace the completed_subtopics with JSON string if array is provided
+
     if (params.completed_subtopics && Array.isArray(params.completed_subtopics)) {
       cleanParams.completed_subtopics = JSON.stringify(params.completed_subtopics);
     }
-    
-    // Ensure progress_data is a string
-    if (cleanParams.progress_data && typeof cleanParams.progress_data !== 'string') {
-      cleanParams.progress_data = JSON.stringify(cleanParams.progress_data);
+
+    if (params.progress_data) {
+      cleanParams.progress_data = JSON.stringify(params.progress_data);
     }
     
     console.log('Sending updateProgress with params:', cleanParams);
@@ -602,6 +596,33 @@ export const getLessonPlanDetails = async (lessonPlanId: number) => {
   }
 };
 
+// Lesson/Topic aggregate progress (server-calculated per formulas)
+export const getLessonPlanProgress = async (lessonPlanId: number) => {
+  try {
+    const response = await api.get(`/lesson-plans/${lessonPlanId}/progress`);
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('Error in getLessonPlanProgress:', error);
+    throw error;
+  }
+};
+
+export const getTopicAggregateProgress = async (topicId: number) => {
+  try {
+    const response = await api.get(`/topics/${topicId}/progress`);
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('Error in getTopicAggregateProgress:', error);
+    throw error;
+  }
+};
+
 export const getLessonModules = async (lessonPlanId: number) => {
   try {
     const response = await api.get(`/lesson-plans/${lessonPlanId}/modules`);
@@ -720,6 +741,20 @@ export const analyzeQuizResults = async (data: {
     return response.data;
   } catch (error) {
     console.error('Error analyzing quiz results:', error);
+    throw error;
+  }
+};
+
+// Heartbeat: accrue time and recompute progress on the server
+export const heartbeat = async (params: { topic_id: number; minutes_increment?: number }) => {
+  try {
+    const response = await api.post('/tutor/heartbeat', {
+      topic_id: Number(params.topic_id),
+      minutes_increment: Number(params.minutes_increment || 1),
+    });
+    return response.data?.data;
+  } catch (error) {
+    console.error('Error sending heartbeat:', error);
     throw error;
   }
 };

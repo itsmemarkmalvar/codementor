@@ -1,64 +1,16 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Award, Book, Calendar, CheckCircle, Clock, Code, Star, Target, Trophy, TrendingUp } from "lucide-react";
+import { getLessonPlans, getLessonPlanProgress, getTopics, getTopicAggregateProgress, heartbeat, getUserProgress } from "@/services/api";
 
-const stats = [
-  {
-    title: "Total Learning Hours",
-    value: "48h",
-    change: "+5h this week",
-    icon: Clock,
-    color: "from-[#2E5BFF]/20 to-purple-500/20"
-  },
-  {
-    title: "Completion Rate",
-    value: "85%",
-    change: "+2% from last month",
-    icon: Target,
-    color: "from-purple-500/20 to-[#2E5BFF]/20"
-  },
-  {
-    title: "Achievements",
-    value: "12",
-    change: "2 new this month",
-    icon: Trophy,
-    color: "from-[#2E5BFF]/20 to-purple-500/20"
-  },
-  {
-    title: "Current Rank",
-    value: "Gold",
-    change: "Top 15%",
-    icon: Award,
-    color: "from-purple-500/20 to-[#2E5BFF]/20"
-  }
-];
+// dynamic stats
+const achievements: any[] = [];
 
-const achievements = [
-  {
-    title: "Quick Learner",
-    description: "Complete 5 lessons in one day",
-    progress: 80,
-    icon: TrendingUp,
-    color: "bg-[#2E5BFF]/20",
-  },
-  {
-    title: "Code Master",
-    description: "Solve 50 practice problems",
-    progress: 65,
-    icon: Code,
-    color: "bg-[#2E5BFF]/20",
-  },
-  {
-    title: "Consistent Coder",
-    description: "Maintain a 7-day streak",
-    progress: 100,
-    icon: Calendar,
-    color: "bg-[#2E5BFF]/20",
-  }
-];
+const recentProgressStatic: any[] = [];
 
 const recentProgress = [
   {
@@ -88,6 +40,90 @@ const recentProgress = [
 ];
 
 export default function ProgressPage() {
+  const [topics, setTopics] = useState<Array<any>>([]);
+  const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null);
+  const [topicProgress, setTopicProgress] = useState<any | null>(null);
+  const [lessonPlans, setLessonPlans] = useState<Array<any>>([]);
+  const [lessonProgressMap, setLessonProgressMap] = useState<Record<number, any>>({});
+  const [weightedBreakdown, setWeightedBreakdown] = useState<any | null>(null);
+  const [stats, setStats] = useState<Array<any>>([]);
+  const [recent, setRecent] = useState<Array<any>>([]);
+
+  useEffect(() => {
+    const loadTopics = async () => {
+      try {
+        const data = await getTopics();
+        setTopics(data || []);
+        if ((data || []).length > 0) setSelectedTopicId(data[0].id);
+        // derive stats and recent from all user progress
+        try {
+          const up = await getUserProgress();
+          const totalMinutes = (up || []).reduce((s: number, p: any) => s + (p.time_spent_minutes || 0), 0);
+          const avgProgress = (up || []).length > 0 ? Math.round((up.reduce((s: number, p: any) => s + (p.progress_percentage || 0), 0)) / up.length) : 0;
+          const completed = (up || []).filter((p: any) => (p.progress_percentage || 0) >= 100).length;
+          const streakMax = Math.max(0, ...((up || []).map((p: any) => p.current_streak_days || 0)));
+          setStats([
+            { title: 'Total Learning Hours', value: `${Math.round(totalMinutes / 60)}h`, change: '', icon: Clock, color: 'from-[#2E5BFF]/20 to-purple-500/20' },
+            { title: 'Completion Rate', value: `${avgProgress}%`, change: '', icon: Target, color: 'from-purple-500/20 to-[#2E5BFF]/20' },
+            { title: 'Topics Completed', value: `${completed}`, change: '', icon: Trophy, color: 'from-[#2E5BFF]/20 to-purple-500/20' },
+            { title: 'Best Streak', value: `${streakMax}d`, change: '', icon: Award, color: 'from-purple-500/20 to-[#2E5BFF]/20' },
+          ]);
+
+          const recentItems = [...(up || [])]
+            .sort((a: any, b: any) => new Date(b.last_interaction_at || 0).getTime() - new Date(a.last_interaction_at || 0).getTime())
+            .slice(0, 5)
+            .map((p: any) => ({
+              title: p.topic_title || `Topic ${p.topic_id}`,
+              type: 'Topic',
+              milestone: `${p.progress_percentage}% • streak ${p.current_streak_days || 0}d` ,
+              time: (p.last_interaction_at ? new Date(p.last_interaction_at).toLocaleString() : ''),
+              icon: Book,
+              color: 'bg-[#2E5BFF]/20'
+            }));
+          setRecent(recentItems);
+        } catch (e) {
+          console.warn('Failed to load user progress for stats', e);
+        }
+      } catch (e) {
+        console.error("Failed to load topics", e);
+      }
+    };
+    loadTopics();
+  }, []);
+
+  useEffect(() => {
+    const loadTopicProgress = async () => {
+      if (!selectedTopicId) return;
+      try {
+        const tp = await getTopicAggregateProgress(selectedTopicId);
+        setTopicProgress(tp);
+        // fetch weighted breakdown without incrementing time
+        try {
+          const hb = await heartbeat({ topic_id: selectedTopicId, minutes_increment: 0 });
+          setWeightedBreakdown(hb?.weighted_breakdown || null);
+        } catch (e) {
+          console.warn("heartbeat (read) failed", e);
+        }
+        const plans = await getLessonPlans(selectedTopicId);
+        setLessonPlans(plans || []);
+        // fetch each lesson plan progress
+        const entries: Record<number, any> = {};
+        for (const lp of plans || []) {
+          try {
+            const lpProg = await getLessonPlanProgress(lp.id);
+            entries[lp.id] = lpProg;
+          } catch (e) {
+            console.warn("lesson progress error", lp.id, e);
+          }
+        }
+        setLessonProgressMap(entries);
+      } catch (e) {
+        console.error("Failed to load topic progress", e);
+      }
+    };
+    loadTopicProgress();
+  }, [selectedTopicId]);
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -96,7 +132,30 @@ export default function ProgressPage() {
         <p className="text-gray-400">Track your achievements and growth</p>
       </div>
 
-      {/* Stats Grid */}
+      {/* Topic selector and overall */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-3">
+          <span className="text-sm text-gray-400">Topic:</span>
+          <select
+            className="bg-white/5 text-white border border-white/10 rounded px-2 py-1 text-sm"
+            value={selectedTopicId ?? ''}
+            onChange={(e) => setSelectedTopicId(Number(e.target.value))}
+          >
+            {(topics || []).map((t: any) => (
+              <option key={t.id} value={t.id} className="bg-gray-900">
+                {t.title}
+              </option>
+            ))}
+          </select>
+        </div>
+        {topicProgress && (
+          <div className="text-sm text-gray-300">
+            Overall Topic Progress: <span className="text-[#2E5BFF] font-semibold">{topicProgress.overall_percentage}%</span>
+          </div>
+        )}
+      </div>
+
+      {/* Stats Grid (dynamic) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => (
           <motion.div
@@ -122,46 +181,89 @@ export default function ProgressPage() {
         ))}
       </div>
 
-      {/* Achievements */}
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">Achievements</h2>
-          <Button 
-            variant="outline" 
-            className="border-[#2E5BFF] text-[#2E5BFF] hover:bg-[#2E5BFF] hover:text-white transition-colors"
-          >
-            View All
-          </Button>
+      {/* Weighted breakdown from server */}
+      {weightedBreakdown && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          {[{
+            label: 'Interaction', val: weightedBreakdown.interaction_capped, cap: 30
+          }, {
+            label: 'Code', val: weightedBreakdown.code_capped, cap: 40
+          }, {
+            label: 'Time', val: weightedBreakdown.time_capped, cap: 5
+          }, {
+            label: 'Quiz', val: weightedBreakdown.quiz_capped, cap: 30
+          }, {
+            label: 'Overall', val: weightedBreakdown.overall_progress, cap: 100
+          }].map((item, idx) => (
+            <Card key={idx} className="border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm p-4">
+              <div className="flex items-center justify-between text-sm text-gray-300">
+                <span>{item.label}</span>
+                <span className="text-[#2E5BFF] font-semibold">{item.val}/{item.cap}</span>
+              </div>
+              <div className="h-2 rounded-full bg-white/10 mt-2">
+                <div className="h-full rounded-full bg-gradient-to-r from-[#2E5BFF] to-purple-500" style={{ width: `${Math.min(100, (item.val/item.cap)*100)}%` }} />
+              </div>
+            </Card>
+          ))}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {achievements.map((achievement, index) => (
-            <motion.div
-              key={achievement.title}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-            >
+      )}
+
+      {/* Lesson breakdown for selected topic */}
+      {lessonPlans.length > 0 && (
+        <div className="space-y-4">
+          <h2 className="text-xl font-semibold text-white">Lessons in Topic</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {lessonPlans.map((lp: any, index: number) => {
+              const lpProg = lessonProgressMap[lp.id];
+              const pct = lpProg?.overall_percentage ?? 0;
+              return (
+                <motion.div key={lp.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }}>
+                  <Card className="relative overflow-hidden border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm">
+                    <div className="relative p-6">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="font-semibold text-white">{lp.title}</h3>
+                          <p className="text-sm text-gray-400">{lp.description}</p>
+                        </div>
+                        <Book className="h-5 w-5 text-[#2E5BFF]" />
+                      </div>
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between text-sm mb-2">
+                          <span className="text-gray-400">Progress</span>
+                          <span className="text-[#2E5BFF]">{pct}%</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-white/10">
+                          <div className="h-full rounded-full bg-gradient-to-r from-[#2E5BFF] to-purple-500" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                </motion.div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Recent Progress (dynamic) */}
+      <div className="space-y-6">
+        <h2 className="text-xl font-semibold text-white">Recent Progress</h2>
+        <div className="space-y-4">
+          {recent.map((item, index) => (
+            <motion.div key={`${item.title}-${index}`} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * 0.05 }}>
               <Card className="relative overflow-hidden border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm">
                 <div className="p-6">
                   <div className="flex items-start space-x-4">
-                    <div className={`p-2 rounded-lg ${achievement.color}`}>
-                      <achievement.icon className="h-5 w-5 text-[#2E5BFF]" />
+                    <div className={`p-2 rounded-lg ${item.color}`}>
+                      <item.icon className="h-5 w-5 text-[#2E5BFF]" />
                     </div>
                     <div className="flex-1 space-y-1">
-                      <h3 className="font-semibold text-white">{achievement.title}</h3>
-                      <p className="text-sm text-gray-400">{achievement.description}</p>
-                      <div className="mt-4">
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-gray-400">Progress</span>
-                          <span className="text-[#2E5BFF]">{achievement.progress}%</span>
-                        </div>
-                        <div className="h-2 rounded-full bg-white/10">
-                          <div
-                            className="h-full rounded-full bg-gradient-to-r from-[#2E5BFF] to-purple-500"
-                            style={{ width: `${achievement.progress}%` }}
-                          />
-                        </div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-white">{item.title}</p>
+                        <span className="text-xs text-gray-400">{item.time}</span>
                       </div>
+                      <p className="text-xs text-gray-400">{item.type}</p>
+                      <p className="text-sm text-gray-300">{item.milestone}</p>
                     </div>
                   </div>
                 </div>

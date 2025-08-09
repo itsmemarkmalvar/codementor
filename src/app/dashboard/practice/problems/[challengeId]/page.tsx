@@ -192,6 +192,10 @@ export default function ChallengePage() {
           setOutput("All tests passed successfully! Great job!");
           setPointsEarned(data.points_earned);
           setFeedback(data.feedback);
+          // Show complexity and reward points in completion dialog
+          if (data.complexity_score !== undefined) {
+            toast.success(`Complexity: ${data.complexity_score} • Reward: ${data.points_earned} pts`);
+          }
           setShowCompletionDialog(true);
         } else {
           setOutput("Some tests failed. Check the 'Test Results' tab for details.");

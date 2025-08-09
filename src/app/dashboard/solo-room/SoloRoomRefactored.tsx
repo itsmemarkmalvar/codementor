@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans } from '@/services/api';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat } from '@/services/api';
 import { toast } from 'sonner';
 
 // Import custom hooks
@@ -208,39 +208,47 @@ const SoloRoomRefactored = () => {
     return result;
   };
 
-  // Progress tracking
+  // Progress tracking (server is source of truth)
   const updateProgress = async (progressIncrement = 0, progressType = 'interaction') => {
     if (!selectedTopic) return;
     
     try {
-      // Construct progress data object
       const progressData = {
         interaction: progressType === 'interaction' ? progressIncrement : 0,
         code_execution: progressType === 'code_execution' ? progressIncrement : 0,
-        time_spent: progressType === 'time_spent' ? progressIncrement : 0,
         knowledge_check: progressType === 'knowledge_check' ? progressIncrement : 0
       };
-      
-      // Calculate overall progress as a weighted average
-      const overallProgress = 
-        (progressData.interaction * 0.25) + 
-        (progressData.code_execution * 0.4) + 
-        (progressData.time_spent * 0.1) + 
-        (progressData.knowledge_check * 0.25);
-      
-      // Update progress on the server
+
       await apiUpdateProgress({
         topic_id: selectedTopic.id,
-        progress_percentage: Math.min(Math.round(overallProgress), 100),
-        status: overallProgress >= 100 ? 'completed' : 'in_progress',
-        time_spent_minutes: 1,
+        status: 'in_progress',
         completed_subtopics: [],
-        progress_data: JSON.stringify(progressData)
+        progress_data: progressData
       });
     } catch (error) {
       console.error('Error updating progress:', error);
     }
   };
+
+  // Time accrual heartbeat: award 1 point per 10 minutes (server computes)
+  useEffect(() => {
+    if (!selectedTopic) return;
+    let timer: any;
+    const tick = async () => {
+      try {
+        if (typeof document !== 'undefined' && document.hidden) return;
+        // server defaults to 1-minute increment
+        await heartbeat({ topic_id: selectedTopic.id, minutes_increment: 1 });
+      } catch (err) {
+        console.error('Heartbeat error:', err);
+      }
+    };
+    // fire every 60s while on this screen
+    timer = setInterval(tick, 60000);
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [selectedTopic]);
 
   // File operations
   const handleFileSelect = (fileId: string) => {
