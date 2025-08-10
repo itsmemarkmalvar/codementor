@@ -773,6 +773,61 @@ export const heartbeat = async (params: { topic_id: number; minutes_increment?: 
   }
 };
 
+// =====================
+// Quiz API (protected)
+// =====================
+export interface QuizQuestion {
+  id: number;
+  quiz_id: number;
+  question_text: string;
+  type: string;
+  options?: any;
+  code_snippet?: string | null;
+  points?: number;
+}
+
+export interface LessonQuiz {
+  id: number;
+  module_id: number;
+  title: string;
+  description?: string;
+  passing_score_percent?: number;
+  order_index?: number;
+}
+
+export const getQuiz = async (quizId: number): Promise<{ quiz: LessonQuiz & { questions: QuizQuestion[] } }> => {
+  const response = await api.get(`/quizzes/${quizId}`);
+  return response.data;
+};
+
+export const getModuleQuizzes = async (moduleId: number): Promise<{ quizzes: LessonQuiz[] }> => {
+  const response = await api.get(`/modules/${moduleId}/quizzes`);
+  return response.data;
+};
+
+export const startQuizAttempt = async (quizId: number): Promise<{ attempt: any; message?: string }> => {
+  const response = await api.post(`/quizzes/${quizId}/attempt`, {});
+  return response.data;
+};
+
+export const submitQuizAttempt = async (
+  attemptId: number,
+  data: { responses: Record<number, any>; time_spent_seconds?: number }
+): Promise<{ attempt: any; score: number; percentage: number; passed: boolean }> => {
+  const response = await api.post(`/quiz-attempts/${attemptId}/submit`, data);
+  return response.data;
+};
+
+export const getQuizAttempt = async (attemptId: number): Promise<{ attempt: any }> => {
+  const response = await api.get(`/quiz-attempts/${attemptId}`);
+  return response.data;
+};
+
+export const getUserQuizzes = async (): Promise<{ attempts: any[] }> => {
+  const response = await api.get(`/users/quizzes`);
+  return response.data;
+};
+
 // Project Management API calls
 export interface ProjectFile {
   id?: string | number;

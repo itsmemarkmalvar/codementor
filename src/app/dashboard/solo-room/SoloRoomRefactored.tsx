@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat } from '@/services/api';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules } from '@/services/api';
 import { toast } from 'sonner';
 
 // Import custom hooks
@@ -35,10 +35,21 @@ const SoloRoomRefactored = () => {
   const [selectedLesson, setSelectedLesson] = useState<any | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
+  const [summary, setSummary] = useState<any | null>(null);
   
   // Add lesson plans state
   const [lessonPlans, setLessonPlans] = useState<any[]>([]);
   const [isLoadingLessonPlans, setIsLoadingLessonPlans] = useState(false);
+  const [moduleQuizzes, setModuleQuizzes] = useState<any[]>([]);
+  const [lessonModules, setLessonModules] = useState<any[]>([]);
+  const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null);
+  const [activeQuiz, setActiveQuiz] = useState<any | null>(null);
+  const [activeAttempt, setActiveAttempt] = useState<any | null>(null);
+  const quizInProgress = !!activeAttempt && !activeAttempt.completed_at;
+  const [quizElapsedSec, setQuizElapsedSec] = useState<number>(0);
+  const [quizTimerId, setQuizTimerId] = useState<any>(null);
+  const [quizResponses, setQuizResponses] = useState<Record<number, any>>({});
+  const [isSubmittingQuiz, setIsSubmittingQuiz] = useState(false);
   
   // Project state (simplified for demo)
   const [currentProject, setCurrentProject] = useState<any>(null);
@@ -68,6 +79,9 @@ const SoloRoomRefactored = () => {
     executeCode,
     formatCode
   } = useCodeExecution();
+
+  // Track last user activity globally for heartbeat gating
+  const lastActivityRef = useRef<number>(Date.now());
 
   // Fetch topics on initial load only
   useEffect(() => {
@@ -144,6 +158,34 @@ const SoloRoomRefactored = () => {
     // Only fetch topics and create project on initial load
     fetchTopics();
     createDefaultProject();
+    // Initial load of progress summary and apply RL difficulty
+    (async () => {
+      try {
+        const s = await getProgressSummary();
+        setSummary(s);
+        const next = s?.rl?.difficulty_next as 'increase' | 'decrease' | 'same' | undefined;
+        if (next) {
+          const mapped = next === 'increase' ? 'advanced' : next === 'decrease' ? 'beginner' : 'medium';
+          updatePreferences({ challengeDifficulty: mapped });
+        }
+      } catch {}
+    })();
+    // Periodically refresh summary to keep badge up-to-date
+    const summaryTimer = setInterval(async () => {
+      try {
+        const s = await getProgressSummary();
+        setSummary(s);
+        const next = s?.rl?.difficulty_next as 'increase' | 'decrease' | 'same' | undefined;
+        if (next) {
+          const mapped = next === 'increase' ? 'advanced' : next === 'decrease' ? 'beginner' : 'medium';
+          updatePreferences({ challengeDifficulty: mapped });
+        }
+      } catch {}
+    }, 60000);
+
+    return () => {
+      clearInterval(summaryTimer);
+    };
   }, []); // Empty dependency array - run only once
 
   // Fetch lesson plans when a topic is selected
@@ -179,6 +221,8 @@ const SoloRoomRefactored = () => {
 
   // Message sending handler
   const handleSendMessage = async (message: string, topicId?: number, topicTitle?: string) => {
+    // Mark as activity
+    lastActivityRef.current = Date.now();
     // Use provided topic info or fall back to selected topic
     const topicToUse = selectedTopic || (topicId ? { id: topicId, title: topicTitle } : null);
     
@@ -187,7 +231,19 @@ const SoloRoomRefactored = () => {
       return;
     }
     
-    await sendMessage(message, topicToUse.id, topicToUse.title || 'Learning Session');
+    // Adapt message by current difficulty preference
+    const difficulty = tutorPreferences?.challengeDifficulty || 'medium';
+    const messageWithDifficulty = (() => {
+      if (difficulty === 'beginner') {
+        return `${message}\n\nPlease explain step-by-step with simple examples and gentle pacing. Avoid jumping to advanced topics.`;
+      }
+      if (difficulty === 'advanced') {
+        return `${message}\n\nChallenge me with harder problems, fewer hints, and expect concise, expert-level explanations.`;
+      }
+      return message;
+    })();
+
+    await sendMessage(messageWithDifficulty, topicToUse.id, topicToUse.title || 'Learning Session');
     
     // Track progress for sending a message
     updateProgress(1, 'interaction');
@@ -195,6 +251,8 @@ const SoloRoomRefactored = () => {
 
   // Code execution handler
   const handleRunCode = async () => {
+    // Mark as activity
+    lastActivityRef.current = Date.now();
     if (!selectedTopic) {
       toast.error('Please select a topic first');
       return;
@@ -207,6 +265,12 @@ const SoloRoomRefactored = () => {
     
     return result;
   };
+  // Editor change handler that also marks activity
+  const handleEditorChange = (val: string) => {
+    lastActivityRef.current = Date.now();
+    setCodeInput(val);
+  };
+
 
   // Progress tracking (server is source of truth)
   const updateProgress = async (progressIncrement = 0, progressType = 'interaction') => {
@@ -235,7 +299,6 @@ const SoloRoomRefactored = () => {
     if (!selectedTopic) return;
 
     // Track recent user activity (mouse/keyboard/touch) and only send heartbeat if active recently
-    const lastActivityRef = { current: Date.now() } as React.MutableRefObject<number>;
     const IDLE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes
 
     const markActivity = () => {
@@ -375,6 +438,25 @@ const SoloRoomRefactored = () => {
       }
       
       toast.success(`Switched to AI Tutor for: ${lesson.title}`);
+
+      // Load modules for this lesson and preselect first module
+      try {
+        const modules = await getLessonModules(lesson.id);
+        setLessonModules(modules || []);
+        if (Array.isArray(modules) && modules.length > 0) {
+          const firstModuleId = modules[0].id;
+          setSelectedModuleId(firstModuleId);
+          const quizzesRes = await getModuleQuizzes(firstModuleId);
+          setModuleQuizzes(quizzesRes?.quizzes || []);
+        } else {
+          setSelectedModuleId(null);
+          setModuleQuizzes([]);
+        }
+      } catch (e) {
+        setLessonModules([]);
+        setSelectedModuleId(null);
+        setModuleQuizzes([]);
+      }
     } catch (error) {
       console.error('Error in handleLessonClick:', error);
       toast.error(`Failed to start lesson: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -405,20 +487,48 @@ const SoloRoomRefactored = () => {
       
       await startTopicSession(topicToUse);
       
-      // Switch to chat tab
-      setActiveTab('chat');
+      // Switch to quiz tab
+      setActiveTab('quiz');
       
-      // Start AI quiz conversation about this specific lesson
-      const quizMessage = `Hello! I'd like to take a quiz on "${lesson.title}". ${lesson.description ? `This lesson covers: ${lesson.description}. ` : ''}Please create an interactive quiz with multiple-choice questions, coding challenges, and concept explanations to test my understanding. Start with easier questions and gradually increase difficulty. After each question, provide detailed explanations of the correct answers.`;
-      
-      // Send the initial quiz message
+      // Load quizzes for the currently selected module and prefetch first quiz details
       try {
-        await handleSendMessage(quizMessage, topicToUse.id, topicToUse.title);
-        console.log('Quiz message sent successfully');
-        toast.success(`Started quiz for ${lesson.title}`);
-      } catch (messageError) {
-        console.error('Failed to send quiz message:', messageError);
-        toast.error('Failed to start quiz');
+        let moduleId = selectedModuleId;
+        if (!moduleId) {
+          const modules = await getLessonModules(lesson.id);
+          setLessonModules(modules || []);
+          if (Array.isArray(modules) && modules.length > 0) {
+            moduleId = modules[0].id;
+            setSelectedModuleId(moduleId);
+          }
+        }
+
+        const quizzesRes = moduleId ? await getModuleQuizzes(moduleId) : { quizzes: [] } as any;
+        const quizzes = quizzesRes?.quizzes || [];
+        setModuleQuizzes(quizzes);
+        if (quizzes.length > 0) {
+          const { quiz } = await getQuiz(quizzes[0].id);
+          setActiveQuiz(quiz);
+          setQuizResponses({});
+          // Start attempt
+          const { attempt } = await startQuizAttempt(quiz.id);
+          setActiveAttempt(attempt);
+        } else {
+          setActiveQuiz(null);
+          setActiveAttempt(null);
+          // Fallback to AI interactive quiz in chat
+          const intro = `Hello! I'd like to take an interactive quiz on "${lesson.title}". ${lesson.description ? `This lesson covers: ${lesson.description}. ` : ''}Please ask one question at a time (MCQ or short answer), wait for my reply, then give feedback and the next question. Start easy then increase difficulty.`;
+          try {
+            await handleSendMessage(intro, topicToUse.id, topicToUse.title);
+            toast.info('Started AI interactive quiz in the chat');
+            setActiveTab('chat');
+          } catch (e) {
+            console.error('AI quiz start failed', e);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load quizzes:', e);
+        setActiveQuiz(null);
+        setActiveAttempt(null);
       }
       
     } catch (error) {
@@ -448,24 +558,43 @@ const SoloRoomRefactored = () => {
           </div>
         </div>
         
-        {/* Topic Status */}
-        {selectedTopic && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-lg border border-white/10"
-          >
-            <Target className="h-4 w-4 text-[#2E5BFF]" />
-            <span className="text-sm font-medium text-white">{selectedTopic.title}</span>
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-          </motion.div>
-        )}
+        {/* Topic Status and Overall Progress Badge */}
+        <div className="flex items-center gap-3">
+          {selectedTopic && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-lg border border-white/10"
+            >
+              <Target className="h-4 w-4 text-[#2E5BFF]" />
+              <span className="text-sm font-medium text-white">{selectedTopic.title}</span>
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+            </motion.div>
+          )}
+          <div className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium">
+            Progress: {Math.max(0, Math.min(100, summary?.weighted_breakdown?.overall_progress ?? 0))}%
+          </div>
+        </div>
       </motion.div>
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as any)} className="flex-1 flex flex-col">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          if (quizInProgress && value !== 'quiz') {
+            toast.error('Finish or submit the quiz first to access other tabs');
+            return;
+          }
+          setActiveTab(value as any);
+        }}
+        className="flex-1 flex flex-col"
+      >
         <div className="px-6 pt-4">
-          <TabsList className="grid w-full grid-cols-4 bg-white/5 border border-white/10 backdrop-blur-sm">
-            <TabsTrigger value="chat" className="flex items-center gap-2 data-[state=active]:bg-[#2E5BFF] data-[state=active]:text-white transition-all duration-200">
+            <TabsList className="grid w-full grid-cols-4 bg-white/5 border border-white/10 backdrop-blur-sm">
+            <TabsTrigger
+              value="chat"
+              disabled={quizInProgress}
+              className="flex items-center gap-2 data-[state=active]:bg-[#2E5BFF] data-[state=active]:text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
             <MessageSquare className="h-4 w-4" />
               <span className="hidden sm:inline">AI Tutor</span>
           </TabsTrigger>
@@ -599,7 +728,7 @@ const SoloRoomRefactored = () => {
                     <div className="flex-1 min-h-0">
                     <CodeEditor
                       value={codeInput}
-                      onChange={setCodeInput}
+                      onChange={handleEditorChange}
                       language="java"
                       onRun={handleRunCode}
                       onFormat={formatCode}
@@ -949,7 +1078,7 @@ const SoloRoomRefactored = () => {
                   </div>
                 </div>
 
-                {/* Quiz Content - Lesson Details */}
+                {/* Quiz Content */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Left Column - Lesson Overview */}
                   <div className="space-y-6">
@@ -1013,78 +1142,183 @@ const SoloRoomRefactored = () => {
                     </div>
                   </div>
 
-                  {/* Right Column - Quiz Options */}
+                  {/* Right Column - Quiz */}
                   <div className="space-y-6">
                     <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6">
-                      <h4 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-lg font-semibold text-white flex items-center gap-2">
                         <Brain className="h-5 w-5 text-[#2E5BFF]" />
-                        Quiz Options
-                      </h4>
-                      
-                      {/* Quiz Type Selection */}
-                      <div className="space-y-4 mb-6">
-                        <div className="p-4 bg-white/5 rounded-lg border border-white/10 hover:border-[#2E5BFF]/50 transition-colors cursor-pointer">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className="w-8 h-8 bg-[#2E5BFF]/20 rounded-lg flex items-center justify-center">
-                              <MessageSquare className="h-4 w-4 text-[#2E5BFF]" />
-                            </div>
-                            <h5 className="font-medium text-white">AI Interactive Quiz</h5>
+                        Quiz
+                        </h4>
+                        {quizInProgress && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded">Quiz in progress</span>
+                            {(() => {
+                              const limitMin = Number(activeQuiz?.time_limit_minutes || 0);
+                              const limitSec = limitMin > 0 ? limitMin * 60 : 0;
+                              const remaining = limitSec > 0 ? Math.max(0, limitSec - quizElapsedSec) : 0;
+                              const mm = Math.floor(remaining / 60).toString().padStart(2, '0');
+                              const ss = Math.floor(remaining % 60).toString().padStart(2, '0');
+                              return limitSec > 0 ? (
+                                <span className="text-xs text-white bg-white/10 border border-white/10 px-2 py-1 rounded">Time Left: {mm}:{ss}</span>
+                              ) : null;
+                            })()}
+                            <button
+                              onClick={() => { setActiveAttempt(null); setActiveQuiz(null); setQuizResponses({}); setQuizElapsedSec(0); if (quizTimerId) { clearInterval(quizTimerId); setQuizTimerId(null);} }}
+                              className="text-xs px-2 py-1 bg-white/10 border border-white/10 text-gray-200 rounded hover:bg-white/20"
+                            >
+                              Cancel Attempt
+                            </button>
                           </div>
-                          <p className="text-gray-400 text-sm">
-                            Dynamic questions with AI tutor guidance and explanations
-                          </p>
-                        </div>
-                        
-                        <div className="p-4 bg-white/5 rounded-lg border border-white/10 opacity-50">
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className="w-8 h-8 bg-gray-500/20 rounded-lg flex items-center justify-center">
-                              <ScrollText className="h-4 w-4 text-gray-500" />
-                            </div>
-                            <h5 className="font-medium text-gray-500">Formal Quiz</h5>
-                            <span className="text-xs bg-gray-500/20 text-gray-400 px-2 py-1 rounded">Coming Soon</span>
-                          </div>
-                          <p className="text-gray-500 text-sm">
-                            Structured multiple-choice and coding questions
-                          </p>
-                        </div>
+                        )}
                       </div>
 
-                      {/* Quiz Features */}
-                      <div className="mb-6">
-                        <h5 className="text-sm font-medium text-white mb-3">What to Expect:</h5>
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm text-gray-300">
-                            <Lightbulb className="h-3 w-3 text-[#2E5BFF]" />
-                            <span>Concept-based questions</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-300">
-                            <Code2 className="h-3 w-3 text-[#2E5BFF]" />
-                            <span>Code analysis challenges</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-300">
-                            <Target className="h-3 w-3 text-[#2E5BFF]" />
-                            <span>Practical applications</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm text-gray-300">
-                            <Trophy className="h-3 w-3 text-[#2E5BFF]" />
-                            <span>Instant feedback & explanations</span>
-                          </div>
+                      {/* Module selector */}
+                      {lessonModules.length > 0 && (
+                        <div className="mb-3 flex items-center gap-2">
+                          <span className="text-xs text-gray-400">Module:</span>
+                          <select
+                            className="bg-white/10 border border-white/10 text-sm text-white rounded px-2 py-1"
+                            value={selectedModuleId ?? ''}
+                            onChange={async (e) => {
+                              const id = Number(e.target.value);
+                              setSelectedModuleId(id);
+                              try {
+                                const res = await getModuleQuizzes(id);
+                                setModuleQuizzes(res?.quizzes || []);
+                                setActiveQuiz(null);
+                                setActiveAttempt(null);
+                                setQuizResponses({});
+                              } catch {}
+                            }}
+                          >
+                            {lessonModules.map((m) => (
+                              <option key={m.id} value={m.id}>{m.title || `Module #${m.id}`}</option>
+                            ))}
+                          </select>
                         </div>
+                      )}
+
+                      {/* Quiz selection with lock gating */}
+                      <div className="mb-4 flex flex-wrap gap-2">
+                        {moduleQuizzes.map((q) => (
+                          <button
+                            key={q.id}
+                            onClick={async () => {
+                              try {
+                                if (q.locked) {
+                                  toast.error('Locked: Pass the lower difficulty first');
+                                  return;
+                                }
+                                const { quiz } = await getQuiz(q.id);
+                                setActiveQuiz(quiz);
+                                setQuizResponses({});
+          const { attempt } = await startQuizAttempt(quiz.id);
+          setActiveAttempt(attempt);
+          setQuizElapsedSec(0);
+          if (quizTimerId) { clearInterval(quizTimerId); }
+          const newTimerId = setInterval(() => setQuizElapsedSec((s) => s + 1), 1000);
+          setQuizTimerId(newTimerId);
+                              } catch (e) {
+                                console.error('Failed to load quiz', e);
+                              }
+                            }}
+                            className={`px-3 py-1 rounded text-xs ${q.locked ? 'bg-white/5 text-gray-500 border border-white/10 cursor-not-allowed' : 'bg-white/10 text-gray-200 hover:bg-white/20 border border-white/10'} ${activeQuiz?.id === q.id ? 'border-[#2E5BFF]/50' : ''}`}
+                          >
+                            {q.title || `Quiz #${q.id}`} {q.locked ? '🔒' : q.passed ? '✅' : ''}
+                            <span className="ml-2 text-[10px] text-gray-400">Pass {q.passing_score_percent ?? 0}%</span>
+                          </button>
+                        ))}
+                        {moduleQuizzes.length === 0 && (
+                          <span className="text-xs text-gray-400">No quizzes available for this lesson yet.</span>
+                        )}
                       </div>
 
-                      {/* Start Quiz Button */}
-                      <button
-                        onClick={() => handleQuizStart(selectedLesson)}
-                        className="w-full bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] text-white font-semibold py-4 px-6 rounded-lg transition-all duration-200 ease-out flex items-center justify-center gap-3 text-base shadow-lg hover:shadow-[#2E5BFF]/25 transform hover:scale-[1.02] active:scale-[0.98]"
-                      >
-                        <Brain className="h-5 w-5" />
-                        Start Quiz on {selectedLesson.title}
-                        <ArrowRight className="h-5 w-5 ml-1 transition-transform duration-200 group-hover:translate-x-1" />
-                      </button>
-                      
-                      <p className="text-center text-gray-400 text-xs mt-3">
-                        This will switch to the AI Tutor tab and begin an interactive quiz
-                      </p>
+                      {/* Quiz questions */}
+                      {activeQuiz && (
+                        <div className="space-y-4">
+                          {(activeQuiz.questions || []).map((question: any, idx: number) => (
+                            <div key={question.id} className="p-4 bg-white/5 border border-white/10 rounded-lg">
+                              <div className="text-sm text-white font-medium mb-2">Q{idx + 1}. {question.question_text}</div>
+                              {question.code_snippet && (
+                                <pre className="text-xs text-gray-200 bg-black/30 rounded p-3 overflow-auto mb-2"><code>{question.code_snippet}</code></pre>
+                              )}
+                              {/* Simple renderer for MCQ or text */}
+                              {Array.isArray(question.options) && question.options.length > 0 ? (
+                                <div className="space-y-2">
+                                  {question.options.map((opt: any, i: number) => {
+                                    const optVal = typeof opt === 'object' && opt && 'value' in opt ? String(opt.value) : String(opt);
+                                    const optLabel = typeof opt === 'object' && opt && 'label' in opt ? String(opt.label) : String(opt);
+                                    return (
+                                      <label key={i} className="flex items-center gap-2 text-sm text-gray-300">
+                                        <input
+                                          type="radio"
+                                          name={`q_${question.id}`}
+                                          value={optVal}
+                                          className="accent-[#2E5BFF]"
+                                          checked={quizResponses[question.id] === optVal}
+                                          onChange={(e) => {
+                                            const value = e.target.value;
+                                            setQuizResponses((prev) => ({ ...prev, [question.id]: value }));
+                                          }}
+                                        />
+                                        <span>{optLabel}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <textarea
+                                  className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-400"
+                                  placeholder="Type your answer"
+                                  value={quizResponses[question.id] ?? ''}
+                                  onChange={(e) => setQuizResponses((prev) => ({ ...prev, [question.id]: e.target.value }))}
+                                />
+                              )}
+                            </div>
+                          ))}
+
+                          <div className="pt-2">
+                            <button
+                              disabled={!activeAttempt || isSubmittingQuiz}
+                              onClick={async () => {
+                                if (!activeAttempt) return;
+                                setIsSubmittingQuiz(true);
+                                try {
+                                  const res = await submitQuizAttempt(activeAttempt.id, {
+                                    responses: quizResponses,
+                                    time_spent_seconds: quizElapsedSec
+                                  });
+                                  toast.success(`Quiz submitted: ${Math.round(res.percentage)}% ${res.passed ? '(Passed)' : '(Try again)'}`);
+                                  // Track quiz points (server computes progress, we send signal)
+                                  updateProgress(2, 'knowledge_check');
+                                  // Update attempt state and refresh quiz list (unlock next difficulty on pass)
+                                  if (res.attempt) {
+                                    setActiveAttempt(res.attempt);
+                                  }
+                                  if (selectedModuleId) {
+                                    try {
+                                      const refreshed = await getModuleQuizzes(selectedModuleId);
+                                      setModuleQuizzes(refreshed?.quizzes || []);
+                                    } catch {}
+                                  }
+                                  if (quizTimerId) {
+                                    clearInterval(quizTimerId);
+                                    setQuizTimerId(null);
+                                  }
+                                } catch (e) {
+                                  toast.error('Failed to submit quiz');
+                                } finally {
+                                  setIsSubmittingQuiz(false);
+                                }
+                              }}
+                              className="px-4 py-2 bg-[#2E5BFF] text-white rounded-lg text-sm font-medium hover:bg-[#2343C3] disabled:opacity-50"
+                            >
+                              {isSubmittingQuiz ? 'Submitting...' : 'Submit Quiz'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
