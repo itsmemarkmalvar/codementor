@@ -480,6 +480,20 @@ export const getUserProgress = async () => {
   }
 };
 
+// Consolidated progress summary for dashboard
+export const getProgressSummary = async () => {
+  try {
+    const response = await api.get('/progress/summary');
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    return response.data.data;
+  } catch (error) {
+    console.error('Error in getProgressSummary API call:', error);
+    return null; // Return null so callers can gracefully fallback
+  }
+};
+
 export const getTopicProgress = async (topicId: number) => {
   try {
     const response = await api.get(`/progress/${topicId}`);

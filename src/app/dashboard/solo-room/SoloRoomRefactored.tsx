@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
@@ -233,20 +233,51 @@ const SoloRoomRefactored = () => {
   // Time accrual heartbeat: award 1 point per 10 minutes (server computes)
   useEffect(() => {
     if (!selectedTopic) return;
+
+    // Track recent user activity (mouse/keyboard/touch) and only send heartbeat if active recently
+    const lastActivityRef = { current: Date.now() } as React.MutableRefObject<number>;
+    const IDLE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes
+
+    const markActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const activityEvents: Array<keyof DocumentEventMap> = [
+      'mousemove',
+      'keydown',
+      'click',
+      'scroll',
+      'touchstart'
+    ];
+
+    activityEvents.forEach((evt) => {
+      window.addEventListener(evt, markActivity, { passive: true });
+    });
+
     let timer: any;
     const tick = async () => {
       try {
         if (typeof document !== 'undefined' && document.hidden) return;
-        // server defaults to 1-minute increment
+        const now = Date.now();
+        const msSinceActivity = now - lastActivityRef.current;
+        if (msSinceActivity > IDLE_THRESHOLD_MS) {
+          // Skip heartbeat while idle
+          return;
+        }
         await heartbeat({ topic_id: selectedTopic.id, minutes_increment: 1 });
       } catch (err) {
         console.error('Heartbeat error:', err);
       }
     };
-    // fire every 60s while on this screen
+
+    // fire every 60s while on this screen, but only when recently active
     timer = setInterval(tick, 60000);
+
     return () => {
       if (timer) clearInterval(timer);
+      activityEvents.forEach((evt) => {
+        window.removeEventListener(evt, markActivity);
+      });
     };
   }, [selectedTopic]);
 
