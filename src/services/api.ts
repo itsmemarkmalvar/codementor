@@ -1,10 +1,13 @@
 import axios, { InternalAxiosRequestConfig } from 'axios';
 import { getToken } from '@/lib/auth-utils';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+// Export the resolved API base URL so pages/components can rely on a single
+// source of truth with a safe default fallback during development.
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
-// Create axios instance with base URL
-const api = axios.create({
+// Export the shared axios instance to ensure every call uses the same base URL
+// and interceptors (auth headers, logging, etc.).
+export const api = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',

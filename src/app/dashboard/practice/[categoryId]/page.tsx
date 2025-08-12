@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import axios from "axios";
+import { api } from "@/services/api";
 
 interface PracticeProblem {
   id: number;
@@ -62,7 +62,7 @@ export default function CategoryPracticePage() {
         setError(null);
 
         // Get category data from the all-data endpoint and filter for this category
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/practice/all-data`);
+        const response = await api.get(`/practice/all-data`);
         
         if (response.data.status !== 'success') {
           throw new Error(response.data.message || 'Failed to fetch practice data');

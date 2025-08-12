@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import Link from "next/link";
-import axios from "axios";
+import { api, API_URL } from "@/services/api";
 
 interface PracticeProblem {
   id: number;
@@ -62,9 +62,8 @@ export default function PracticePage() {
         setLoading(true);
         setError(null);
         
-        console.log('Fetching practice data from:', `${process.env.NEXT_PUBLIC_API_URL}/practice/all-data`);
-        
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/practice/all-data`);
+        console.log('Fetching practice data from:', `${API_URL}/practice/all-data`);
+        const response = await api.get(`/practice/all-data`);
         
         console.log('API Response:', response.data);
         

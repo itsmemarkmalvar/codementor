@@ -8,7 +8,7 @@ import Editor from "@monaco-editor/react";
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import axios from "axios";
+import { api } from "@/services/api";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -78,7 +78,7 @@ export default function ChallengePage() {
     const fetchProblem = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/practice/problems/${challengeId}`);
+        const response = await api.get(`/practice/problems/${challengeId}`);
         
         if (response.data.status === 'success') {
           setProblem(response.data.data);
@@ -166,7 +166,7 @@ export default function ChallengePage() {
       setTestResults([]);
       
       // Send code to API for execution
-      const response = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/practice/problems/${problem.id}/solution`, {
+      const response = await api.post(`/practice/problems/${problem.id}/solution`, {
         code: code,
         time_spent_seconds: startTime ? Math.floor((Date.now() - startTime) / 1000) : undefined
       });
@@ -216,7 +216,7 @@ export default function ChallengePage() {
     if (!problem) return;
     
     try {
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/practice/problems/${problem.id}/hint`);
+      const response = await api.get(`/practice/problems/${problem.id}/hint`);
       
       if (response.data.status === 'success') {
         const hintData = response.data.data;
@@ -251,7 +251,7 @@ export default function ChallengePage() {
     
     try {
       setLoading(true);
-      const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/practice/problems/${problem.id}/resources`);
+      const response = await api.get(`/practice/problems/${problem.id}/resources`);
       
       if (response.data.status === 'success') {
         setSuggestedResources(response.data.data.resources || []);
