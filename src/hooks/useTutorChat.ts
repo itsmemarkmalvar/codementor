@@ -108,6 +108,12 @@ export function useTutorChat(initialMessages: Message[] = []) {
         sender: 'ai',
         timestamp: new Date(),
       };
+      // Attach meta so the UI can rate using chat_message_id if returned
+      (aiMessage as any)._meta = {
+        chat_message_id: response.chat_message_id,
+        response_time_ms: response.response_time_ms,
+        model: response.model,
+      };
       // Append AI message to current model's history
       setMessagesByModel(prev => ({
         ...prev,

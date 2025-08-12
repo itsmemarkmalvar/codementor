@@ -1,10 +1,8 @@
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
+"use client";import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { Book, Code, GraduationCap, LineChart, Star, Trophy, Users } from "lucide-react";
-import { getUserProgress, getProgressSummary } from "@/services/api";
+import { getUserProgress, getProgressSummary, getModelComparison } from "@/services/api";
 
 interface ProgressEntry {
   id?: number;
@@ -29,6 +27,7 @@ export default function DashboardPage() {
   const [progress, setProgress] = useState<ProgressEntry[]>([]);
   const [summary, setSummary] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
+  const [modelCompare, setModelCompare] = useState<any | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -39,6 +38,8 @@ export default function DashboardPage() {
         const s = await getProgressSummary();
         if (!mounted) return;
         if (s) setSummary(s);
+        // Fetch per-model comparison (user-scoped)
+        try { setModelCompare(await getModelComparison({ window: '30d', k_runs: 3, lookahead_min: 30 })); } catch {}
         // Fallback to per-topic list for compatibility
         const data = await getUserProgress();
         if (!mounted) return;
@@ -182,6 +183,37 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Compare AI Models (concise preview) */}
+        <Card className="border-white/10 bg-white/5 backdrop-blur-sm">
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Compare AI Models (30d)</h3>
+              <Star className="h-5 w-5 text-gray-400" />
+            </div>
+            {modelCompare ? (
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                {['gemini','together'].map((m) => {
+                  const u = (modelCompare.user_model || []).find((x: any) => x.model === m);
+                  return (
+                    <div key={m} className="space-y-1">
+                      <p className="text-gray-400 capitalize">{m}</p>
+                      <p className="text-white">Next‑run success: {u?.success1 !== undefined ? Math.round((u.success1 || 0)*100) : 0}%</p>
+                      <p className="text-gray-400">TTF: {u?.ttf_min !== undefined && u?.ttf_min !== null ? `${u.ttf_min.toFixed(1)} min` : '—'}</p>
+                      <p className="text-gray-400">Rating: {u?.rating ? u.rating.toFixed(1) : '—'}</p>
+                    </div>
+                  );
+                })}
+                <div className="col-span-2 pt-2 border-t border-white/10">
+                  <p className="text-gray-300">
+                    Paired Δ success: {modelCompare.paired?.success1?.mean !== null && modelCompare.paired?.success1 ? (Math.round((modelCompare.paired.success1.mean||0)*100)) : 0}%
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">No comparison data yet. Chat with both models at least 5 times each.</p>
+            )}
+          </div>
+        </Card>
         <Card className="border-white/10 bg-white/5 backdrop-blur-sm">
           <div className="p-6">
             <div className="flex items-center justify-between mb-4">

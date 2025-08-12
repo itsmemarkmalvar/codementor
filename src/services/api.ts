@@ -497,6 +497,20 @@ export const getProgressSummary = async () => {
   }
 };
 
+// =============
+// Analytics API
+// =============
+export const getModelComparison = async (params?: { window?: string; k_runs?: number; lookahead_min?: number }) => {
+  const query = new URLSearchParams();
+  if (params?.window) query.set('window', params.window);
+  if (typeof params?.k_runs === 'number') query.set('k_runs', String(params.k_runs));
+  if (typeof params?.lookahead_min === 'number') query.set('lookahead_min', String(params.lookahead_min));
+  const qs = query.toString();
+  const url = `/analytics/models/compare${qs ? `?${qs}` : ''}`;
+  const response = await api.get(url);
+  return response.data;
+};
+
 export const getTopicProgress = async (topicId: number) => {
   try {
     const response = await api.get(`/progress/${topicId}`);
@@ -1306,3 +1320,11 @@ export const testAuthentication = async (): Promise<Record<string, any>> => {
 if (typeof window !== 'undefined') {
   (window as any).testAuth = testAuthentication;
 } 
+
+// =============
+// Ratings API
+// =============
+export const rateMessage = async (messageId: number, rating: number) => {
+  const response = await api.post(`/messages/${messageId}/rate`, { rating });
+  return response.data;
+};

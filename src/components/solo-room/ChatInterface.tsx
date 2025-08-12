@@ -4,6 +4,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Bot, Send, User, ThumbsUp, ThumbsDown, ArrowDown, MessageSquare } from 'lucide-react';
+import { rateMessage } from '@/services/api';
 import { TutorPreferences } from '@/hooks/useTutorChat';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -212,26 +213,24 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({
           
           <div className={`flex items-center gap-2 mt-1 text-xs text-gray-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
             <span>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-            {!isUser && onUpdatePreferences && (
-              <div className="flex gap-1">
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                  className="h-6 px-1 text-gray-400 hover:text-green-400"
-                onClick={() => {/* Handle feedback */}}
-              >
-                  <ThumbsUp className="h-3 w-3" />
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                  className="h-6 px-1 text-gray-400 hover:text-red-400"
-                onClick={() => {/* Handle feedback */}}
-              >
-                  <ThumbsDown className="h-3 w-3" />
-              </Button>
-            </div>
-          )}
+            {!isUser && (
+              <div className="flex items-center gap-1">
+                {[1,2,3,4,5].map(star => (
+                  <button
+                    key={star}
+                    className="text-xs px-1 py-0.5 rounded hover:bg-white/10 text-gray-400"
+                    onClick={async () => {
+                      const meta: any = (message as any)._meta || {};
+                      if (!meta.chat_message_id) return;
+                      try { await rateMessage(meta.chat_message_id, star); } catch (e) { /* noop */ }
+                    }}
+                    aria-label={`Rate ${star}`}
+                  >
+                    {star}
+                  </button>
+                ))}
+              </div>
+            )}
         </div>
         </div>
         
