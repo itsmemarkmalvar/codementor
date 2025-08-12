@@ -35,6 +35,7 @@ const navItems = [
   { href: "/dashboard/practice", label: "Practice", icon: GraduationCap },
   { href: "/dashboard/progress", label: "Progress", icon: LineChart },
   { href: "/dashboard/solo-room", label: "AI Tutor Room", icon: Code },
+  { href: "/dashboard/analytics/models", label: "Compare AI Models", icon: LineChart },
 ];
 
 export default function DashboardLayout({
