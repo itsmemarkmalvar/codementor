@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules } from '@/services/api';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth } from '@/services/api';
 import { toast } from 'sonner';
 
 // Import custom hooks
@@ -50,6 +50,7 @@ const SoloRoomRefactored = () => {
   const [quizTimerId, setQuizTimerId] = useState<any>(null);
   const [quizResponses, setQuizResponses] = useState<Record<number, any>>({});
   const [isSubmittingQuiz, setIsSubmittingQuiz] = useState(false);
+  const [pistonHealth, setPistonHealth] = useState<{ok:boolean; latency_ms?: number}|null>(null);
   
   // Project state (simplified for demo)
   const [currentProject, setCurrentProject] = useState<any>(null);
@@ -158,6 +159,8 @@ const SoloRoomRefactored = () => {
     // Only fetch topics and create project on initial load
     fetchTopics();
     createDefaultProject();
+    // Fetch Piston health
+    getPistonHealth().then(setPistonHealth).catch(()=>setPistonHealth({ok:false} as any));
     // Initial load of progress summary and apply RL difficulty
     (async () => {
       try {
@@ -187,6 +190,15 @@ const SoloRoomRefactored = () => {
       clearInterval(summaryTimer);
     };
   }, []); // Empty dependency array - run only once
+
+  // Render a small Piston health badge helper
+  const renderPistonHealth = () => (
+    pistonHealth ? (
+      <span className={`ml-2 text-xs px-2 py-1 rounded ${pistonHealth.ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+        Remote execution: {pistonHealth.ok ? `OK${typeof pistonHealth.latency_ms==='number' ? ` · ${pistonHealth.latency_ms}ms` : ''}` : 'Unavailable'}
+      </span>
+    ) : null
+  );
 
   // Fetch lesson plans when a topic is selected
   useEffect(() => {
@@ -589,7 +601,8 @@ const SoloRoomRefactored = () => {
         className="flex-1 flex flex-col"
       >
         <div className="px-6 pt-4">
-            <TabsList className="grid w-full grid-cols-4 bg-white/5 border border-white/10 backdrop-blur-sm">
+            <div className="flex items-center justify-between">
+              <TabsList className="grid w-full grid-cols-4 bg-white/5 border border-white/10 backdrop-blur-sm">
             <TabsTrigger
               value="chat"
               disabled={quizInProgress}
@@ -611,6 +624,8 @@ const SoloRoomRefactored = () => {
               <span className="hidden sm:inline">Quiz</span>
           </TabsTrigger>
         </TabsList>
+              <div className="ml-4 whitespace-nowrap">{renderPistonHealth()}</div>
+            </div>
         </div>
         
         <TabsContent value="chat" className="flex-1 overflow-hidden p-6">

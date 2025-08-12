@@ -8,7 +8,7 @@ import { motion } from "framer-motion";
 import { useState } from "react";
 import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { auth } from "@/lib/api";
+import { loginUser } from "@/services/api";
 import { toast } from "sonner";
 import { setToken } from "@/lib/auth-utils";
 
@@ -27,7 +27,7 @@ export default function LoginPage() {
     
     try {
       // Call the login API endpoint
-      const response = await auth.login({ email, password });
+      const response = await loginUser({ email, password });
       
       // Store the token using our auth utility
       setToken(response.token);

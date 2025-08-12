@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { isAuthenticated } from "@/lib/auth-utils";
-import { auth } from "@/lib/api";
+import { getCurrentUser } from "@/services/api";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -24,7 +24,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
 
       try {
         // Verify token by getting user data
-        await auth.getUser();
+        await getCurrentUser();
         setAuthenticated(true);
       } catch (error) {
         // Token is invalid, redirect to login

@@ -500,15 +500,24 @@ export const getProgressSummary = async () => {
 // =============
 // Analytics API
 // =============
-export const getModelComparison = async (params?: { window?: string; k_runs?: number; lookahead_min?: number }) => {
+export const getModelComparison = async (params?: { window?: string; k_runs?: number; lookahead_min?: number; topic_id?: number; difficulty?: string; nmin?: number }) => {
   const query = new URLSearchParams();
   if (params?.window) query.set('window', params.window);
   if (typeof params?.k_runs === 'number') query.set('k_runs', String(params.k_runs));
   if (typeof params?.lookahead_min === 'number') query.set('lookahead_min', String(params.lookahead_min));
+  if (typeof params?.topic_id === 'number') query.set('topic_id', String(params.topic_id));
+  if (typeof params?.difficulty === 'string' && params.difficulty) query.set('difficulty', params.difficulty);
+  if (typeof params?.nmin === 'number') query.set('nmin', String(params.nmin));
   const qs = query.toString();
   const url = `/analytics/models/compare${qs ? `?${qs}` : ''}`;
   const response = await api.get(url);
   return response.data;
+};
+
+// Health API
+export const getPistonHealth = async () => {
+  const response = await api.get('/health/piston');
+  return response.data as { ok: boolean; status?: number; latency_ms?: number; error?: string };
 };
 
 export const getTopicProgress = async (topicId: number) => {

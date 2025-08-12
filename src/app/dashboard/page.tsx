@@ -187,7 +187,7 @@ export default function DashboardPage() {
         <Card className="border-white/10 bg-white/5 backdrop-blur-sm">
           <div className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Compare AI Models (30d)</h3>
+              <a href="/dashboard/analytics/models" className="text-lg font-semibold text-white hover:underline">Compare AI Models (30d)</a>
               <Star className="h-5 w-5 text-gray-400" />
             </div>
             {modelCompare ? (

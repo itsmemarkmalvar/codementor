@@ -10,7 +10,7 @@ import { Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { auth } from "@/lib/api";
+import { registerUser } from "@/services/api";
 import { setToken } from "@/lib/auth-utils";
 import { toast } from "sonner";
 
@@ -45,7 +45,7 @@ export default function RegisterPage() {
     
     try {
       // Call the register API endpoint
-      const registerResponse = await auth.register({
+      const registerResponse = await registerUser({
         name,
         email,
         password,

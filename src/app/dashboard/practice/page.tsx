@@ -11,7 +11,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import Link from "next/link";
-import { api, API_URL } from "@/services/api";
+import { api, API_URL, getPistonHealth } from "@/services/api";
 
 interface PracticeProblem {
   id: number;
@@ -54,6 +54,7 @@ export default function PracticePage() {
   const [difficultyFilter, setDifficultyFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [activeTab, setActiveTab] = useState("categories");
+  const [pistonHealth, setPistonHealth] = useState<{ok:boolean; latency_ms?: number}|null>(null);
 
   // Fetch practice data
   useEffect(() => {
@@ -101,6 +102,8 @@ export default function PracticePage() {
     };
 
     fetchPracticeData();
+    // Fetch Piston health
+    getPistonHealth().then(setPistonHealth).catch(()=>setPistonHealth({ok:false} as any));
   }, []);
 
   // Filter data when search or filters change
@@ -207,6 +210,13 @@ export default function PracticePage() {
             <p className="text-gray-400 mt-2">
               Sharpen your Java skills with hands-on coding challenges and problems
             </p>
+            {pistonHealth && (
+              <div className="mt-2 text-xs">
+                <span className={`px-2 py-1 rounded ${pistonHealth.ok ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
+                  Remote execution: {pistonHealth.ok ? `OK${typeof pistonHealth.latency_ms==='number' ? ` · ${pistonHealth.latency_ms}ms` : ''}` : 'Unavailable'}
+                </span>
+              </div>
+            )}
           </div>
           
           {/* Search and Filters */}

@@ -19,10 +19,9 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import AuthGuard from "@/components/AuthGuard";
-import { auth } from "@/lib/api";
+import { logoutUser, getTopics } from "@/services/api";
 import { removeToken } from "@/lib/auth-utils";
 import { toast, Toaster } from "sonner";
-import { getTopics } from "@/services/api";
 
 interface Topic {
   id: number;
@@ -31,7 +30,6 @@ interface Topic {
 
 const navItems = [
   { href: "/dashboard", label: "Overview", icon: Home },
-  { href: "/dashboard/courses", label: "Courses", icon: Book },
   { href: "/dashboard/practice", label: "Practice", icon: GraduationCap },
   { href: "/dashboard/progress", label: "Progress", icon: LineChart },
   { href: "/dashboard/solo-room", label: "AI Tutor Room", icon: Code },
@@ -65,7 +63,7 @@ export default function DashboardLayout({
   const handleLogout = async () => {
     try {
       // Call the logout API
-      await auth.logout();
+      await logoutUser();
       
       // Remove token from localStorage
       removeToken();
