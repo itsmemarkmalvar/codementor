@@ -196,6 +196,14 @@ export const getTutorResponse = async (params: {
       throw new Error(response.data?.message || 'Error response from API');
     }
     
+    // Persist last chat message id for attribution (if provided by backend)
+    try {
+      const messageId = response.data?.data?.message_id || response.data?.data?.id;
+      if (typeof window !== 'undefined' && messageId) {
+        sessionStorage.setItem('last_chat_message_id', String(messageId));
+      }
+    } catch {}
+
     // Add the error and fallback flags to the response data
     return {
       ...response.data.data,
@@ -268,6 +276,7 @@ export const executeJavaCode = async (params: {
   session_id?: number;
   topic_id?: number;
   conversation_history?: Array<{role: string; content: string}>;
+  chat_message_id?: number;
 }) => {
   try {
     console.log('Calling executeJavaCode API with params:', { 
@@ -329,6 +338,7 @@ export const executeJavaProject = async (params: {
   session_id?: number;
   topic_id?: number;
   conversation_history?: Array<{role: string; content: string}>;
+  chat_message_id?: number;
 }) => {
   try {
     console.log('Calling executeJavaProject API with params:', { 
@@ -851,7 +861,13 @@ export const getModuleQuizzes = async (moduleId: number): Promise<{ quizzes: Les
 };
 
 export const startQuizAttempt = async (quizId: number): Promise<{ attempt: any; message?: string }> => {
-  const response = await api.post(`/quizzes/${quizId}/attempt`, {});
+  // Attach last chat message id if available
+  let payload: any = {};
+  try {
+    const lastChatId = typeof window !== 'undefined' ? Number(sessionStorage.getItem('last_chat_message_id')) : undefined;
+    if (lastChatId) payload.chat_message_id = lastChatId;
+  } catch {}
+  const response = await api.post(`/quizzes/${quizId}/attempt`, payload);
   return response.data;
 };
 

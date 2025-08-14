@@ -11,7 +11,7 @@ export default function ModelsComparisonPage() {
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [topics, setTopics] = useState<Array<{id:number; title:string}>>([]);
-  const [filters, setFilters] = useState<{window:string; k_runs:number; lookahead_min:number; topic_id?: number; difficulty?: string; nmin:number}>({ window: "30d", k_runs: 3, lookahead_min: 30, nmin: 5 });
+  const [filters, setFilters] = useState<{window:string; k_runs:number; lookahead_min:number; topic_id?: number; difficulty?: string; nmin:number; use_attribution_first?: boolean; quiz_pass_percent?: number}>({ window: "30d", k_runs: 3, lookahead_min: 30, nmin: 5, use_attribution_first: true, quiz_pass_percent: 70 });
 
   useEffect(() => {
     let mounted = true;
@@ -75,6 +75,19 @@ export default function ModelsComparisonPage() {
               <SelectItem value="7d">Last 7d</SelectItem>
               <SelectItem value="30d">Last 30d</SelectItem>
               <SelectItem value="90d">Last 90d</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={String(filters.quiz_pass_percent)} onValueChange={(v)=>setFilters(f=>({...f, quiz_pass_percent: Number(v)}))}>
+            <SelectTrigger className="bg-white/5 border-white/10 text-white min-w-[150px] w-full">
+              <span className="flex items-center gap-2 min-w-0">
+                <Star className="h-4 w-4 text-yellow-400" />
+                <SelectValue placeholder="Quiz pass %" className="truncate" />
+              </span>
+            </SelectTrigger>
+            <SelectContent>
+              {[50,60,70,80,90].map(p=> (
+                <SelectItem key={p} value={String(p)}>{p}% pass</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select value={String(filters.k_runs)} onValueChange={(v)=>setFilters(f=>({...f, k_runs: Number(v)}))}>
@@ -167,6 +180,7 @@ export default function ModelsComparisonPage() {
             { k: "ttf_min", label: "Δ Time to fix", fmt: (v:number)=> `${v.toFixed(1)} min` },
             { k: "delta_errors", label: "Δ Error reduction", fmt: (v:number)=> `${v}` },
             { k: "delta_quiz", label: "Δ Quiz %", fmt: (v:number)=> `${v.toFixed(1)} pp` },
+            { k: "delta_progress", label: "Δ Progress", fmt: (v:number)=> `${v.toFixed(1)} pp` },
             { k: "rating", label: "Δ Rating", fmt: (v:number)=> `${v.toFixed(2)}` },
             { k: "fallback_rate", label: "Δ Fallback", fmt: (v:number)=> `${Math.round(v*100)}%` },
           ].map(row => {
