@@ -55,27 +55,54 @@ export default function LessonPlansPage() {
       setLessonPlans(plansWithTopicNames);
       setTopics(topicsData);
       
-      // Build hierarchical structure based on prerequisites
+      // Canonical order for Java Basics
+      const JAVA_BASICS_ORDER = [
+        'Java Fundamentals',
+        'Java Control Flow',
+        'Java Methods in Depth',
+        'Java Object-Oriented Programming',
+        'Java Exception Handling',
+        'Java File I/O',
+        'Java Data Structures',
+      ];
+
+      // Build groups: For Java Basics topic, show a single ordered list; otherwise use prerequisites hierarchy
+      const javaBasicsPlans = plansWithTopicNames.filter(p => p.topic_name === 'Java Basics');
+      const otherPlans = plansWithTopicNames.filter(p => p.topic_name !== 'Java Basics');
+
       const hierarchy: Record<string, LessonPlan[]> = {};
       const order: string[] = [];
-      
-      // Get foundation plans (no prerequisites)
-      const foundationPlans = plansWithTopicNames.filter(plan => !plan.prerequisites);
-      if (foundationPlans.length > 0) {
-        hierarchy["Foundation"] = foundationPlans;
-        order.push("Foundation");
+
+      if (javaBasicsPlans.length > 0) {
+        const sortedBasics = [...javaBasicsPlans].sort((a, b) => {
+          const ia = JAVA_BASICS_ORDER.indexOf(a.title);
+          const ib = JAVA_BASICS_ORDER.indexOf(b.title);
+          const sa = ia === -1 ? Number.MAX_SAFE_INTEGER : ia;
+          const sb = ib === -1 ? Number.MAX_SAFE_INTEGER : ib;
+          if (sa !== sb) return sa - sb;
+          return a.id - b.id;
+        });
+        hierarchy['Java Basics'] = sortedBasics;
+        order.push('Java Basics');
       }
-      
-      // Group plans by their prerequisites
-      plansWithTopicNames.forEach(plan => {
-        if (plan.prerequisites) {
-          if (!hierarchy[plan.prerequisites]) {
-            hierarchy[plan.prerequisites] = [];
-            order.push(plan.prerequisites);
-          }
-          hierarchy[plan.prerequisites].push(plan);
+
+      if (otherPlans.length > 0) {
+        // Keep the old prerequisite-based grouping for other topics
+        const foundation = otherPlans.filter(plan => !plan.prerequisites);
+        if (foundation.length > 0) {
+          hierarchy['Foundation'] = foundation;
+          order.push('Foundation');
         }
-      });
+        otherPlans.forEach(plan => {
+          if (plan.prerequisites) {
+            if (!hierarchy[plan.prerequisites]) {
+              hierarchy[plan.prerequisites] = [];
+              order.push(plan.prerequisites);
+            }
+            hierarchy[plan.prerequisites].push(plan);
+          }
+        });
+      }
       
       setHierarchicalPlans(hierarchy);
       setPlanOrder(order);

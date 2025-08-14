@@ -568,7 +568,7 @@ export const getLessonPlans = async (topicId?: number) => {
       try {
         console.log("Attempting to fetch all lesson plans via /all-lesson-plans endpoint");
         // First try the debug endpoint
-        const response = await api.get('/all-lesson-plans');
+        const response = await api.get('/all-lesson-plans?include_unpublished=true');
         console.log('getLessonPlans (all) API response:', response);
         
         if (response.data && response.data.status !== 'error') {
@@ -610,7 +610,7 @@ export const getLessonPlans = async (topicId?: number) => {
     
     // If topicId is provided, use the topic-specific endpoint
     console.log(`Fetching lesson plans for specific topic ${topicId}`);
-    const response = await api.get(`/topics/${topicId}/lesson-plans`);
+    const response = await api.get(`/topics/${topicId}/lesson-plans?include_unpublished=true`);
     console.log(`getLessonPlans for topic ${topicId} API response:`, response);
     
     if (!response.data || response.data.status === 'error') {
@@ -628,7 +628,7 @@ export const getLessonPlans = async (topicId?: number) => {
 
 export const getLessonPlanDetails = async (lessonPlanId: number) => {
   try {
-    const response = await api.get(`/lesson-plans/${lessonPlanId}`);
+    const response = await api.get(`/lesson-plans/${lessonPlanId}?include_unpublished=true`);
     console.log('getLessonPlanDetails API response status:', response.status);
     
     if (!response.data || response.data.status === 'error') {
@@ -671,7 +671,7 @@ export const getTopicAggregateProgress = async (topicId: number) => {
 
 export const getLessonModules = async (lessonPlanId: number) => {
   try {
-    const response = await api.get(`/lesson-plans/${lessonPlanId}/modules`);
+    const response = await api.get(`/lesson-plans/${lessonPlanId}/modules?include_unpublished=true`);
     console.log('getLessonModules API response status:', response.status);
     
     if (!response.data || response.data.status === 'error') {
