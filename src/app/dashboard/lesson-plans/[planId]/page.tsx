@@ -179,14 +179,15 @@ export default function LessonPlanPage() {
           </div>
         </Card>
         
+        {/* Exercises card removed (deprecated in favor of Practice). Keep layout consistent with 3 cards by using an info card. */}
         <Card className="relative overflow-hidden border-white/10 bg-white/5 backdrop-blur-sm">
           <div className="absolute inset-0 bg-gradient-to-br from-[#2E5BFF]/20 to-purple-500/20 opacity-10" />
           <div className="relative p-6">
             <div className="flex items-center space-x-2 text-gray-400 mb-2">
               <Book className="h-4 w-4" />
-              <span>Exercises</span>
+              <span>Practice</span>
             </div>
-            <p className="text-2xl font-bold text-white">{plan.exercises_count}</p>
+            <p className="text-sm text-gray-300">Hands-on coding is available in the Practice section, with problems linked per module.</p>
           </div>
         </Card>
         

@@ -520,6 +520,12 @@ export const getPistonHealth = async () => {
   return response.data as { ok: boolean; status?: number; latency_ms?: number; error?: string };
 };
 
+// Judge0 Health
+export const getJudge0Health = async () => {
+  const response = await api.get('/health/judge0');
+  return response.data as { ok: boolean; status?: number; latency_ms?: number; error?: string };
+};
+
 export const getTopicProgress = async (topicId: number) => {
   try {
     const response = await api.get(`/progress/${topicId}`);
@@ -707,6 +713,19 @@ export const getLessonExercises = async (moduleId: number) => {
     return response.data.data;
   } catch (error) {
     console.error(`Error in getLessonExercises API call for module ${moduleId}:`, error);
+    return [];
+  }
+};
+
+export const getRelatedPracticeForModule = async (moduleId: number) => {
+  try {
+    const response = await api.get(`/lesson-modules/${moduleId}/related-practice`);
+    if (!response.data || response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Invalid response from API');
+    }
+    return response.data.data as Array<{ id:number; title:string; difficulty_level:string; points:number; success_rate:number; topic_tags:string[] }>;
+  } catch (error) {
+    console.error(`Error in getRelatedPracticeForModule API call for module ${moduleId}:`, error);
     return [];
   }
 };

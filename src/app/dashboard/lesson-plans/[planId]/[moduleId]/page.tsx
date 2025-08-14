@@ -2,12 +2,12 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import ExerciseCard from "@/components/lesson-plans/ExerciseCard";
+// Exercises deprecated in favor of related practice
 import { motion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Book, CheckCircle, Clock, Code } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getLessonModules, getLessonExercises, getLessonPlanDetails, updateModuleProgress } from "@/services/api";
+import { getLessonModules, getLessonPlanDetails, updateModuleProgress, executeJavaCode, getRelatedPracticeForModule } from "@/services/api";
 import { useParams, useRouter } from "next/navigation";
 import Editor from "@monaco-editor/react";
 import { toast } from "sonner";
@@ -53,7 +53,7 @@ export default function ModulePage() {
   const moduleId = parseInt(params.moduleId as string);
   
   const [module, setModule] = useState<Module | null>(null);
-  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [relatedPractice, setRelatedPractice] = useState<any[]>([]);
   const [plan, setPlan] = useState<LessonPlan | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'content' | 'exercises'>('content');
@@ -80,9 +80,9 @@ export default function ModulePage() {
       setIsLoading(true);
       try {
         // Get all modules to determine navigation
-        const [modulesData, exercisesData, planData] = await Promise.all([
+        const [modulesData, practiceData, planData] = await Promise.all([
           getLessonModules(planId),
-          getLessonExercises(moduleId),
+          getRelatedPracticeForModule(moduleId),
           getLessonPlanDetails(planId)
         ]);
         
@@ -104,7 +104,7 @@ export default function ModulePage() {
         };
         
         setModule(moduleWithNav);
-        setExercises(exercisesData);
+        setRelatedPractice(practiceData || []);
         setPlan(planData);
         
         // Track progress
@@ -134,13 +134,16 @@ export default function ModulePage() {
     setCode(value || "");
   };
   
-  const handleRunCode = () => {
-    setExerciseOutput("Running code...\n");
-    
-    // Mock execution for now - will integrate with backend
-    setTimeout(() => {
-      setExerciseOutput("Code executed successfully!\n\nOutput:\nHello World!");
-    }, 1000);
+  const handleRunCode = async () => {
+    try {
+      setExerciseOutput("Running code...\n");
+      const resp = await executeJavaCode({ code });
+      const out = resp?.execution?.stdout || "";
+      const err = resp?.execution?.stderr || "";
+      setExerciseOutput([out, err].filter(Boolean).join("\n"));
+    } catch (e: any) {
+      setExerciseOutput(e?.message || 'Failed to execute code.');
+    }
   };
   
   const handleSubmitExercise = () => {
@@ -387,7 +390,7 @@ export default function ModulePage() {
           }`}
           onClick={() => setActiveTab('exercises')}
         >
-          Exercises {exercises.length > 0 ? `(${exercises.length})` : ''}
+          Related practice {relatedPractice.length > 0 ? `(${relatedPractice.length})` : ''}
         </button>
       </div>
       
@@ -450,32 +453,30 @@ export default function ModulePage() {
         </div>
       ) : (
         <div className="space-y-6">
-          <h2 className="text-xl font-semibold text-white">
-            Practice Exercises
-          </h2>
-          
-          {exercises.length > 0 ? (
-            <div className="space-y-4">
-              {exercises.map((exercise, index) => (
-                <ExerciseCard
-                  key={exercise.id}
-                  id={exercise.id}
-                  title={exercise.title}
-                  description={exercise.description}
-                  type={exercise.type}
-                  points={exercise.points}
-                  is_completed={exercise.is_completed}
-                  difficulty={exercise.difficulty}
-                  onStart={handleExerciseStart}
-                  index={index}
-                />
+          <h2 className="text-xl font-semibold text-white">Related practice</h2>
+          {relatedPractice.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {relatedPractice.map((p) => (
+                <Card key={p.id} className="border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-white font-medium line-clamp-2">{p.title}</h4>
+                    <span className="text-xs text-gray-400">{p.difficulty_level}</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
+                    <span>{p.points ?? 0} pts</span>
+                    <span>{p.success_rate ?? 0}% solved</span>
+                  </div>
+                  <div className="mt-3">
+                    <Link href={`/dashboard/practice/problems/${p.id}`} className="text-[#2E5BFF] text-sm hover:underline">Open practice</Link>
+                  </div>
+                </Card>
               ))}
             </div>
           ) : (
             <div className="text-center py-12">
               <Code className="h-12 w-12 text-gray-500 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-white mb-2">No exercises available</h3>
-              <p className="text-gray-400">This module doesn't have any exercises yet.</p>
+              <h3 className="text-lg font-semibold text-white mb-2">No related practice found</h3>
+              <p className="text-gray-400">We couldn't find practice problems matching this module yet.</p>
             </div>
           )}
           

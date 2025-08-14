@@ -164,15 +164,30 @@ export default function ChallengePage() {
       setOutput("Running your code...");
       setErrorMessages([]);
       setTestResults([]);
+      console.log('[Practice] Submitting solution', {
+        problemId: problem.id,
+        codePreview: (code || '').slice(0, 120),
+        timeSpentSec: startTime ? Math.floor((Date.now() - startTime) / 1000) : undefined,
+      });
       
       // Send code to API for execution
       const response = await api.post(`/practice/problems/${problem.id}/solution`, {
         code: code,
         time_spent_seconds: startTime ? Math.floor((Date.now() - startTime) / 1000) : undefined
       });
+      console.log('[Practice] API response status', response.status);
+      console.log('[Practice] API response payload', response.data);
       
       if (response.data.status === 'success') {
         const data = response.data.data;
+        console.log('[Practice] Parsed execution result', {
+          is_correct: data?.is_correct,
+          points_earned: data?.points_earned,
+          complexity: data?.complexity_score,
+          compiler_errors: data?.compiler_errors,
+          runtime_errors: data?.runtime_errors,
+          firstTest: data?.test_results?.[0],
+        });
         
         // Handle test results
         if (data.test_results && data.test_results.length > 0) {
@@ -203,10 +218,11 @@ export default function ChallengePage() {
         }
       }
     } catch (error) {
-      console.error("Error executing code:", error);
+      console.error("[Practice] Error executing code:", error);
       setOutput("Error executing code. Please try again.");
       toast.error("Failed to execute code");
     } finally {
+      console.log('[Practice] Execution finished');
       setExecuting(false);
     }
   };
