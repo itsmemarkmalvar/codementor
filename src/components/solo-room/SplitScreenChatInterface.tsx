@@ -365,14 +365,12 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
       
              {/* Split Screen Layout */}
        <div className="flex gap-4 overflow-hidden mb-1">
-         <AnimatePresence mode="wait">
-           <div key="gemini-panel" className="flex-1 flex flex-col overflow-hidden">
-             {renderChatPanel('gemini', geminiMessages, geminiScrollRef)}
-           </div>
-           <div key="together-panel" className="flex-1 flex flex-col overflow-hidden">
-             {renderChatPanel('together', togetherMessages, togetherScrollRef)}
-           </div>
-         </AnimatePresence>
+         <div key="gemini-panel" className="flex-1 flex flex-col overflow-hidden">
+           {renderChatPanel('gemini', geminiMessages, geminiScrollRef)}
+         </div>
+         <div key="together-panel" className="flex-1 flex flex-col overflow-hidden">
+           {renderChatPanel('together', togetherMessages, togetherScrollRef)}
+         </div>
        </div>
       
              {/* Input Area */}

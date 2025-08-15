@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 
 interface EngagementTrackerOptions {
@@ -7,10 +7,13 @@ interface EngagementTrackerOptions {
   onThresholdReached?: () => void;
   onQuizTrigger?: () => void;
   onPracticeTrigger?: () => void;
+  onPreferencePoll?: () => void;
+  onLessonCompletion?: () => void;
+  autoTrigger?: boolean;
 }
 
 interface EngagementEvent {
-  type: 'message' | 'code_execution' | 'scroll' | 'interaction' | 'time';
+  type: 'message' | 'code_execution' | 'scroll' | 'interaction' | 'time' | 'quiz_completed' | 'practice_completed';
   points: number;
   timestamp: Date;
 }
@@ -20,6 +23,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   const [isThresholdReached, setIsThresholdReached] = useState(false);
   const [events, setEvents] = useState<EngagementEvent[]>([]);
   const [isTracking, setIsTracking] = useState(false);
+  const [triggeredActivity, setTriggeredActivity] = useState<'quiz' | 'practice' | null>(null);
   
   const lastActivityRef = useRef<Date>(new Date());
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -52,11 +56,25 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
         setIsThresholdReached(true);
         options.onThresholdReached?.();
         
-        // Trigger quiz or practice based on session type
-        if (Math.random() > 0.5) {
-          options.onQuizTrigger?.();
-        } else {
-          options.onPracticeTrigger?.();
+        // Auto-trigger quiz or practice if enabled
+        if (options.autoTrigger !== false) {
+          const shouldTriggerQuiz = Math.random() > 0.5;
+          const activity = shouldTriggerQuiz ? 'quiz' : 'practice';
+          
+          setTriggeredActivity(activity);
+          
+          // Show toast notification
+          toast.success(
+            `Great engagement! Let's test your knowledge with a ${activity}.`,
+            { duration: 3000 }
+          );
+          
+          // Trigger the appropriate activity
+          if (shouldTriggerQuiz) {
+            options.onQuizTrigger?.();
+          } else {
+            options.onPracticeTrigger?.();
+          }
         }
       }
       
@@ -64,26 +82,26 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     });
 
     lastActivityRef.current = new Date();
-  }, [isTracking, options.threshold, isThresholdReached, options.onThresholdReached, options.onQuizTrigger, options.onPracticeTrigger]);
+  }, [isTracking, options.threshold, isThresholdReached, options.onThresholdReached, options.onQuizTrigger, options.onPracticeTrigger, options.autoTrigger]);
 
   // Track message sending
   const trackMessage = useCallback(() => {
-    trackActivity('message', 1); // Reduced from 2 to 1
+    trackActivity('message', 1);
   }, [trackActivity]);
 
   // Track code execution
   const trackCodeExecution = useCallback(() => {
-    trackActivity('code_execution', 2); // Reduced from 3 to 2
+    trackActivity('code_execution', 2);
   }, [trackActivity]);
 
   // Track scroll activity
   const trackScroll = useCallback(() => {
-    trackActivity('scroll', 0.5); // Reduced from 1 to 0.5
+    trackActivity('scroll', 0.5);
   }, [trackActivity]);
 
   // Track general interaction
   const trackInteraction = useCallback(() => {
-    trackActivity('interaction', 0.5); // Reduced from 1 to 0.5
+    trackActivity('interaction', 0.5);
   }, [trackActivity]);
 
   // Track time-based engagement
@@ -92,10 +110,32 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     const timeSinceLastActivity = now.getTime() - lastActivityRef.current.getTime();
     
     // Award points for sustained activity (every 5 minutes of activity)
-    if (timeSinceLastActivity >= 300000) { // 5 minutes (increased from 2)
-      trackActivity('time', 0.5); // Reduced points from 1 to 0.5
+    if (timeSinceLastActivity >= 300000) { // 5 minutes
+      trackActivity('time', 0.5);
     }
   }, [trackActivity]);
+
+  // Track quiz completion
+  const trackQuizCompletion = useCallback(() => {
+    trackActivity('quiz_completed', 5);
+    setTriggeredActivity(null);
+    
+    // Show preference poll after quiz completion
+    setTimeout(() => {
+      options.onPreferencePoll?.();
+    }, 1000);
+  }, [trackActivity, options.onPreferencePoll]);
+
+  // Track practice completion
+  const trackPracticeCompletion = useCallback(() => {
+    trackActivity('practice_completed', 5);
+    setTriggeredActivity(null);
+    
+    // Show preference poll after practice completion
+    setTimeout(() => {
+      options.onPreferencePoll?.();
+    }, 1000);
+  }, [trackActivity, options.onPreferencePoll]);
 
   // Start tracking
   const startTracking = useCallback(() => {
@@ -103,10 +143,11 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     setIsThresholdReached(false);
     setEngagementScore(0);
     setEvents([]);
+    setTriggeredActivity(null);
     lastActivityRef.current = new Date();
 
     // Set up activity timeout
-    activityTimeoutRef.current = setInterval(trackTimeEngagement, 300000); // Check every 5 minutes (increased from 1 minute)
+    activityTimeoutRef.current = setInterval(trackTimeEngagement, 300000); // Check every 5 minutes
 
     // Add event listeners for user activity (less aggressive)
     let activityTimeout: NodeJS.Timeout | null = null;
@@ -161,6 +202,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     setEngagementScore(0);
     setIsThresholdReached(false);
     setEvents([]);
+    setTriggeredActivity(null);
     lastActivityRef.current = new Date();
   }, []);
 
@@ -173,6 +215,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       score: engagementScore,
       threshold: options.threshold,
       isThresholdReached,
+      triggeredActivity,
       sessionDuration: Math.floor(sessionDuration / 1000), // seconds
       eventCount: events.length,
       eventsByType: events.reduce((acc, event) => {
@@ -183,7 +226,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
         ? (engagementScore / (sessionDuration / 60000)).toFixed(2)
         : '0'
     };
-  }, [engagementScore, options.threshold, isThresholdReached, events]);
+  }, [engagementScore, options.threshold, isThresholdReached, triggeredActivity, events]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -197,11 +240,14 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   return {
     engagementScore,
     isThresholdReached,
+    triggeredActivity,
     isTracking,
     trackMessage,
     trackCodeExecution,
     trackScroll,
     trackInteraction,
+    trackQuizCompletion,
+    trackPracticeCompletion,
     startTracking,
     stopTracking,
     resetTracking,

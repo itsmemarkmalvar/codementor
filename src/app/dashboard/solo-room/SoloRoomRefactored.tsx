@@ -100,35 +100,108 @@ const SoloRoomRefactored = () => {
   const {
     engagementScore,
     isThresholdReached,
+    triggeredActivity,
     isTracking,
     trackMessage,
     trackCodeExecution,
     trackScroll,
     trackInteraction,
+    trackQuizCompletion,
+    trackPracticeCompletion,
     startTracking,
     stopTracking,
     resetTracking,
     getEngagementAnalytics
   } = useEngagementTracker({
     threshold: 50, // Increased threshold to prevent spam
+    sessionId: splitScreenSession?.id,
+    autoTrigger: true, // Enable automatic quiz/practice triggering
     onThresholdReached: () => {
       const now = Date.now();
-      const COOLDOWN_PERIOD = 120000; // 2 minutes cooldown (increased)
+      const COOLDOWN_PERIOD = 120000; // 2 minutes cooldown
       
       // Only trigger if enough time has passed since last threshold
       if (now - lastThresholdTime > COOLDOWN_PERIOD) {
         setEngagementTriggered(true);
-        setShowAIPreferenceModal(true);
         setLastThresholdTime(now);
       }
     },
     onQuizTrigger: () => {
-      toast.info('Engagement threshold reached! A quiz will be triggered.');
+      // Auto-trigger quiz when engagement threshold is reached
+      handleAutoTriggerQuiz();
     },
     onPracticeTrigger: () => {
-      toast.info('Engagement threshold reached! A practice session will be triggered.');
+      // Auto-trigger practice when engagement threshold is reached
+      handleAutoTriggerPractice();
+    },
+    onPreferencePoll: () => {
+      // Show preference poll after quiz/practice completion
+      setShowAIPreferenceModal(true);
+    },
+    onLessonCompletion: () => {
+      // Show lesson completion modal
+      setShowLessonCompletionModal(true);
     }
   });
+
+  // Auto-trigger quiz function
+  const handleAutoTriggerQuiz = async () => {
+    if (!selectedModuleId) {
+      toast.error('No module selected for quiz');
+      return;
+    }
+
+    try {
+      // Get available quizzes for the current module
+      const quizzesResponse = await getModuleQuizzes(selectedModuleId);
+      const quizzes = quizzesResponse.quizzes || [];
+      if (quizzes.length === 0) {
+        toast.error('No quizzes available for this module');
+        return;
+      }
+
+      // Select a random quiz or the first available one
+      const selectedQuiz = quizzes[Math.floor(Math.random() * quizzes.length)];
+      
+      // Start the quiz
+      const attempt = await startQuizAttempt(selectedQuiz.id);
+      setActiveQuiz(selectedQuiz);
+      setActiveAttempt(attempt);
+      setQuizResponses({});
+      setQuizElapsedSec(0);
+      
+      // Start timer
+      const timerId = setInterval(() => {
+        setQuizElapsedSec(prev => prev + 1);
+      }, 1000);
+      setQuizTimerId(timerId);
+      
+      // Switch to quiz tab
+      setActiveTab('quiz');
+      
+      toast.success('Quiz started! Test your knowledge.');
+    } catch (error) {
+      console.error('Error auto-triggering quiz:', error);
+      toast.error('Failed to start quiz');
+    }
+  };
+
+  // Auto-trigger practice function
+  const handleAutoTriggerPractice = async () => {
+    if (!selectedTopic) {
+      toast.error('No topic selected for practice');
+      return;
+    }
+
+    try {
+      // Navigate to practice page with the current topic
+      window.location.href = `/dashboard/practice/${selectedTopic.id}`;
+      toast.success('Practice session started!');
+    } catch (error) {
+      console.error('Error auto-triggering practice:', error);
+      toast.error('Failed to start practice session');
+    }
+  };
 
   // Track last user activity globally for heartbeat gating
   const lastActivityRef = useRef<number>(Date.now());
@@ -217,6 +290,24 @@ const SoloRoomRefactored = () => {
       setEngagementTriggered(false);
       toast.error('Failed to send clarification request');
     }
+  };
+
+  // Handle lesson completion
+  const handleLessonCompletion = () => {
+    // Show lesson completion modal
+    setShowLessonCompletionModal(true);
+  };
+
+  // Function to check if lesson is complete (can be called from various places)
+  const checkLessonCompletion = () => {
+    // This could be based on various criteria:
+    // - Quiz completion with passing score
+    // - Practice completion
+    // - Time spent on lesson
+    // - User manually marking as complete
+    
+    // For now, we'll trigger it after quiz completion
+    // This can be enhanced with more sophisticated logic
   };
 
   // Fetch topics on initial load only
@@ -1617,8 +1708,13 @@ Please help me understand this topic step by step. Start with an overview of wha
                                     time_spent_seconds: quizElapsedSec
                                   });
                                   toast.success(`Quiz submitted: ${Math.round(res.percentage)}% ${res.passed ? '(Passed)' : '(Try again)'}`);
+                                  
+                                  // Track quiz completion for engagement
+                                  trackQuizCompletion();
+                                  
                                   // Track quiz points (server computes progress, we send signal)
                                   updateProgress(2, 'knowledge_check');
+                                  
                                   // Update attempt state and refresh quiz list (unlock next difficulty on pass)
                                   if (res.attempt) {
                                     setActiveAttempt(res.attempt);
@@ -1632,6 +1728,19 @@ Please help me understand this topic step by step. Start with an overview of wha
                                   if (quizTimerId) {
                                     clearInterval(quizTimerId);
                                     setQuizTimerId(null);
+                                  }
+                                  
+                                  // Show preference poll after quiz completion
+                                  setTimeout(() => {
+                                    setShowAIPreferenceModal(true);
+                                  }, 1000);
+                                  
+                                  // Check if lesson should be marked as complete
+                                  if (res.passed && res.percentage >= 80) {
+                                    // High score - consider lesson complete
+                                    setTimeout(() => {
+                                      handleLessonCompletion();
+                                    }, 3000); // Show after preference poll
                                   }
                                 } catch (e) {
                                   toast.error('Failed to submit quiz');
@@ -1677,6 +1786,7 @@ Please help me understand this topic step by step. Start with an overview of wha
            setShowLessonCompletionModal(false);
            endSplitScreenSession();
          }}
+         lessonTitle={selectedLesson?.title || 'this lesson'}
          sessionId={splitScreenSession?.id}
        />
     </div>

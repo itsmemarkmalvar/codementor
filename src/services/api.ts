@@ -642,6 +642,15 @@ export const getModelComparison = async (params?: { window?: string; k_runs?: nu
   return response.data;
 };
 
+export const getSplitScreenAnalytics = async (params?: { window?: string }) => {
+  const query = new URLSearchParams();
+  if (params?.window) query.set('window', params.window);
+  const qs = query.toString();
+  const url = `/analytics/split-screen${qs ? `?${qs}` : ''}`;
+  const response = await api.get(url);
+  return response.data;
+};
+
 // Health API
 export const getPistonHealth = async () => {
   const response = await api.get('/health/piston');
