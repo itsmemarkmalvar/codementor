@@ -175,106 +175,106 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
     const isUser = message.sender === 'user';
     
     return (
-      <div key={`${message.id}-${index || 0}-${message.timestamp.getTime()}`} 
-           className={`flex gap-2 mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
-        {!isUser && (
-          <div className="flex-shrink-0 mt-1">
-            <Avatar className={`h-7 w-7 ${message.sender === 'gemini' ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-green-500 to-green-600'}`}>
-              <AvatarFallback className={`text-white text-xs font-semibold ${message.sender === 'gemini' ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-green-500 to-green-600'}`}>
-                {message.sender === 'gemini' ? 'G' : 'T'}
-              </AvatarFallback>
-            </Avatar>
-          </div>
-        )}
+             <div key={`${message.id}-${index || 0}-${message.timestamp.getTime()}`} 
+            className={`flex gap-2 mb-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                 {!isUser && (
+           <div className="flex-shrink-0 mt-1">
+             <Avatar className={`h-6 w-6 ${message.sender === 'gemini' ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-green-500 to-green-600'}`}>
+               <AvatarFallback className={`text-white text-xs font-semibold ${message.sender === 'gemini' ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-green-500 to-green-600'}`}>
+                 {message.sender === 'gemini' ? 'G' : 'T'}
+               </AvatarFallback>
+             </Avatar>
+           </div>
+         )}
         
-        <div className={`max-w-[80%] ${isUser ? 'order-1' : 'order-2'}`}>
-          <div className={`rounded-2xl px-4 py-3 shadow-sm ${
-            isUser 
-              ? 'bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] text-white ml-auto' 
-              : message.sender === 'gemini'
-                ? 'bg-gradient-to-r from-blue-500/10 to-blue-600/10 text-white border border-blue-500/20 backdrop-blur-sm'
-                : 'bg-gradient-to-r from-green-500/10 to-green-600/10 text-white border border-green-500/20 backdrop-blur-sm'
-          }`}>
-            {!isUser && (
-              <div className="flex items-center gap-2 mb-2">
-                <span className="font-semibold text-sm text-gray-200">
-                  {message.sender === 'gemini' ? 'Gemini AI' : 'Together AI'}
-                </span>
-                {message.responseTime && (
-                  <Badge variant="secondary" className="text-xs py-0.5 px-2 bg-white/15 text-gray-200 border border-white/20">
-                    {message.responseTime}ms
-                  </Badge>
-                )}
-              </div>
-            )}
+                 <div className={`max-w-[85%] ${isUser ? 'order-1' : 'order-2'}`}>
+           <div className={`rounded-2xl px-3 py-2 shadow-sm ${
+             isUser 
+               ? 'bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] text-white ml-auto' 
+               : message.sender === 'gemini'
+                 ? 'bg-gradient-to-r from-blue-500/10 to-blue-600/10 text-white border border-blue-500/20 backdrop-blur-sm'
+                 : 'bg-gradient-to-r from-green-500/10 to-green-600/10 text-white border border-green-500/20 backdrop-blur-sm'
+           }`}>
+                         {!isUser && (
+               <div className="flex items-center gap-2 mb-1">
+                 <span className="font-semibold text-xs text-gray-200">
+                   {message.sender === 'gemini' ? 'Gemini AI' : 'Together AI'}
+                 </span>
+                 {message.responseTime && (
+                   <Badge variant="secondary" className="text-xs py-0 px-1.5 bg-white/15 text-gray-200 border border-white/20">
+                     {message.responseTime}ms
+                   </Badge>
+                 )}
+               </div>
+             )}
             
-            <div className="message-content max-h-64 overflow-y-auto">
-              {parts.map((part, partIndex) => {
-                if (part.type === 'code') {
-                  return (
-                    <div key={partIndex} className="my-3 relative group">
-                      <pre className="bg-black/60 p-3 rounded-lg overflow-x-auto border border-white/20 max-h-48 overflow-y-auto shadow-inner">
-                        <code className="text-sm font-mono text-gray-100 leading-relaxed">{part.content}</code>
-                      </pre>
-                    </div>
-                  );
-                } else {
-                  return (
-                    <p key={partIndex} className={`whitespace-pre-wrap text-sm leading-relaxed ${
-                      isUser ? 'text-white' : 'text-gray-100'
-                    }`}>
-                      {part.content}
-                    </p>
-                  );
-                }
-              })}
-            </div>
+                         <div className="message-content">
+               {parts.map((part, partIndex) => {
+                 if (part.type === 'code') {
+                   return (
+                     <div key={partIndex} className="my-2 relative group">
+                       <pre className="bg-black/60 p-2 rounded-lg overflow-x-auto border border-white/20 max-h-32 overflow-y-auto shadow-inner">
+                         <code className="text-xs font-mono text-gray-100 leading-relaxed">{part.content}</code>
+                       </pre>
+                     </div>
+                   );
+                 } else {
+                   return (
+                     <p key={partIndex} className={`whitespace-pre-wrap text-xs leading-relaxed ${
+                       isUser ? 'text-white' : 'text-gray-100'
+                     }`}>
+                       {part.content}
+                     </p>
+                   );
+                 }
+               })}
+             </div>
           </div>
           
-          <div className={`flex items-center gap-1 mt-2 text-xs text-gray-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
-            <Clock className="h-3 w-3" />
-            <span>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-          </div>
+                     <div className={`flex items-center gap-1 mt-1 text-xs text-gray-400 ${isUser ? 'justify-end' : 'justify-start'}`}>
+             <Clock className="h-2 w-2" />
+             <span>{message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+           </div>
         </div>
         
-        {isUser && (
-          <div className="flex-shrink-0 mt-1">
-            <Avatar className="h-7 w-7 bg-gradient-to-br from-gray-600 to-gray-700">
-              <AvatarFallback className="bg-gradient-to-br from-gray-600 to-gray-700 text-white text-xs font-semibold">You</AvatarFallback>
-            </Avatar>
-          </div>
-        )}
+                 {isUser && (
+           <div className="flex-shrink-0 mt-1">
+             <Avatar className="h-6 w-6 bg-gradient-to-br from-gray-600 to-gray-700">
+               <AvatarFallback className="bg-gradient-to-br from-gray-600 to-gray-700 text-white text-xs font-semibold">You</AvatarFallback>
+             </Avatar>
+           </div>
+         )}
       </div>
     );
   }, []);
 
-  const renderChatPanel = (model: 'gemini' | 'together', messages: Message[], scrollRef: React.RefObject<HTMLDivElement>) => {
+     const renderChatPanel = (model: 'gemini' | 'together', messages: Message[], scrollRef: React.RefObject<HTMLDivElement | null>) => {
     const isFullScreen = fullScreenPanel === model;
     const isHidden = fullScreenPanel !== null && fullScreenPanel !== model;
     
     if (isHidden) return null;
 
-    return (
-      <motion.div
-        key={model}
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.2 }}
-        className={`flex flex-col h-full ${isFullScreen ? 'fixed inset-0 z-50 bg-gray-900' : 'flex-1'}`}
-      >
+         return (
+       <motion.div
+         key={model}
+         initial={{ opacity: 0, scale: 0.95 }}
+         animate={{ opacity: 1, scale: 1 }}
+         exit={{ opacity: 0, scale: 0.95 }}
+         transition={{ duration: 0.2 }}
+         className={`flex flex-col ${isFullScreen ? 'fixed inset-0 z-50 bg-gray-900' : 'flex-1'}`}
+       >
                  {/* Panel Header */}
-         <div className={`p-4 border-b backdrop-blur-sm ${model === 'gemini' ? 'border-blue-500/30 bg-gradient-to-r from-blue-500/10 to-blue-600/10' : 'border-green-500/30 bg-gradient-to-r from-green-500/10 to-green-600/10'}`}>
+         <div className={`p-3 border-b backdrop-blur-sm ${model === 'gemini' ? 'border-blue-500/30 bg-gradient-to-r from-blue-500/10 to-blue-600/10' : 'border-green-500/30 bg-gradient-to-r from-green-500/10 to-green-600/10'}`}>
            <div className="flex items-center justify-between">
-             <div className="flex items-center gap-3">
-               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg ${model === 'gemini' ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-green-500 to-green-600'}`}>
-                 <Bot className="h-5 w-5 text-white" />
+             <div className="flex items-center gap-2">
+               <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg ${model === 'gemini' ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-green-500 to-green-600'}`}>
+                 <Bot className="h-4 w-4 text-white" />
                </div>
                <div>
-                 <h3 className={`font-semibold text-lg ${model === 'gemini' ? 'text-blue-300' : 'text-green-300'}`}>
+                 <h3 className={`font-semibold text-sm ${model === 'gemini' ? 'text-blue-300' : 'text-green-300'}`}>
                    {model === 'gemini' ? 'Gemini AI' : 'Together AI'}
                  </h3>
-                 <p className="text-sm text-gray-400">
+                 <p className="text-xs text-gray-400">
                    {model === 'gemini' ? 'Google\'s advanced model' : 'Open-source reasoning'}
                  </p>
                </div>
@@ -283,18 +283,18 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
                variant="ghost"
                size="sm"
                onClick={() => toggleFullScreen(model)}
-               className="text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200"
+               className="text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 p-1"
              >
-               {isFullScreen ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+               {isFullScreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
              </Button>
            </div>
          </div>
 
                  {/* Messages Area */}
-         <Card className="flex-1 min-h-0 overflow-hidden bg-gradient-to-b from-white/5 to-white/3 border-white/10 relative shadow-inner">
+         <Card className="h-[500px] overflow-hidden bg-gradient-to-b from-white/5 to-white/3 border-white/10 relative shadow-inner">
            <ScrollArea 
              ref={scrollRef}
-             className="h-full p-6 custom-scrollbar overflow-y-auto"
+             className="h-full p-4 custom-scrollbar overflow-y-auto"
              onScrollCapture={model === 'gemini' ? handleGeminiScroll : handleTogetherScroll}
            >
                          {messages.length === 0 ? (
@@ -330,31 +330,31 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
     );
   };
 
-  return (
-    <div className="flex flex-col h-full max-h-full overflow-hidden">
+     return (
+     <div className="flex flex-col overflow-hidden">
              {/* Topic Header */}
        {topic && (
-         <div className="flex-shrink-0 p-4 bg-gradient-to-r from-[#2E5BFF]/20 to-[#1E40AF]/20 rounded-xl mb-3 border border-[#2E5BFF]/30 backdrop-blur-sm">
+         <div className="flex-shrink-0 p-3 bg-gradient-to-r from-[#2E5BFF]/20 to-[#1E40AF]/20 rounded-xl mb-1 border border-[#2E5BFF]/30 backdrop-blur-sm">
            <div className="flex items-center justify-between">
              <div>
-               <h3 className="font-semibold text-lg text-white mb-1">{topic.title}</h3>
+               <h3 className="font-semibold text-base text-white mb-1">{topic.title}</h3>
                {topic.description && (
-                 <p className="text-sm text-gray-300 leading-relaxed">{topic.description}</p>
+                 <p className="text-xs text-gray-300 leading-relaxed">{topic.description}</p>
                )}
              </div>
-             <div className="flex items-center gap-3">
+             <div className="flex items-center gap-2">
                {sessionId && (
-                 <Badge variant="outline" className="bg-white/10 border-white/30 text-white font-medium px-3 py-1">
+                 <Badge variant="outline" className="bg-white/10 border-white/30 text-white font-medium px-2 py-0.5 text-xs">
                    Session #{sessionId}
                  </Badge>
                )}
-               <div className="flex items-center gap-2 text-sm text-gray-300 bg-white/5 px-3 py-1 rounded-lg border border-white/10">
-                 <Target className="h-4 w-4 text-[#2E5BFF]" />
+               <div className="flex items-center gap-1 text-xs text-gray-300 bg-white/5 px-2 py-0.5 rounded-lg border border-white/10">
+                 <Target className="h-3 w-3 text-[#2E5BFF]" />
                  <span className="font-medium">Engagement: {engagementScore}</span>
                </div>
                {onEngagementThreshold && engagementScore >= 10 && (
-                 <div className="flex items-center gap-2 text-sm text-amber-300 bg-amber-500/10 px-3 py-1 rounded-lg border border-amber-500/20">
-                   <Zap className="h-4 w-4" />
+                 <div className="flex items-center gap-1 text-xs text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+                   <Zap className="h-3 w-3" />
                    <span className="font-medium">Threshold reached!</span>
                  </div>
                )}
@@ -364,37 +364,41 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
        )}
       
              {/* Split Screen Layout */}
-       <div className="flex-1 flex gap-6 min-h-0 overflow-hidden">
+       <div className="flex gap-4 overflow-hidden mb-1">
          <AnimatePresence mode="wait">
-           {renderChatPanel('gemini', geminiMessages, geminiScrollRef)}
-           {renderChatPanel('together', togetherMessages, togetherScrollRef)}
+           <div key="gemini-panel" className="flex-1 flex flex-col overflow-hidden">
+             {renderChatPanel('gemini', geminiMessages, geminiScrollRef)}
+           </div>
+           <div key="together-panel" className="flex-1 flex flex-col overflow-hidden">
+             {renderChatPanel('together', togetherMessages, togetherScrollRef)}
+           </div>
          </AnimatePresence>
        </div>
       
              {/* Input Area */}
-       <div className="flex-shrink-0 bg-gradient-to-r from-white/10 to-white/5 rounded-2xl border border-white/20 p-4 mt-3 backdrop-blur-sm shadow-lg">
-         <div className="relative flex items-end gap-4">
+       <div className="flex-shrink-0 bg-gradient-to-r from-white/10 to-white/5 rounded-2xl border border-white/20 p-3 mt-1 backdrop-blur-sm shadow-lg">
+         <div className="relative flex items-end gap-3">
            <Textarea
              ref={inputRef}
              value={inputMessage}
              onChange={(e) => setInputMessage(e.target.value)}
              onKeyDown={handleKeyPress}
              placeholder={topic ? `Ask about ${topic.title}...` : 'Type a message...'}
-             className="flex-1 min-h-[40px] max-h-[120px] bg-transparent border-0 text-white placeholder:text-gray-400 focus:ring-0 focus:outline-none resize-none text-base leading-relaxed"
+             className="flex-1 min-h-[36px] max-h-[100px] bg-transparent border-0 text-white placeholder:text-gray-400 focus:ring-0 focus:outline-none resize-none text-sm leading-relaxed"
              disabled={isLoading}
            />
            <Button
-             className="bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] rounded-xl w-10 h-10 p-0 flex items-center justify-center flex-shrink-0 shadow-lg transition-all duration-200 hover:scale-105"
+             className="bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] rounded-xl w-9 h-9 p-0 flex items-center justify-center flex-shrink-0 shadow-lg transition-all duration-200 hover:scale-105"
              size="sm"
              disabled={inputMessage.trim() === '' || isLoading}
              onClick={handleSend}
            >
-             <Send className="h-4 w-4" />
+             <Send className="h-3 w-3" />
            </Button>
          </div>
-         <div className="flex items-center justify-between mt-3 text-sm text-gray-400">
-           <span className="flex items-center gap-2">
-             <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+         <div className="flex items-center justify-between mt-2 text-xs text-gray-400">
+           <span className="flex items-center gap-1">
+             <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span>
              Press Enter to send, Shift+Enter for new line
            </span>
            <span className="text-[#2E5BFF] font-medium">Messages sent to both AIs simultaneously</span>
@@ -404,7 +408,7 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
              {/* Scroll to bottom button */}
        {showScrollToBottom && (
          <Button
-           className="absolute bottom-24 right-6 bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] rounded-full w-12 h-12 p-0 shadow-xl transition-all duration-200 hover:scale-110"
+           className="absolute bottom-20 right-6 bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] rounded-full w-12 h-12 p-0 shadow-xl transition-all duration-200 hover:scale-110"
            onClick={scrollToBottom}
          >
            <MessageSquare className="h-5 w-5" />
