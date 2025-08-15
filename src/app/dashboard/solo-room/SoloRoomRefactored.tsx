@@ -4,19 +4,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
-import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth } from '@/services/api';
+import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight, Users } from 'lucide-react';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement } from '@/services/api';
 import { toast } from 'sonner';
+import { isAuthenticated, getToken } from '@/lib/auth-utils';
 
 // Import custom hooks
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useCodeExecution } from '@/hooks/useCodeExecution';
+import { useEngagementTracker } from '@/hooks/useEngagementTracker';
 
 // Import refactored components
 import { ChatInterface } from '@/components/solo-room/ChatInterface';
 import { CodeEditor } from '@/components/solo-room/CodeEditor';
 import { FileExplorer } from '@/components/solo-room/FileExplorer';
 import { FileTabs } from '../../../components/solo-room/FileTabs';
+import { SplitScreenChatInterface } from '@/components/solo-room/SplitScreenChatInterface';
+import { AIPreferenceModal } from '@/components/ui/AIPreferenceModal';
+import { LessonCompletionModal } from '@/components/ui/LessonCompletionModal';
 
 // Types
 interface Topic {
@@ -61,12 +66,22 @@ const SoloRoomRefactored = () => {
   const [showNewFileDialog, setShowNewFileDialog] = useState(false);
   const [isCreatingDirectory, setIsCreatingDirectory] = useState(false);
 
+  // Split-screen mode state (now default)
+  const [isSplitScreenMode, setIsSplitScreenMode] = useState(true);
+  const [splitScreenSession, setSplitScreenSession] = useState<any>(null);
+  const [showAIPreferenceModal, setShowAIPreferenceModal] = useState(false);
+  const [showLessonCompletionModal, setShowLessonCompletionModal] = useState(false);
+  const [engagementTriggered, setEngagementTriggered] = useState(false);
+  const [lastThresholdTime, setLastThresholdTime] = useState<number>(0);
+
   // Use custom hooks
   const {
     messages,
+    combinedMessages,
     isLoading: isChatLoading,
     tutorPreferences,
     sendMessage,
+    sendSplitScreenMessage,
     startTopicSession,
     updatePreferences,
     currentSessionId
@@ -81,8 +96,128 @@ const SoloRoomRefactored = () => {
     formatCode
   } = useCodeExecution();
 
+  // Engagement tracking for split-screen mode
+  const {
+    engagementScore,
+    isThresholdReached,
+    isTracking,
+    trackMessage,
+    trackCodeExecution,
+    trackScroll,
+    trackInteraction,
+    startTracking,
+    stopTracking,
+    resetTracking,
+    getEngagementAnalytics
+  } = useEngagementTracker({
+    threshold: 50, // Increased threshold to prevent spam
+    onThresholdReached: () => {
+      const now = Date.now();
+      const COOLDOWN_PERIOD = 120000; // 2 minutes cooldown (increased)
+      
+      // Only trigger if enough time has passed since last threshold
+      if (now - lastThresholdTime > COOLDOWN_PERIOD) {
+        setEngagementTriggered(true);
+        setShowAIPreferenceModal(true);
+        setLastThresholdTime(now);
+      }
+    },
+    onQuizTrigger: () => {
+      toast.info('Engagement threshold reached! A quiz will be triggered.');
+    },
+    onPracticeTrigger: () => {
+      toast.info('Engagement threshold reached! A practice session will be triggered.');
+    }
+  });
+
   // Track last user activity globally for heartbeat gating
   const lastActivityRef = useRef<number>(Date.now());
+
+
+
+  // Split-screen session management
+  const endSplitScreenSession = async () => {
+    if (!splitScreenSession?.id) {
+      console.log('No active session to end');
+      setSplitScreenSession(null);
+      stopTracking();
+      resetTracking();
+      setEngagementTriggered(false);
+      setLastThresholdTime(0);
+      return;
+    }
+
+    try {
+      await endSession(splitScreenSession.id);
+      setSplitScreenSession(null);
+      stopTracking();
+      resetTracking();
+      setEngagementTriggered(false);
+      setLastThresholdTime(0);
+      toast.success('Split-screen session ended');
+    } catch (error) {
+      console.error('Error ending split-screen session:', error);
+      // Even if ending fails, clear the local state
+      setSplitScreenSession(null);
+      stopTracking();
+      resetTracking();
+      setEngagementTriggered(false);
+      setLastThresholdTime(0);
+      toast.error('Failed to end split-screen session');
+    }
+  };
+
+  const handleUserChoice = async (choice: string, reason?: string) => {
+    if (!splitScreenSession?.id) {
+      console.log('No active session for user choice - skipping');
+      setShowAIPreferenceModal(false);
+      setShowLessonCompletionModal(true);
+      setEngagementTriggered(false);
+      return;
+    }
+
+    try {
+      await recordUserChoice(splitScreenSession.id, { 
+        choice: choice as 'gemini' | 'together' | 'both' | 'neither', 
+        reason 
+      });
+      setShowAIPreferenceModal(false);
+      setShowLessonCompletionModal(true);
+      // Reset engagement to prevent immediate re-triggering
+      setEngagementTriggered(false);
+    } catch (error) {
+      console.error('Error recording user choice:', error);
+      // Continue anyway - close modal and show completion
+      setShowAIPreferenceModal(false);
+      setShowLessonCompletionModal(true);
+      setEngagementTriggered(false);
+      toast.error('Failed to record your choice');
+    }
+  };
+
+  const handleClarificationRequest = async (request: string) => {
+    if (!splitScreenSession?.id) {
+      console.log('No active session for clarification request - skipping');
+      setShowLessonCompletionModal(false);
+      setEngagementTriggered(false);
+      toast.success('Clarification request sent');
+      return;
+    }
+
+    try {
+      await requestClarification(splitScreenSession.id, { request });
+      setShowLessonCompletionModal(false);
+      toast.success('Clarification request sent');
+      // Reset engagement to prevent immediate re-triggering
+      setEngagementTriggered(false);
+    } catch (error) {
+      console.error('Error requesting clarification:', error);
+      // Continue anyway - close modal
+      setShowLessonCompletionModal(false);
+      setEngagementTriggered(false);
+      toast.error('Failed to send clarification request');
+    }
+  };
 
   // Fetch topics on initial load only
   useEffect(() => {
@@ -191,6 +326,8 @@ const SoloRoomRefactored = () => {
     };
   }, []); // Empty dependency array - run only once
 
+
+
   // Render a small Piston health badge helper
   const renderPistonHealth = () => (
     pistonHealth ? (
@@ -228,7 +365,58 @@ const SoloRoomRefactored = () => {
   const handleTopicSelect = async (topic: Topic) => {
     console.log('Topic selected:', topic);
     setSelectedTopic(topic);
-    // Don't start session here - only when a specific lesson is clicked
+    
+    // Reset engagement state for new session
+    setEngagementTriggered(false);
+    setLastThresholdTime(0);
+    
+    // Check if user is authenticated before trying to create session
+    if (!isAuthenticated()) {
+      console.log('User not authenticated - continuing without session management');
+      setSplitScreenSession(null);
+      return;
+    }
+    
+    // Automatically start a split-screen session when a topic is selected
+    try {
+      console.log('Starting split-screen session for topic:', topic.id);
+      const session = await startSplitScreenSession({
+        topic_id: topic.id,
+        session_type: 'comparison',
+        ai_models: ['gemini', 'together']
+      });
+      
+      console.log('Session creation response:', session);
+      
+      // Check if session was created successfully
+      if (session && session.data && session.data.session_id) {
+        // Create a session object with the expected structure
+        const sessionData = {
+          id: session.data.session_id,
+          session_type: session.data.session_type,
+          ai_models: session.data.ai_models,
+          started_at: session.data.started_at
+        };
+        setSplitScreenSession(sessionData);
+        resetTracking(); // Reset tracking before starting new session
+        
+        // Start engagement tracking immediately but with a delay to prevent immediate triggers
+        setTimeout(() => {
+          startTracking();
+          console.log('Split-screen session started for topic:', topic.title, 'Session ID:', sessionData.id);
+        }, 2000); // Reduced delay to 2 seconds
+      } else {
+        console.warn('Session creation returned invalid response:', session);
+        setSplitScreenSession(null);
+        // Continue without session - split-screen will still work
+        console.log('Continuing without session - split-screen functionality will work without engagement tracking');
+      }
+    } catch (sessionError) {
+      console.error('Split-screen session start failed for topic:', sessionError);
+      setSplitScreenSession(null);
+      // Continue without session - split-screen will still work
+      console.log('Continuing without session - split-screen functionality will work without engagement tracking');
+    }
   };
 
   // Message sending handler
@@ -243,22 +431,52 @@ const SoloRoomRefactored = () => {
       return;
     }
     
+    // Add lesson context if available
+    let messageWithContext = message;
+    if (selectedLesson) {
+      messageWithContext = `Current Lesson: "${selectedLesson.title}"
+${selectedLesson.description ? `Lesson Description: ${selectedLesson.description}` : ''}
+${selectedLesson.learning_objectives ? `Learning Objectives: ${selectedLesson.learning_objectives}` : ''}
+
+User Question: ${message}`;
+    }
+    
     // Adapt message by current difficulty preference
     const difficulty = tutorPreferences?.challengeDifficulty || 'medium';
     const messageWithDifficulty = (() => {
       if (difficulty === 'beginner') {
-        return `${message}\n\nPlease explain step-by-step with simple examples and gentle pacing. Avoid jumping to advanced topics.`;
+        return `${messageWithContext}\n\nPlease explain step-by-step with simple examples and gentle pacing. Avoid jumping to advanced topics.`;
       }
       if (difficulty === 'advanced') {
-        return `${message}\n\nChallenge me with harder problems, fewer hints, and expect concise, expert-level explanations.`;
+        return `${messageWithContext}\n\nChallenge me with harder problems, fewer hints, and expect concise, expert-level explanations.`;
       }
-      return message;
+      return messageWithContext;
     })();
 
-    await sendMessage(messageWithDifficulty, topicToUse.id, topicToUse.title || 'Learning Session');
+    // Use split-screen message function for simultaneous AI responses
+    await sendSplitScreenMessage(messageWithDifficulty, topicToUse.id, topicToUse.title || 'Learning Session');
     
     // Track progress for sending a message
     updateProgress(1, 'interaction');
+    
+      // Track engagement for split-screen mode (only for significant interactions)
+    if (splitScreenSession?.id && message.length > 20) { // Only track for substantial messages
+      try {
+        console.log('=== Engagement Debug ===');
+        console.log('Session ID:', splitScreenSession.id);
+        console.log('Session object:', splitScreenSession);
+        console.log('Incrementing engagement for session:', splitScreenSession.id);
+        await incrementEngagement(splitScreenSession.id);
+        console.log('Engagement increment successful');
+      } catch (error: any) {
+        console.error('Failed to increment engagement:', error);
+        console.error('Error details:', error.response?.data || error.message);
+        // Don't throw the error - continue with the chat functionality
+      }
+    } else if (!splitScreenSession?.id) {
+      console.warn('No active split-screen session for engagement tracking');
+      console.log('splitScreenSession state:', splitScreenSession);
+    }
   };
 
   // Code execution handler
@@ -274,6 +492,19 @@ const SoloRoomRefactored = () => {
     
     // Track progress for code execution
     updateProgress(2, 'code_execution');
+    
+    // Track engagement for split-screen mode (only for successful code execution)
+    if (splitScreenSession?.id && result && result.success) {
+      try {
+        await incrementEngagement(splitScreenSession.id);
+        trackCodeExecution();
+      } catch (error) {
+        console.warn('Failed to increment engagement:', error);
+        // Don't throw the error - continue with the functionality
+      }
+    } else if (!splitScreenSession?.id) {
+      console.warn('No active split-screen session for engagement tracking');
+    }
     
     return result;
   };
@@ -422,16 +653,65 @@ const SoloRoomRefactored = () => {
       // Switch to chat tab FIRST
       setActiveTab('chat');
       
-      // Start a session for this topic and lesson
-      try {
-        await startTopicSession(topicToUse);
-        console.log('Session started successfully');
-      } catch (sessionError) {
-        console.warn('Session start failed, continuing anyway:', sessionError);
-      }
+      // Reset engagement state for new session
+      setEngagementTriggered(false);
+      setLastThresholdTime(0);
       
-      // Start AI conversation about this specific lesson
-      const welcomeMessage = `Hello! I'd like to start learning about "${lesson.title}". ${lesson.description ? `Here's what I understand about it: ${lesson.description}. ` : ''}Can you help me understand this topic and guide me through the key concepts step by step?`;
+      // Check if user is authenticated before trying to create session
+      if (!isAuthenticated()) {
+        console.log('User not authenticated - continuing without session management for lesson');
+        setSplitScreenSession(null);
+      } else {
+         // Start a split-screen session for this topic and lesson
+         try {
+           console.log('Starting split-screen session for lesson:', lesson.title, 'Topic ID:', topicToUse.id);
+           const session = await startSplitScreenSession({
+             topic_id: topicToUse.id,
+             session_type: 'comparison',
+             ai_models: ['gemini', 'together']
+           });
+           
+           console.log('Session creation response for lesson:', session);
+           
+           // Check if session was created successfully
+           if (session && session.data && session.data.session_id) {
+             // Create a session object with the expected structure
+             const sessionData = {
+               id: session.data.session_id,
+               session_type: session.data.session_type,
+               ai_models: session.data.ai_models,
+               started_at: session.data.started_at
+             };
+             setSplitScreenSession(sessionData);
+             resetTracking(); // Reset tracking before starting new session
+             
+             // Delay starting engagement tracking to prevent immediate triggers
+             setTimeout(() => {
+               const cleanup = startTracking();
+               console.log('Split-screen session started successfully for lesson:', lesson.title, 'Session ID:', sessionData.id);
+             }, 5000); // 5 second delay
+           } else {
+             console.warn('Session creation returned invalid response for lesson:', session);
+             setSplitScreenSession(null);
+             // Continue without session - split-screen will still work
+             console.log('Continuing without session - split-screen functionality will work without engagement tracking');
+           }
+         } catch (sessionError) {
+           console.error('Split-screen session start failed for lesson:', sessionError);
+           setSplitScreenSession(null);
+           // Continue without session - split-screen will still work
+           console.log('Continuing without session - split-screen functionality will work without engagement tracking');
+         }
+       }
+      
+      // Start AI conversation about this specific lesson with better context
+      const welcomeMessage = `Hello! I'd like to start learning about "${lesson.title}". 
+
+${lesson.description ? `Lesson Description: ${lesson.description}` : ''}
+${lesson.learning_objectives ? `\nLearning Objectives: ${lesson.learning_objectives}` : ''}
+${lesson.prerequisites ? `\nPrerequisites: ${lesson.prerequisites}` : ''}
+
+Please help me understand this topic step by step. Start with an overview of what we'll be learning, then guide me through the key concepts with clear examples.`;
       
       // Send the initial message to start the conversation
       try {
@@ -449,7 +729,7 @@ const SoloRoomRefactored = () => {
         console.warn('Progress tracking failed:', progressError);
       }
       
-      toast.success(`Switched to AI Tutor for: ${lesson.title}`);
+      toast.success(`Started split-screen AI comparison for: ${lesson.title}`);
 
       // Load modules for this lesson and preselect first module
       try {
@@ -558,36 +838,38 @@ const SoloRoomRefactored = () => {
           animate={{ opacity: 1, y: 0 }}
           className="flex items-center justify-between p-6 border-b border-white/10 bg-white/5 backdrop-blur-sm"
         >
-        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-[#2E5BFF] rounded-xl flex items-center justify-center">
+                <Code2 className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-white">AI Tutor Room</h1>
+                <p className="text-sm text-gray-400">Interactive Java Learning Environment</p>
+              </div>
+            </div>
+            
+
+          </div>
+          
+          {/* Topic Status and Overall Progress Badge */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#2E5BFF] rounded-xl flex items-center justify-center">
-              <Code2 className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-white">Solo Coding Room</h1>
-              <p className="text-sm text-gray-400">Interactive Java Learning Environment</p>
+            {selectedTopic && (
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-lg border border-white/10"
+              >
+                <Target className="h-4 w-4 text-[#2E5BFF]" />
+                <span className="text-sm font-medium text-white">{selectedTopic.title}</span>
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              </motion.div>
+            )}
+            <div className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium">
+              Progress: {Math.max(0, Math.min(100, summary?.weighted_breakdown?.overall_progress ?? 0))}%
             </div>
           </div>
-        </div>
-        
-        {/* Topic Status and Overall Progress Badge */}
-        <div className="flex items-center gap-3">
-          {selectedTopic && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex items-center gap-3 px-4 py-2 bg-white/5 rounded-lg border border-white/10"
-            >
-              <Target className="h-4 w-4 text-[#2E5BFF]" />
-              <span className="text-sm font-medium text-white">{selectedTopic.title}</span>
-              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-            </motion.div>
-          )}
-          <div className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium">
-            Progress: {Math.max(0, Math.min(100, summary?.weighted_breakdown?.overall_progress ?? 0))}%
-          </div>
-        </div>
-      </motion.div>
+        </motion.div>
 
       <Tabs
         value={activeTab}
@@ -642,26 +924,55 @@ const SoloRoomRefactored = () => {
                     <div className="w-8 h-8 bg-[#2E5BFF] rounded-lg flex items-center justify-center">
                       <MessageSquare className="h-4 w-4 text-white" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-white">AI Tutor</h3>
-                      <p className="text-xs text-gray-400">Ready to help you learn</p>
-                    </div>
+                                         <div>
+                       <h3 className="font-semibold text-white">
+                         Split-Screen AI Tutor
+                       </h3>
+                       <p className="text-xs text-gray-400">
+                          Gemini and Together AI Tutorimage.png responses
+                       </p>
+                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                    <span className="text-xs text-gray-400">Online</span>
-                  </div>
+                                     <div className="flex items-center gap-3">
+                     <div className="flex items-center gap-2 px-3 py-1 bg-[#2E5BFF]/20 border border-[#2E5BFF]/30 rounded-lg">
+                       <Users className="h-3 w-3 text-[#2E5BFF]" />
+                       <span className="text-xs text-[#2E5BFF] font-medium">
+                         Engagement: {engagementScore}
+                       </span>
+                     </div>
+                     <div className="flex items-center gap-2">
+                       <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                       <span className="text-xs text-gray-400">Online</span>
+                     </div>
+                   </div>
                 </div>
-                <div className="flex-1 p-4 min-h-0 h-[600px] max-h-[600px] overflow-hidden">
-              <ChatInterface
-                messages={messages}
-                isLoading={isChatLoading}
-                onSendMessage={(message) => handleSendMessage(message)}
-                topic={selectedTopic}
-                preferences={tutorPreferences}
-                onUpdatePreferences={updatePreferences}
-              />
-                </div>
+                                 <div className="flex-1 p-4 min-h-0 overflow-hidden">
+                   <SplitScreenChatInterface
+                     messages={combinedMessages.map(msg => ({
+                       ...msg,
+                       sender: msg.sender === 'bot' ? 'gemini' : msg.sender === 'ai' ? 'together' : 'user'
+                     }))}
+                     isLoading={isChatLoading}
+                                           onSendMessage={async (message) => {
+                        await handleSendMessage(message);
+                        // Only track message if it's substantial
+                        if (message.length > 20) {
+                          trackMessage();
+                        }
+                      }}
+                     topic={selectedTopic}
+                     sessionId={splitScreenSession?.id || undefined}
+                     engagementScore={engagementScore}
+                     onEngagementThreshold={() => {
+                       if (splitScreenSession?.id) {
+                         setEngagementTriggered(true);
+                         setShowAIPreferenceModal(true);
+                       } else {
+                         console.warn('Engagement threshold reached but no active session - skipping modal');
+                       }
+                     }}
+                   />
+                 </div>
               </div>
             </motion.div>
             
@@ -683,6 +994,7 @@ const SoloRoomRefactored = () => {
                       <p className="text-xs text-gray-400">Write and test your Java code</p>
                     </div>
                   </div>
+
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
@@ -1342,6 +1654,31 @@ const SoloRoomRefactored = () => {
           </motion.div>
         </TabsContent>
       </Tabs>
+
+             {/* Split-Screen Modals */}
+       <AIPreferenceModal
+         isOpen={showAIPreferenceModal}
+         onClose={() => {
+           setShowAIPreferenceModal(false);
+           setEngagementTriggered(false);
+         }}
+         onSubmit={handleUserChoice}
+         sessionId={splitScreenSession?.id}
+       />
+
+       <LessonCompletionModal
+         isOpen={showLessonCompletionModal}
+         onClose={() => {
+           setShowLessonCompletionModal(false);
+           setEngagementTriggered(false);
+         }}
+         onRequestClarification={handleClarificationRequest}
+         onProceed={() => {
+           setShowLessonCompletionModal(false);
+           endSplitScreenSession();
+         }}
+         sessionId={splitScreenSession?.id}
+       />
     </div>
   );
 };

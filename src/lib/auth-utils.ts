@@ -3,7 +3,8 @@
 // Get token from localStorage if available
 export const getToken = (): string | null => {
   if (typeof window !== 'undefined') {
-    const token = localStorage.getItem('token');
+    // Try both token keys for backward compatibility
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
     return token;
   }
   return null;
@@ -13,6 +14,9 @@ export const getToken = (): string | null => {
 export const setToken = (token: string): void => {
   if (typeof window !== 'undefined') {
     console.log(`Setting auth token: ${token.substring(0, 10)}...`);
+    // Store with the correct key that matches the backend
+    localStorage.setItem('auth_token', token);
+    // Also store with the old key for backward compatibility
     localStorage.setItem('token', token);
   }
 };
@@ -21,6 +25,7 @@ export const setToken = (token: string): void => {
 export const removeToken = (): void => {
   if (typeof window !== 'undefined') {
     console.log('Removing auth token');
+    localStorage.removeItem('auth_token');
     localStorage.removeItem('token');
   }
 };

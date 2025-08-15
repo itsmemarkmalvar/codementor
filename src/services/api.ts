@@ -270,6 +270,124 @@ export const getTutorResponse = async (params: {
   }
 };
 
+export const getSplitScreenTutorResponse = async (params: {
+  question: string;
+  conversation_history?: Array<{role: string; content: string}>;
+  topic_id?: number;
+  session_id?: number;
+  preferences?: any;
+  lesson_context?: string;
+}) => {
+  try {
+    const requestParams: any = {
+      question: params.question,
+      conversation_history: params.conversation_history || [],
+      preferences: params.preferences || {}
+    };
+    
+    if (params.topic_id !== undefined && params.topic_id !== null) {
+      requestParams.topic_id = Number(params.topic_id);
+    }
+    if (params.session_id !== undefined && params.session_id !== null) {
+      requestParams.session_id = Number(params.session_id);
+    }
+    if (params.lesson_context && typeof params.lesson_context === 'string') {
+      requestParams.lesson_context = params.lesson_context;
+    }
+    
+    console.log('Calling getSplitScreenTutorResponse API with params:', { 
+      question: requestParams.question,
+      conversation_history_length: requestParams.conversation_history?.length || 0,
+      topic_id: requestParams.topic_id,
+      session_id: requestParams.session_id
+    });
+    
+    // Set a timeout to prevent hanging requests
+    const response = await api.post('/tutor/split-screen-chat', requestParams, {
+      timeout: 60000 // 60 second timeout for split-screen (longer since we're calling both models)
+    });
+    
+    console.log('getSplitScreenTutorResponse API response status:', response.status);
+    
+    if (!response.data) {
+      throw new Error('Empty response from API');
+    }
+    
+    // Check for error response
+    if (response.data.status === 'error') {
+      throw new Error(response.data?.message || 'Error response from API');
+    }
+    
+    // Persist last chat message ids for attribution (if provided by backend)
+    try {
+      const geminiMessageId = response.data?.data?.responses?.gemini?.message_id;
+      const togetherMessageId = response.data?.data?.responses?.together?.message_id;
+      
+      if (typeof window !== 'undefined') {
+        if (geminiMessageId) {
+          sessionStorage.setItem('last_gemini_message_id', String(geminiMessageId));
+        }
+        if (togetherMessageId) {
+          sessionStorage.setItem('last_together_message_id', String(togetherMessageId));
+        }
+      }
+    } catch {}
+
+    return response.data.data;
+  } catch (error: any) {
+    console.error('Error in getSplitScreenTutorResponse API call:', error);
+    
+    // Create a more user-friendly error message
+    let errorMessage = 'Failed to get AI tutor responses. Please try again.';
+    
+    if (error.response) {
+      console.error('API error response:', error.response.data);
+      
+      if (error.response.status === 500) {
+        errorMessage = 'Server error: The AI service is currently unavailable. Please try again later.';
+      } else if (error.response.status === 503) {
+        errorMessage = 'The AI service is temporarily unavailable. Please try again in a few minutes.';
+      } else if (error.response.status === 504) {
+        errorMessage = 'The request timed out. The AI service might be overloaded. Please try again in a few minutes.';
+      } else if (error.response.data && error.response.data.message) {
+        errorMessage = `Error: ${error.response.data.message}`;
+      }
+    } else if (error.request) {
+      console.error('No response received:', error.request);
+      
+      if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Request timed out. The AI service might be taking too long to respond. Please try again with a simpler query.';
+      } else {
+        errorMessage = 'Network error: No response from server. Please check your connection.';
+      }
+    } else {
+      errorMessage = `Error: ${error.message}`;
+    }
+    
+    // Return a fallback response with errors for both models
+    return {
+      responses: {
+        gemini: {
+          response: null,
+          message_id: null,
+          response_time_ms: null,
+          error: errorMessage
+        },
+        together: {
+          response: null,
+          message_id: null,
+          response_time_ms: null,
+          error: errorMessage
+        }
+      },
+      session_id: null,
+      topic: null,
+      error: true,
+      fallback: true
+    };
+  }
+};
+
 export const executeJavaCode = async (params: {
   code: string;
   input?: string;
@@ -534,6 +652,79 @@ export const getPistonHealth = async () => {
 export const getJudge0Health = async () => {
   const response = await api.get('/health/judge0');
   return response.data as { ok: boolean; status?: number; latency_ms?: number; error?: string };
+};
+
+// =============
+// Split-Screen Session API
+// =============
+
+export const startSplitScreenSession = async (params: {
+  topic_id?: number;
+  session_type: 'comparison' | 'single';
+  ai_models: ('gemini' | 'together')[];
+}) => {
+  try {
+    const response = await api.post('/sessions/start', params);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error in startSplitScreenSession:', error);
+    throw error;
+  }
+};
+
+export const getActiveSession = async () => {
+  const response = await api.get('/sessions/active');
+  return response.data;
+};
+
+export const getSession = async (sessionId: number) => {
+  const response = await api.get(`/sessions/${sessionId}`);
+  return response.data;
+};
+
+export const endSession = async (sessionId: number) => {
+  const response = await api.post(`/sessions/${sessionId}/end`);
+  return response.data;
+};
+
+export const recordUserChoice = async (sessionId: number, params: {
+  choice: 'gemini' | 'together' | 'both' | 'neither';
+  reason?: string;
+}) => {
+  const response = await api.post(`/sessions/${sessionId}/choice`, params);
+  return response.data;
+};
+
+export const requestClarification = async (sessionId: number, params: {
+  request: string;
+}) => {
+  const response = await api.post(`/sessions/${sessionId}/clarification`, params);
+  return response.data;
+};
+
+export const incrementEngagement = async (sessionId: number, params?: {
+  points?: number;
+}) => {
+  console.log('=== incrementEngagement API Call ===');
+  console.log('Session ID:', sessionId);
+  console.log('Params:', params);
+  
+  // Safety check to prevent undefined sessionId
+  if (!sessionId || sessionId === undefined || sessionId === null) {
+    console.warn('incrementEngagement called with invalid sessionId:', sessionId);
+    return { success: false, message: 'Invalid session ID' };
+  }
+  
+  try {
+    console.log(`Making API call to: /sessions/${sessionId}/engagement`);
+    const response = await api.post(`/sessions/${sessionId}/engagement`, params || {});
+    console.log('Engagement API response:', response.data);
+    return response.data;
+  } catch (error: any) {
+    console.error('Engagement API error:', error);
+    console.error('Error response:', error.response?.data);
+    throw error;
+  }
 };
 
 export const getTopicProgress = async (topicId: number) => {

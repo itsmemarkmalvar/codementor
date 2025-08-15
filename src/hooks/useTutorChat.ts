@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { getTutorResponse } from '@/services/api';
+import { getTutorResponse, getSplitScreenTutorResponse } from '@/services/api';
 
 interface Message {
   id: number;
@@ -45,6 +45,22 @@ export function useTutorChat(initialMessages: Message[] = []) {
   const currentModel = useMemo(() => (tutorPreferences.aiModel ?? 'together') as 'together' | 'gemini', [tutorPreferences.aiModel]);
   const currentMessages = messagesByModel[currentModel];
   const currentSessionId = sessionIdByModel[currentModel];
+  
+  // For split-screen mode, combine messages from both models
+  const combinedMessages = useMemo(() => {
+    const allMessages = [
+      ...messagesByModel.together.map(msg => ({ ...msg, _model: 'together' as const })),
+      ...messagesByModel.gemini.map(msg => ({ ...msg, _model: 'gemini' as const }))
+    ];
+    const sorted = allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    console.log('Combined messages:', {
+      total: sorted.length,
+      together: messagesByModel.together.length,
+      gemini: messagesByModel.gemini.length,
+      messages: sorted.map(m => ({ sender: m.sender, text: m.text.substring(0, 50) + '...' }))
+    });
+    return sorted;
+  }, [messagesByModel.together, messagesByModel.gemini]);
 
   // Convert frontend message format to API format
   const formatConversationHistory = useCallback((messagesToFormat: Message[]): ConversationMessage[] => {
@@ -242,12 +258,139 @@ export function useTutorChat(initialMessages: Message[] = []) {
     }));
   }, []);
 
+  // Send a message to both AI models simultaneously for split-screen comparison
+  const sendSplitScreenMessage = useCallback(async (
+    messageText: string, 
+    topicId?: number, 
+    topicTitle?: string
+  ) => {
+    if (!messageText.trim()) return;
+
+    // Add user message to both models' histories
+    const userMessage: Message = {
+      id: Date.now(),
+      text: messageText,
+      sender: 'user',
+      timestamp: new Date(),
+    };
+
+    // Append to both models' histories
+    setMessagesByModel(prev => ({
+      together: [...prev.together, userMessage],
+      gemini: [...prev.gemini, userMessage]
+    }));
+    setIsLoading(true);
+
+    try {
+      // Get the last 10 messages for context (use combined history for better context)
+      const recentMessages = [...combinedMessages.slice(-9), userMessage];
+      const conversationHistory = formatConversationHistory(recentMessages);
+
+      // Make API call to get responses from both models
+      const response = await getSplitScreenTutorResponse({
+        question: messageText,
+        conversationHistory: conversationHistory,
+        preferences: tutorPreferences,
+        topic_id: topicId,
+        session_id: currentSessionId ?? undefined
+      });
+
+      // Check for errors
+      const isError = response.error === true;
+
+      // Add AI responses to both models' histories
+      const geminiMessage: Message = {
+        id: Date.now() + 1,
+        text: response.responses.gemini.error 
+          ? `Gemini AI Error: ${response.responses.gemini.error}`
+          : response.responses.gemini.response || 'Gemini AI: No response received.',
+        sender: 'bot', // Use 'bot' for Gemini to match the expected format
+        timestamp: new Date(),
+      };
+
+      const togetherMessage: Message = {
+        id: Date.now() + 2,
+        text: response.responses.together.error 
+          ? `Together AI Error: ${response.responses.together.error}`
+          : response.responses.together.response || 'Together AI: No response received.',
+        sender: 'ai', // Use 'ai' for Together to match the expected format
+        timestamp: new Date(),
+      };
+
+      // Attach meta information
+      (geminiMessage as any)._meta = {
+        chat_message_id: response.responses.gemini.message_id,
+        response_time_ms: response.responses.gemini.response_time_ms,
+        model: 'gemini',
+      };
+
+      (togetherMessage as any)._meta = {
+        chat_message_id: response.responses.together.message_id,
+        response_time_ms: response.responses.together.response_time_ms,
+        model: 'together',
+      };
+
+      // Append AI messages to both models' histories
+      setMessagesByModel(prev => {
+        console.log('Adding messages to both models:', {
+          gemini: geminiMessage,
+          together: togetherMessage,
+          prevTogether: prev.together.length,
+          prevGemini: prev.gemini.length
+        });
+        return {
+          together: [...prev.together, togetherMessage],
+          gemini: [...prev.gemini, geminiMessage]
+        };
+      });
+
+      // Update session ID if provided in response
+      if (!isError && response.session_id) {
+        setSessionIdByModel(prev => ({
+          together: response.session_id,
+          gemini: response.session_id
+        }));
+      }
+
+      return {
+        success: !isError,
+        geminiMessage,
+        togetherMessage,
+        sessionId: response.session_id
+      };
+    } catch (error) {
+      console.error('Error sending split-screen message to tutor:', error);
+      
+      // Add error messages to both models
+      const errorMessage: Message = {
+        id: Date.now() + 1,
+        text: 'Sorry, I encountered an error while processing your request. Please try again later.',
+        sender: 'ai',
+        timestamp: new Date(),
+      };
+
+      setMessagesByModel(prev => ({
+        together: [...prev.together, errorMessage],
+        gemini: [...prev.gemini, errorMessage]
+      }));
+      
+      return {
+        success: false,
+        error
+      };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [combinedMessages, currentSessionId, formatConversationHistory, tutorPreferences]);
+
   return {
     messages: currentMessages,
+    combinedMessages, // Add combined messages for split-screen mode
     isLoading,
     currentSessionId,
     tutorPreferences,
     sendMessage,
+    sendSplitScreenMessage,
     startTopicSession,
     updatePreferences,
     // setters act on the currently selected model to preserve separation
