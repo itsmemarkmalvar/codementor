@@ -52,14 +52,36 @@ export function useTutorChat(initialMessages: Message[] = []) {
       ...messagesByModel.together.map(msg => ({ ...msg, _model: 'together' as const })),
       ...messagesByModel.gemini.map(msg => ({ ...msg, _model: 'gemini' as const }))
     ];
+    
+    // Sort by timestamp first
     const sorted = allMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    
+    // Deduplicate user messages (they appear in both models but should only appear once)
+    const deduplicated = sorted.reduce((acc, msg) => {
+      if (msg.sender === 'user') {
+        // Check if we already have this user message (same timestamp and text)
+        const existing = acc.find(m => 
+          m.sender === 'user' && 
+          m.timestamp.getTime() === msg.timestamp.getTime() && 
+          m.text === msg.text
+        );
+        if (!existing) {
+          acc.push(msg);
+        }
+      } else {
+        // AI messages are unique per model, so keep them all
+        acc.push(msg);
+      }
+      return acc;
+    }, [] as typeof sorted);
+    
     console.log('Combined messages:', {
-      total: sorted.length,
+      total: deduplicated.length,
       together: messagesByModel.together.length,
       gemini: messagesByModel.gemini.length,
-      messages: sorted.map(m => ({ sender: m.sender, text: m.text.substring(0, 50) + '...' }))
+      messages: deduplicated.map(m => ({ sender: m.sender, text: m.text.substring(0, 50) + '...' }))
     });
-    return sorted;
+    return deduplicated;
   }, [messagesByModel.together, messagesByModel.gemini]);
 
   // Convert frontend message format to API format
@@ -289,7 +311,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
       // Make API call to get responses from both models
       const response = await getSplitScreenTutorResponse({
         question: messageText,
-        conversationHistory: conversationHistory,
+        conversation_history: conversationHistory,
         preferences: tutorPreferences,
         topic_id: topicId,
         session_id: currentSessionId ?? undefined
