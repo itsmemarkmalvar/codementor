@@ -212,6 +212,11 @@ export default function ChallengePage() {
             toast.success(`Complexity: ${data.complexity_score} • Reward: ${data.points_earned} pts`);
           }
           setShowCompletionDialog(true);
+          
+          // Track practice completion for engagement sequence
+          // This will trigger preference poll when user returns to Solo Room
+          localStorage.setItem('practiceCompleted', 'true');
+          localStorage.setItem('practiceCompletionTime', Date.now().toString());
         } else {
           setOutput("Some tests failed. Check the 'Test Results' tab for details.");
           setFeedback(data.feedback);

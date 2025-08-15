@@ -73,6 +73,7 @@ const SoloRoomRefactored = () => {
   const [showLessonCompletionModal, setShowLessonCompletionModal] = useState(false);
   const [engagementTriggered, setEngagementTriggered] = useState(false);
   const [lastThresholdTime, setLastThresholdTime] = useState<number>(0);
+  const [preferencePollType, setPreferencePollType] = useState<'quiz' | 'practice' | 'code_execution'>('quiz');
 
   // Use custom hooks
   const {
@@ -101,6 +102,7 @@ const SoloRoomRefactored = () => {
     engagementScore,
     isThresholdReached,
     triggeredActivity,
+    assessmentSequence,
     isTracking,
     trackMessage,
     trackCodeExecution,
@@ -127,11 +129,11 @@ const SoloRoomRefactored = () => {
       }
     },
     onQuizTrigger: () => {
-      // Auto-trigger quiz when engagement threshold is reached
+      // Auto-trigger quiz first (sequential flow)
       handleAutoTriggerQuiz();
     },
     onPracticeTrigger: () => {
-      // Auto-trigger practice when engagement threshold is reached
+      // Auto-trigger practice after quiz completion
       handleAutoTriggerPractice();
     },
     onPreferencePoll: () => {
@@ -244,7 +246,10 @@ const SoloRoomRefactored = () => {
     if (!splitScreenSession?.id) {
       console.log('No active session for user choice - skipping');
       setShowAIPreferenceModal(false);
-      setShowLessonCompletionModal(true);
+      // Only show lesson completion modal for quiz/practice, not code execution
+      if (preferencePollType !== 'code_execution') {
+        setShowLessonCompletionModal(true);
+      }
       setEngagementTriggered(false);
       return;
     }
@@ -252,17 +257,29 @@ const SoloRoomRefactored = () => {
     try {
       await recordUserChoice(splitScreenSession.id, { 
         choice: choice as 'gemini' | 'together' | 'both' | 'neither', 
-        reason 
+        reason
       });
       setShowAIPreferenceModal(false);
-      setShowLessonCompletionModal(true);
+      
+      // Only show lesson completion modal for quiz/practice, not code execution
+      if (preferencePollType !== 'code_execution') {
+        setShowLessonCompletionModal(true);
+      }
+      
       // Reset engagement to prevent immediate re-triggering
       setEngagementTriggered(false);
+      
+      // Show success message for code execution preference
+      if (preferencePollType === 'code_execution') {
+        toast.success('Thank you for your feedback!');
+      }
     } catch (error) {
       console.error('Error recording user choice:', error);
       // Continue anyway - close modal and show completion
       setShowAIPreferenceModal(false);
-      setShowLessonCompletionModal(true);
+      if (preferencePollType !== 'code_execution') {
+        setShowLessonCompletionModal(true);
+      }
       setEngagementTriggered(false);
       toast.error('Failed to record your choice');
     }
@@ -495,6 +512,29 @@ const SoloRoomRefactored = () => {
         setTimeout(() => {
           startTracking();
           console.log('Split-screen session started for topic:', topic.title, 'Session ID:', sessionData.id);
+          
+          // Check if user completed practice and returned to Solo Room
+          const practiceCompleted = localStorage.getItem('practiceCompleted');
+          const practiceCompletionTime = localStorage.getItem('practiceCompletionTime');
+          
+          if (practiceCompleted === 'true' && practiceCompletionTime) {
+            const completionTime = parseInt(practiceCompletionTime);
+            const timeSinceCompletion = Date.now() - completionTime;
+            
+            // If practice was completed within the last 10 minutes, show preference poll
+            if (timeSinceCompletion < 600000) { // 10 minutes
+              setTimeout(() => {
+                setShowAIPreferenceModal(true);
+                // Clear the flag
+                localStorage.removeItem('practiceCompleted');
+                localStorage.removeItem('practiceCompletionTime');
+              }, 3000); // 3 second delay
+            } else {
+              // Clear old flags
+              localStorage.removeItem('practiceCompleted');
+              localStorage.removeItem('practiceCompletionTime');
+            }
+          }
         }, 2000); // Reduced delay to 2 seconds
       } else {
         console.warn('Session creation returned invalid response:', session);
@@ -589,6 +629,19 @@ User Question: ${message}`;
       try {
         await incrementEngagement(splitScreenSession.id);
         trackCodeExecution();
+        
+        // Show AI preference poll for successful code execution
+        // Only show if we have recent AI interactions (within last 5 minutes)
+        const hasRecentAIInteraction = combinedMessages.some(msg => 
+          msg.sender === 'bot' || msg.sender === 'ai'
+        );
+        
+        if (hasRecentAIInteraction) {
+          setPreferencePollType('code_execution');
+          setTimeout(() => {
+            setShowAIPreferenceModal(true);
+          }, 2000); // 2 second delay after successful execution
+        }
       } catch (error) {
         console.warn('Failed to increment engagement:', error);
         // Don't throw the error - continue with the functionality
@@ -1731,6 +1784,7 @@ Please help me understand this topic step by step. Start with an overview of wha
                                   }
                                   
                                   // Show preference poll after quiz completion
+                                  setPreferencePollType('quiz');
                                   setTimeout(() => {
                                     setShowAIPreferenceModal(true);
                                   }, 1000);
@@ -1773,6 +1827,7 @@ Please help me understand this topic step by step. Start with an overview of wha
          }}
          onSubmit={handleUserChoice}
          sessionId={splitScreenSession?.id}
+         interactionType={preferencePollType}
        />
 
        <LessonCompletionModal

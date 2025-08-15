@@ -11,6 +11,7 @@ interface AIPreferenceModalProps {
   onSubmit: (choice: string, reason?: string) => void;
   sessionId?: number;
   isLoading?: boolean;
+  interactionType?: 'quiz' | 'practice' | 'code_execution';
 }
 
 const AI_OPTIONS = [
@@ -49,7 +50,8 @@ export function AIPreferenceModal({
   onClose, 
   onSubmit, 
   sessionId, 
-  isLoading = false 
+  isLoading = false,
+  interactionType = 'quiz'
 }: AIPreferenceModalProps) {
   const [selectedChoice, setSelectedChoice] = useState<string>('');
   const [reason, setReason] = useState<string>('');
@@ -83,7 +85,12 @@ export function AIPreferenceModal({
         
         <div className="space-y-4">
           <p className="text-sm text-gray-300">
-            After completing your quiz/practice, please let us know which AI tutor was most helpful. 
+            {interactionType === 'code_execution' 
+              ? 'After running your code, please let us know which AI tutor was most helpful with your coding questions.'
+              : interactionType === 'practice'
+              ? 'After completing your practice, please let us know which AI tutor was most helpful.'
+              : 'After completing your quiz, please let us know which AI tutor was most helpful.'
+            } 
             This helps us improve the learning experience for everyone.
           </p>
 

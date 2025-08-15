@@ -13,7 +13,7 @@ interface EngagementTrackerOptions {
 }
 
 interface EngagementEvent {
-  type: 'message' | 'code_execution' | 'scroll' | 'interaction' | 'time' | 'quiz_completed' | 'practice_completed';
+  type: 'message' | 'code_execution' | 'scroll' | 'interaction' | 'time';
   points: number;
   timestamp: Date;
 }
@@ -24,6 +24,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   const [events, setEvents] = useState<EngagementEvent[]>([]);
   const [isTracking, setIsTracking] = useState(false);
   const [triggeredActivity, setTriggeredActivity] = useState<'quiz' | 'practice' | null>(null);
+  const [assessmentSequence, setAssessmentSequence] = useState<'quiz' | 'practice' | null>(null);
   
   const lastActivityRef = useRef<Date>(new Date());
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -56,25 +57,19 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
         setIsThresholdReached(true);
         options.onThresholdReached?.();
         
-        // Auto-trigger quiz or practice if enabled
+        // Auto-trigger quiz first (sequential flow)
         if (options.autoTrigger !== false) {
-          const shouldTriggerQuiz = Math.random() > 0.5;
-          const activity = shouldTriggerQuiz ? 'quiz' : 'practice';
-          
-          setTriggeredActivity(activity);
+          setTriggeredActivity('quiz');
+          setAssessmentSequence('quiz');
           
           // Show toast notification
           toast.success(
-            `Great engagement! Let's test your knowledge with a ${activity}.`,
+            `Great engagement! Let's test your knowledge with a quiz.`,
             { duration: 3000 }
           );
           
-          // Trigger the appropriate activity
-          if (shouldTriggerQuiz) {
-            options.onQuizTrigger?.();
-          } else {
-            options.onPracticeTrigger?.();
-          }
+          // Trigger quiz first
+          options.onQuizTrigger?.();
         }
       }
       
@@ -115,27 +110,35 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     }
   }, [trackActivity]);
 
-  // Track quiz completion
+  // Track quiz completion (NO POINTS - triggers practice next)
   const trackQuizCompletion = useCallback(() => {
-    trackActivity('quiz_completed', 5);
     setTriggeredActivity(null);
     
-    // Show preference poll after quiz completion
+    // After quiz completion, trigger practice to test practical knowledge
     setTimeout(() => {
-      options.onPreferencePoll?.();
-    }, 1000);
-  }, [trackActivity, options.onPreferencePoll]);
+      setTriggeredActivity('practice');
+      setAssessmentSequence('practice');
+      
+      toast.success(
+        `Great job on the quiz! Now let's test your practical skills with some coding practice.`,
+        { duration: 4000 }
+      );
+      
+      // Trigger practice after quiz completion
+      options.onPracticeTrigger?.();
+    }, 2000); // 2 second delay before triggering practice
+  }, [options.onPracticeTrigger]);
 
-  // Track practice completion
+  // Track practice completion (NO POINTS - triggers preference poll and resets sequence)
   const trackPracticeCompletion = useCallback(() => {
-    trackActivity('practice_completed', 5);
     setTriggeredActivity(null);
+    setAssessmentSequence(null); // Reset sequence for next cycle
     
     // Show preference poll after practice completion
     setTimeout(() => {
       options.onPreferencePoll?.();
     }, 1000);
-  }, [trackActivity, options.onPreferencePoll]);
+  }, [options.onPreferencePoll]);
 
   // Start tracking
   const startTracking = useCallback(() => {
@@ -144,6 +147,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     setEngagementScore(0);
     setEvents([]);
     setTriggeredActivity(null);
+    setAssessmentSequence(null);
     lastActivityRef.current = new Date();
 
     // Set up activity timeout
@@ -203,6 +207,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     setIsThresholdReached(false);
     setEvents([]);
     setTriggeredActivity(null);
+    setAssessmentSequence(null);
     lastActivityRef.current = new Date();
   }, []);
 
@@ -224,7 +229,12 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       }, {} as Record<string, number>),
       averagePointsPerMinute: events.length > 0 
         ? (engagementScore / (sessionDuration / 60000)).toFixed(2)
-        : '0'
+        : '0',
+      // Add assessment tracking (separate from engagement points)
+      assessmentsCompleted: {
+        quizzes: 0, // Will be tracked separately
+        practices: 0 // Will be tracked separately
+      }
     };
   }, [engagementScore, options.threshold, isThresholdReached, triggeredActivity, events]);
 
@@ -241,6 +251,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     engagementScore,
     isThresholdReached,
     triggeredActivity,
+    assessmentSequence,
     isTracking,
     trackMessage,
     trackCodeExecution,
