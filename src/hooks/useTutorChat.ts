@@ -311,7 +311,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
       // Make API call to get responses from both models
       const response = await getSplitScreenTutorResponse({
         question: messageText,
-        conversation_history: conversationHistory,
+        conversationHistory: conversationHistory,
         preferences: tutorPreferences,
         topic_id: topicId,
         session_id: currentSessionId ?? undefined

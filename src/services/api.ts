@@ -273,6 +273,7 @@ export const getTutorResponse = async (params: {
 export const getSplitScreenTutorResponse = async (params: {
   question: string;
   conversation_history?: Array<{role: string; content: string}>;
+  conversationHistory?: Array<{role: string; content: string}>;
   topic_id?: number;
   session_id?: number;
   preferences?: any;
@@ -281,7 +282,7 @@ export const getSplitScreenTutorResponse = async (params: {
   try {
     const requestParams: any = {
       question: params.question,
-      conversation_history: params.conversation_history || [],
+      conversation_history: params.conversation_history || params.conversationHistory || [],
       preferences: params.preferences || {}
     };
     
