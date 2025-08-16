@@ -187,14 +187,14 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
            </div>
          )}
         
-                                   <div className={`max-w-[99%] w-full ${isUser ? 'order-1' : 'order-2'}`}>
-            <div className={`rounded-2xl px-3 py-2 shadow-sm message-bubble w-full ${
+                                   <div className={`w-full ${isUser ? 'order-1' : 'order-2'}`}>
+            <div className={`rounded-2xl px-3 py-2 shadow-sm message-bubble ${
               isUser 
                 ? 'bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] text-white ml-auto' 
                 : message.sender === 'gemini'
                   ? 'bg-gradient-to-r from-blue-500/10 to-blue-600/10 text-white border border-blue-500/20 backdrop-blur-sm'
                   : 'bg-gradient-to-r from-green-500/10 to-green-600/10 text-white border border-green-500/20 backdrop-blur-sm'
-            }`} style={{ maxWidth: '99%', width: '100%' }}>
+            }`}>
                          {!isUser && (
                <div className="flex items-center gap-2 mb-1">
                  <span className="font-semibold text-xs text-gray-200">
@@ -220,9 +220,9 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
                    );
                  } else {
                    return (
-                     <p key={partIndex} className={`whitespace-pre-wrap text-xs leading-relaxed break-words w-full ${
+                     <p key={partIndex} className={`whitespace-pre-wrap text-xs leading-relaxed ${
                        isUser ? 'text-white' : 'text-gray-100'
-                     }`} style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+                     }`}>
                        {part.content}
                      </p>
                    );

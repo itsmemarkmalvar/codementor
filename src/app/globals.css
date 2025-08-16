@@ -119,69 +119,32 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* Custom styles for split-screen chat */
-.split-screen-chat .message-content {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  hyphens: auto;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.split-screen-chat .message-bubble {
-  max-width: 98%;
-  width: 100%;
-  word-break: break-word;
-  min-width: 0;
-  overflow-wrap: break-word;
-  max-width: 100%;
-}
-
-/* Ensure text doesn't overflow in chat bubbles */
-.chat-message p {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  hyphens: auto;
-  line-height: 1.5;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  white-space: pre-wrap;
-}
-
-/* Force text wrapping in split-screen layout */
-.split-screen-chat .message-bubble * {
-  max-width: 100%;
-  overflow-wrap: break-word;
-  word-break: break-word;
-}
-
-/* Ensure flex items don't shrink in split-screen chat */
-.split-screen-chat .flex {
-  min-width: 0;
-}
-
-.split-screen-chat .flex > * {
-  min-width: 0;
-  flex-shrink: 1;
-}
-
-/* Additional fixes for Together AI panel specifically */
-.split-screen-chat .message-bubble .message-content {
+/* Fix chat bubble text cropping */
+.message-bubble {
   max-width: 100% !important;
-  width: 100% !important;
+  word-wrap: break-word !important;
   overflow-wrap: break-word !important;
-  word-break: break-word !important;
+  width: 100% !important;
+  min-width: 0 !important;
 }
 
-/* Ensure the text content doesn't get cut off */
-.split-screen-chat .message-bubble p {
-  max-width: 100% !important;
-  width: 100% !important;
+.message-bubble p {
+  word-wrap: break-word !important;
   overflow-wrap: break-word !important;
-  word-break: break-word !important;
   white-space: pre-wrap !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+/* Force text wrapping in all chat elements */
+.message-content,
+.chat-message {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
 }
 
 @layer base {
