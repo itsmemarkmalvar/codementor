@@ -17,6 +17,7 @@ import {
   BookOpen,
   ChevronDown,
   MessageSquare,
+  BarChart3,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import AuthGuard from "@/components/AuthGuard";

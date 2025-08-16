@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
-import { getModelComparison, getTopics } from "@/services/api";
+import { getModelComparison, getTopics, getAIPreferenceAnalytics } from "@/services/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock3, Bug, Star, ShieldAlert, Activity, Calendar, Hash, Timer, SlidersHorizontal, BookOpen } from "lucide-react";
+import { CheckCircle2, Clock3, Bug, Star, ShieldAlert, Activity, Calendar, Hash, Timer, SlidersHorizontal, BookOpen, Users, BarChart3, Trophy, TrendingUp, GraduationCap, Code } from "lucide-react";
 
 export default function ModelsComparisonPage() {
   const [data, setData] = useState<any | null>(null);
+  const [preferenceData, setPreferenceData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [topics, setTopics] = useState<Array<{id:number; title:string}>>([]);
   const [filters, setFilters] = useState<{window:string; k_runs:number; lookahead_min:number; topic_id?: number; difficulty?: string; nmin:number; use_attribution_first?: boolean; quiz_pass_percent?: number}>({ window: "30d", k_runs: 3, lookahead_min: 30, nmin: 5, use_attribution_first: true, quiz_pass_percent: 70 });
@@ -18,13 +19,19 @@ export default function ModelsComparisonPage() {
     (async () => {
       try {
         setLoading(true);
-        const [resp, ts] = await Promise.all([
+        const [resp, ts, prefResp] = await Promise.all([
           getModelComparison(filters),
           getTopics().catch(() => []),
+          getAIPreferenceAnalytics({
+            window: filters.window,
+            topic_id: filters.topic_id,
+            difficulty: filters.difficulty
+          }).catch(() => null),
         ]);
         if (!mounted) return;
         setData(resp);
         setTopics(Array.isArray(ts) ? ts : []);
+        setPreferenceData(prefResp?.data || null);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -156,16 +163,72 @@ export default function ModelsComparisonPage() {
                 <h3 className="text-white font-semibold capitalize">{m}</h3>
                 <span className="text-xs text-gray-400">n={u.n ?? 0}{disabled(u.n)?' • min '+(data?.nmin ?? filters.nmin): ''}</span>
               </div>
-              <div className="space-y-3 text-sm">
-                <div>
-                  <StatRow label="Next‑run success" value={typeof u.success1 === 'number' ? `${Math.round((u.success1 || 0)*100)}%` : '—'} icon={<CheckCircle2 className="h-4 w-4 text-emerald-400"/>} />
-                  {typeof u.success1 === 'number' ? renderBar(((u.success1 || 0) * 100) || 0, "bg-emerald-500") : null}
-                </div>
+                             <div className="space-y-3 text-sm">
+
+                 
+                 <div>
+                   <StatRow label="Next‑run success" value={typeof u.success1 === 'number' ? `${Math.round((u.success1 || 0)*100)}%` : '—'} icon={<CheckCircle2 className="h-4 w-4 text-emerald-400"/>} />
+                   {typeof u.success1 === 'number' ? renderBar(((u.success1 || 0) * 100) || 0, "bg-emerald-500") : null}
+                 </div>
                 <StatRow label="Time to fix" value={typeof u.ttf_min === 'number' ? `${u.ttf_min.toFixed(1)} min` : '—'} icon={<Clock3 className="h-4 w-4 text-blue-400"/>} />
                 <StatRow label="Error reduction" value={typeof u.delta_errors === 'number' ? u.delta_errors : '—'} icon={<Bug className="h-4 w-4 text-orange-400"/>} />
                 <StatRow label="Rating" value={typeof u.rating === 'number' ? u.rating.toFixed(1) : '—'} icon={<Star className="h-4 w-4 text-yellow-400"/>} />
                 <StatRow label="Fallback rate" value={typeof u.fallback_rate === 'number' ? `${Math.round(u.fallback_rate*100)}%` : '—'} icon={<ShieldAlert className="h-4 w-4 text-rose-400"/>} />
                 <StatRow label="Latency" value={typeof u.latency_ms === 'number' ? `${u.latency_ms.toFixed(0)} ms` : '—'} icon={<Activity className="h-4 w-4 text-purple-400"/>} />
+                
+                                 {/* Quiz Performance Metrics */}
+                 {preferenceData && (
+                   <>
+                     <div className="border-t border-white/10 pt-3 mt-3">
+                       <div className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Quiz Performance</div>
+                       <StatRow 
+                         label="Quiz Pass Rate" 
+                         value={(() => {
+                           const quizData = preferenceData.quiz_analysis?.model_analysis?.[m];
+                           return quizData ? `${quizData.pass_rate}%` : '—';
+                         })()} 
+                         icon={<BookOpen className="h-4 w-4 text-indigo-400"/>} 
+                       />
+                       <StatRow 
+                         label="Avg Quiz Score" 
+                         value={(() => {
+                           const quizData = preferenceData.quiz_analysis?.model_analysis?.[m];
+                           return quizData ? `${quizData.avg_score}%` : '—';
+                         })()} 
+                         icon={<BarChart3 className="h-4 w-4 text-cyan-400"/>} 
+                       />
+                       <StatRow 
+                         label="Quiz Attempts" 
+                         value={(() => {
+                           const quizData = preferenceData.quiz_analysis?.model_analysis?.[m];
+                           return quizData ? quizData.total_attempts : '—';
+                         })()} 
+                         icon={<Users className="h-4 w-4 text-pink-400"/>} 
+                       />
+                     </div>
+                     
+                     {/* Practice Performance Metrics */}
+                     <div className="border-t border-white/10 pt-3">
+                       <div className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Practice Performance</div>
+                       <StatRow 
+                         label="Practice Success" 
+                         value={(() => {
+                           const practiceData = preferenceData.practice_analysis?.model_analysis?.[m];
+                           return practiceData ? `${practiceData.success_rate}%` : '—';
+                         })()} 
+                         icon={<GraduationCap className="h-4 w-4 text-green-400"/>} 
+                       />
+                       <StatRow 
+                         label="Practice Attempts" 
+                         value={(() => {
+                           const practiceData = preferenceData.practice_analysis?.model_analysis?.[m];
+                           return practiceData ? practiceData.total_attempts : '—';
+                         })()} 
+                         icon={<Code className="h-4 w-4 text-orange-400"/>} 
+                       />
+                     </div>
+                   </>
+                 )}
               </div>
             </Card>
           );
@@ -196,6 +259,8 @@ export default function ModelsComparisonPage() {
           })}
         </div>
       </Card>
+
+
 
       {loading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

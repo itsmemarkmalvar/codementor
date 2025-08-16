@@ -700,6 +700,8 @@ export const endSession = async (sessionId: number) => {
 export const recordUserChoice = async (sessionId: number, params: {
   choice: 'gemini' | 'together' | 'both' | 'neither';
   reason?: string;
+  activity_type?: 'quiz' | 'practice' | 'code_execution';
+  performance_metrics?: any;
 }) => {
   const response = await api.post(`/sessions/${sessionId}/choice`, params);
   return response.data;
@@ -1571,5 +1573,22 @@ if (typeof window !== 'undefined') {
 // =============
 export const rateMessage = async (messageId: number, rating: number) => {
   const response = await api.post(`/messages/${messageId}/rate`, { rating });
+  return response.data;
+};
+
+// =============
+// Analytics API
+// =============
+export const getAIPreferenceAnalytics = async (params: {
+  window?: string;
+  topic_id?: number;
+  difficulty?: string;
+}) => {
+  const queryParams = new URLSearchParams();
+  if (params.window) queryParams.append('window', params.window);
+  if (params.topic_id) queryParams.append('topic_id', params.topic_id.toString());
+  if (params.difficulty) queryParams.append('difficulty', params.difficulty);
+  
+  const response = await api.get(`/analytics/ai-preferences?${queryParams.toString()}`);
   return response.data;
 };

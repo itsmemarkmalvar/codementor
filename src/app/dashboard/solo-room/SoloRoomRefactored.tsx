@@ -257,7 +257,8 @@ const SoloRoomRefactored = () => {
     try {
       await recordUserChoice(splitScreenSession.id, { 
         choice: choice as 'gemini' | 'together' | 'both' | 'neither', 
-        reason
+        reason,
+        activity_type: preferencePollType
       });
       setShowAIPreferenceModal(false);
       
@@ -524,6 +525,7 @@ const SoloRoomRefactored = () => {
             // If practice was completed within the last 10 minutes, show preference poll
             if (timeSinceCompletion < 600000) { // 10 minutes
               setTimeout(() => {
+                setPreferencePollType('practice');
                 setShowAIPreferenceModal(true);
                 // Clear the flag
                 localStorage.removeItem('practiceCompleted');
