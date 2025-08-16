@@ -174,9 +174,9 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
     const parts = parseMessageWithCodeBlocks(message.text);
     const isUser = message.sender === 'user';
     
-    return (
-             <div key={`${message.id}-${index || 0}-${message.timestamp.getTime()}`} 
-            className={`flex gap-2 mb-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+         return (
+              <div key={`${message.id}-${index || 0}-${message.timestamp.getTime()}`} 
+            className={`flex gap-2 mb-2 w-full ${isUser ? 'justify-end' : 'justify-start'}`}>
                  {!isUser && (
            <div className="flex-shrink-0 mt-1">
              <Avatar className={`h-6 w-6 ${message.sender === 'gemini' ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-green-500 to-green-600'}`}>
@@ -187,14 +187,14 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
            </div>
          )}
         
-                 <div className={`max-w-[85%] ${isUser ? 'order-1' : 'order-2'}`}>
-           <div className={`rounded-2xl px-3 py-2 shadow-sm ${
-             isUser 
-               ? 'bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] text-white ml-auto' 
-               : message.sender === 'gemini'
-                 ? 'bg-gradient-to-r from-blue-500/10 to-blue-600/10 text-white border border-blue-500/20 backdrop-blur-sm'
-                 : 'bg-gradient-to-r from-green-500/10 to-green-600/10 text-white border border-green-500/20 backdrop-blur-sm'
-           }`}>
+                                   <div className={`max-w-[99%] w-full ${isUser ? 'order-1' : 'order-2'}`}>
+            <div className={`rounded-2xl px-3 py-2 shadow-sm message-bubble w-full ${
+              isUser 
+                ? 'bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] text-white ml-auto' 
+                : message.sender === 'gemini'
+                  ? 'bg-gradient-to-r from-blue-500/10 to-blue-600/10 text-white border border-blue-500/20 backdrop-blur-sm'
+                  : 'bg-gradient-to-r from-green-500/10 to-green-600/10 text-white border border-green-500/20 backdrop-blur-sm'
+            }`} style={{ maxWidth: '99%', width: '100%' }}>
                          {!isUser && (
                <div className="flex items-center gap-2 mb-1">
                  <span className="font-semibold text-xs text-gray-200">
@@ -208,7 +208,7 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
                </div>
              )}
             
-                         <div className="message-content">
+                         <div className="message-content chat-message w-full">
                {parts.map((part, partIndex) => {
                  if (part.type === 'code') {
                    return (
@@ -220,9 +220,9 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
                    );
                  } else {
                    return (
-                     <p key={partIndex} className={`whitespace-pre-wrap text-xs leading-relaxed ${
+                     <p key={partIndex} className={`whitespace-pre-wrap text-xs leading-relaxed break-words w-full ${
                        isUser ? 'text-white' : 'text-gray-100'
-                     }`}>
+                     }`} style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word', overflowWrap: 'break-word' }}>
                        {part.content}
                      </p>
                    );
@@ -294,7 +294,7 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
          <Card className="h-[500px] overflow-hidden bg-gradient-to-b from-white/5 to-white/3 border-white/10 relative shadow-inner">
            <ScrollArea 
              ref={scrollRef}
-             className="h-full p-4 custom-scrollbar overflow-y-auto"
+             className="h-full p-4 custom-scrollbar overflow-y-auto overflow-x-hidden w-full"
              onScrollCapture={model === 'gemini' ? handleGeminiScroll : handleTogetherScroll}
            >
                          {messages.length === 0 ? (
@@ -331,7 +331,7 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
   };
 
      return (
-     <div className="flex flex-col overflow-hidden">
+     <div className="flex flex-col overflow-hidden split-screen-chat">
              {/* Topic Header */}
        {topic && (
          <div className="flex-shrink-0 p-3 bg-gradient-to-r from-[#2E5BFF]/20 to-[#1E40AF]/20 rounded-xl mb-1 border border-[#2E5BFF]/30 backdrop-blur-sm">
