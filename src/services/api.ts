@@ -433,6 +433,10 @@ export const executeJavaCode = async (params: {
         errorMessage = 'The code execution service is temporarily unavailable.';
       } else if (error.response.data && error.response.data.message) {
         errorMessage = `Error: ${error.response.data.message}`;
+      } else if (error.response.data && error.response.data.errors) {
+        // Handle validation errors
+        const validationErrors = Object.values(error.response.data.errors).flat();
+        errorMessage = `Validation Error: ${validationErrors.join(', ')}`;
       }
     } else if (error.request) {
       console.error('No response received:', error.request);
