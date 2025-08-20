@@ -8,7 +8,7 @@ import Editor from "@monaco-editor/react";
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { api } from "@/services/api";
+import { api, createAIPreferenceLog } from "@/services/api";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -16,6 +16,7 @@ import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
 import { PracticeResourcesList } from "@/components/practice/PracticeResourcesList";
+import { AIPreferenceModal } from "@/components/ui/AIPreferenceModal";
 
 interface Problem {
   id: number;
@@ -72,6 +73,12 @@ export default function ChallengePage() {
   const [pointsEarned, setPointsEarned] = useState(0);
   const [showCompletionDialog, setShowCompletionDialog] = useState(false);
   const [suggestedResources, setSuggestedResources] = useState<any[]>([]);
+  
+  // AI Preference Poll state
+  const [showAIPreferenceModal, setShowAIPreferenceModal] = useState(false);
+  const [practiceAttemptId, setPracticeAttemptId] = useState<number | null>(null);
+  const [isSubmittingPreference, setIsSubmittingPreference] = useState(false);
+  const [pollSubmitted, setPollSubmitted] = useState(false);
 
   // Load problem details
   useEffect(() => {
@@ -173,7 +180,9 @@ export default function ChallengePage() {
       // Send code to API for execution
       const response = await api.post(`/practice/problems/${problem.id}/solution`, {
         code: code,
-        time_spent_seconds: startTime ? Math.floor((Date.now() - startTime) / 1000) : undefined
+        time_spent_seconds: startTime ? Math.floor((Date.now() - startTime) / 1000) : undefined,
+        hints_used: hintsUsed,
+        chat_message_id: localStorage.getItem('last_chat_message_id') // For attribution
       });
       console.log('[Practice] API response status', response.status);
       console.log('[Practice] API response payload', response.data);
@@ -207,6 +216,8 @@ export default function ChallengePage() {
           setOutput("All tests passed successfully! Great job!");
           setPointsEarned(data.points_earned);
           setFeedback(data.feedback);
+          setPracticeAttemptId(data.attempt_id);
+          
           // Show complexity and reward points in completion dialog
           if (data.complexity_score !== undefined) {
             toast.success(`Complexity: ${data.complexity_score} • Reward: ${data.points_earned} pts`);
@@ -214,7 +225,6 @@ export default function ChallengePage() {
           setShowCompletionDialog(true);
           
           // Track practice completion for engagement sequence
-          // This will trigger preference poll when user returns to Solo Room
           localStorage.setItem('practiceCompleted', 'true');
           localStorage.setItem('practiceCompletionTime', Date.now().toString());
         } else {
@@ -229,6 +239,67 @@ export default function ChallengePage() {
     } finally {
       console.log('[Practice] Execution finished');
       setExecuting(false);
+    }
+  };
+
+  // Handle AI preference submission
+  const handleAIPreferenceSubmit = async (choice: string, reason?: string) => {
+    if (!practiceAttemptId) {
+      console.error('No practice attempt ID for preference submission');
+      setShowAIPreferenceModal(false);
+      return;
+    }
+
+    try {
+      setIsSubmittingPreference(true);
+      
+      // Create AI preference log entry
+      const response = await createAIPreferenceLog({
+        practice_attempt_id: practiceAttemptId,
+        chosen_ai: choice,
+        choice_reason: reason,
+        interaction_type: 'practice',
+        topic_id: problem?.topic_tags?.[0] ? parseInt(problem.topic_tags[0]) : null,
+        difficulty_level: problem?.difficulty_level,
+        performance_score: pointsEarned,
+        success_rate: 100, // Practice completed successfully
+        time_spent_seconds: startTime ? Math.floor((Date.now() - startTime) / 1000) : 0,
+        attempt_count: 1, // This was a successful attempt
+        context_data: {
+          problem_id: problem?.id,
+          problem_title: problem?.title,
+          complexity_score: pointsEarned,
+          hints_used: hintsUsed.length,
+          test_results: testResults.length
+        }
+      });
+
+      console.log('[Practice] AI preference submitted:', response.data);
+      toast.success('Thank you for your feedback!');
+      
+      // Mark poll as submitted and close preference modal
+      setPollSubmitted(true);
+      setShowAIPreferenceModal(false);
+      
+      // Show completion dialog again so user can see final score and choose next action
+      setShowCompletionDialog(true);
+      
+    } catch (error) {
+      console.error('[Practice] Error submitting AI preference:', error);
+      toast.error('Failed to submit preference. Please try again.');
+    } finally {
+      setIsSubmittingPreference(false);
+    }
+  };
+
+  // Handle completion dialog close
+  const handleCompletionDialogClose = () => {
+    setShowCompletionDialog(false);
+    // Show AI preference poll after a short delay, but only if not already submitted
+    if (!pollSubmitted) {
+      setTimeout(() => {
+        setShowAIPreferenceModal(true);
+      }, 500);
     }
   };
 
@@ -896,13 +967,22 @@ export default function ChallengePage() {
                 </Link>
                 <Button 
                   className="bg-[#2E5BFF] hover:bg-[#2E5BFF]/80 text-white"
-                  onClick={() => setShowCompletionDialog(false)}
+                  onClick={handleCompletionDialogClose}
                 >
                   Continue
                 </Button>
               </div>
             </DialogContent>
           </Dialog>
+          
+          {/* AI Preference Modal */}
+          <AIPreferenceModal
+            isOpen={showAIPreferenceModal}
+            onClose={() => setShowAIPreferenceModal(false)}
+            onSubmit={handleAIPreferenceSubmit}
+            isLoading={isSubmittingPreference}
+            interactionType="practice"
+          />
         </>
       ) : (
         <div className="flex flex-col items-center justify-center py-12 text-center">

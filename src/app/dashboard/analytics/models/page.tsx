@@ -154,6 +154,8 @@ export default function ModelsComparisonPage() {
         </div>
       </div>
 
+
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {["gemini", "together"].map((m) => {
           const u = UM(m) || {};
@@ -213,16 +215,18 @@ export default function ModelsComparisonPage() {
                        <StatRow 
                          label="Practice Success" 
                          value={(() => {
-                           const practiceData = preferenceData.practice_analysis?.model_analysis?.[m];
-                           return practiceData ? `${practiceData.success_rate}%` : '—';
+                           // Use the new practice-based data from user_model
+                           const modelData = data?.user_model?.find((x: any) => x.model === m);
+                           return modelData?.practice_success !== undefined ? `${Math.round((modelData.practice_success || 0) * 100)}%` : '—';
                          })()} 
                          icon={<GraduationCap className="h-4 w-4 text-green-400"/>} 
                        />
                        <StatRow 
                          label="Practice Attempts" 
                          value={(() => {
-                           const practiceData = preferenceData.practice_analysis?.model_analysis?.[m];
-                           return practiceData ? practiceData.total_attempts : '—';
+                           // Use the new practice-based data from user_model
+                           const modelData = data?.user_model?.find((x: any) => x.model === m);
+                           return modelData?.practice_attempts !== undefined ? modelData.practice_attempts : '—';
                          })()} 
                          icon={<Code className="h-4 w-4 text-orange-400"/>} 
                        />
@@ -242,10 +246,9 @@ export default function ModelsComparisonPage() {
             { k: "success1", label: "Δ Next‑run success", fmt: (v:number)=> `${Math.round(v*100)}%` },
             { k: "ttf_min", label: "Δ Time to fix", fmt: (v:number)=> `${v.toFixed(1)} min` },
             { k: "delta_errors", label: "Δ Error reduction", fmt: (v:number)=> `${v}` },
-            { k: "delta_quiz", label: "Δ Quiz %", fmt: (v:number)=> `${v.toFixed(1)} pp` },
-            { k: "delta_progress", label: "Δ Progress", fmt: (v:number)=> `${v.toFixed(1)} pp` },
             { k: "rating", label: "Δ Rating", fmt: (v:number)=> `${v.toFixed(2)}` },
-            { k: "fallback_rate", label: "Δ Fallback", fmt: (v:number)=> `${Math.round(v*100)}%` },
+            { k: "practice_success", label: "Δ Practice Success", fmt: (v:number)=> `${Math.round(v*100)}%` },
+            { k: "practice_attempts", label: "Δ Practice Attempts", fmt: (v:number)=> `${v.toFixed(1)}` },
           ].map(row => {
             const s = data?.paired?.[row.k];
             const show = typeof s?.mean === 'number' && (!data?.nmin || (typeof s?.n === 'number' ? s.n >= data.nmin : true));

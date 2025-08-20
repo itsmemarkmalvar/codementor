@@ -207,6 +207,16 @@ export default function DashboardPage() {
                   <p className="text-gray-300">
                     Paired Δ success: {modelCompare.paired?.success1?.mean !== null && modelCompare.paired?.success1 ? (Math.round((modelCompare.paired.success1.mean||0)*100)) : 0}%
                   </p>
+                  {modelCompare.enhanced_tica?.preference_rates && (
+                    <div className="mt-2 pt-2 border-t border-white/10">
+                      <p className="text-xs text-gray-400 mb-1">AI Preferences:</p>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-blue-400">Gemini: {modelCompare.enhanced_tica.preference_rates.gemini_preference_rate}%</span>
+                        <span className="text-green-400">Together: {modelCompare.enhanced_tica.preference_rates.together_preference_rate}%</span>
+                        <span className="text-purple-400">Both: {modelCompare.enhanced_tica.preference_rates.both_preference_rate}%</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (

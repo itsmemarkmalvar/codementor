@@ -1592,3 +1592,37 @@ export const getAIPreferenceAnalytics = async (params: {
   const response = await api.get(`/analytics/ai-preferences?${queryParams.toString()}`);
   return response.data;
 };
+
+// =============
+// AI Preference Logs API
+// =============
+export const createAIPreferenceLog = async (data: {
+  practice_attempt_id: number;
+  chosen_ai: string;
+  choice_reason?: string;
+  interaction_type: string;
+  topic_id?: number;
+  difficulty_level?: string;
+  performance_score?: number;
+  success_rate?: number;
+  time_spent_seconds?: number;
+  attempt_count?: number;
+  context_data?: any;
+}) => {
+  const response = await api.post('/ai-preference-logs', data);
+  return response.data;
+};
+
+export const getUserAIPreferences = async (params: {
+  window?: string;
+  interaction_type?: string;
+  topic_id?: number;
+}) => {
+  const queryParams = new URLSearchParams();
+  if (params.window) queryParams.append('window', params.window);
+  if (params.interaction_type) queryParams.append('interaction_type', params.interaction_type);
+  if (params.topic_id) queryParams.append('topic_id', params.topic_id.toString());
+  
+  const response = await api.get(`/ai-preference-logs?${queryParams.toString()}`);
+  return response.data;
+};

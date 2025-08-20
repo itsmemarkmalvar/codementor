@@ -255,11 +255,17 @@ const SoloRoomRefactored = () => {
     }
 
     try {
+      // Record user choice for split-screen session
       await recordUserChoice(splitScreenSession.id, { 
         choice: choice as 'gemini' | 'together' | 'both' | 'neither', 
         reason,
         activity_type: preferencePollType
       });
+
+      // Note: The session choice endpoint (/sessions/{sessionId}/choice) already creates
+      // the AIPreferenceLog entry for Compare AI analytics, so we don't need to call
+      // createAIPreferenceLog separately here.
+
       setShowAIPreferenceModal(false);
       
       // Only show lesson completion modal for quiz/practice, not code execution
