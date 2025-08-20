@@ -680,8 +680,8 @@ User Question: ${message}`;
     // Set analyzing state
     setIsAnalyzingCode(true);
     
-    // Show loading state
-    toast.loading('Sending code to AI models for analysis...', { duration: 2000 });
+    // Show loading state and store the toast ID to dismiss it later
+    const loadingToastId = toast.loading('Sending code to AI models for analysis...');
     
     // Create a message that includes the code for AI analysis
     const analysisMessage = `Please analyze this Java code and provide feedback on:
@@ -708,12 +708,17 @@ Please provide detailed, constructive feedback.`;
         // Switch to chat tab to show the analysis
         setActiveTab('chat');
         
-        toast.success('Code sent to AI models for analysis! Check the chat for feedback.');
+        // Dismiss the loading toast and show success
+        toast.dismiss(loadingToastId);
+        toast.success('Code sent to AI models for analysis! Check the chat for feedback.', { duration: 3000 });
       } else {
         // Fallback to single AI mode
         await sendMessage(analysisMessage);
         setActiveTab('chat');
-        toast.success('Code sent for analysis! Check the chat for feedback.');
+        
+        // Dismiss the loading toast and show success
+        toast.dismiss(loadingToastId);
+        toast.success('Code sent for analysis! Check the chat for feedback.', { duration: 3000 });
       }
       
       // Track progress for code analysis
@@ -721,6 +726,9 @@ Please provide detailed, constructive feedback.`;
       
     } catch (error) {
       console.error('Error sending code for analysis:', error);
+      
+      // Dismiss the loading toast and show error
+      toast.dismiss(loadingToastId);
       toast.error('Failed to send code for analysis');
     } finally {
       // Reset analyzing state
