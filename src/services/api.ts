@@ -310,6 +310,7 @@ export const getSplitScreenTutorResponse = async (params: {
     });
     
     console.log('getSplitScreenTutorResponse API response status:', response.status);
+    console.log('getSplitScreenTutorResponse API response data:', response.data);
     
     if (!response.data) {
       throw new Error('Empty response from API');

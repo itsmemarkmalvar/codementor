@@ -340,6 +340,15 @@ export function useTutorChat(initialMessages: Message[] = []) {
         timestamp: new Date(),
       };
 
+      // Debug logging for Together AI response
+      console.log('Together AI Response Debug:', {
+        hasError: !!response.responses.together.error,
+        error: response.responses.together.error,
+        hasResponse: !!response.responses.together.response,
+        responseLength: response.responses.together.response ? response.responses.together.response.length : 0,
+        responsePreview: response.responses.together.response ? response.responses.together.response.substring(0, 100) + '...' : 'No response'
+      });
+
       // Attach meta information
       (geminiMessage as any)._meta = {
         chat_message_id: response.responses.gemini.message_id,

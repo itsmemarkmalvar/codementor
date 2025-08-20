@@ -677,11 +677,11 @@ User Question: ${message}`;
     // Mark as activity
     lastActivityRef.current = Date.now();
     
-    // Set analyzing state
-    setIsAnalyzingCode(true);
-    
     // Show loading state and store the toast ID to dismiss it later
     const loadingToastId = toast.loading('Sending code to AI models for analysis...');
+    
+    // Set analyzing state
+    setIsAnalyzingCode(true);
     
     // Create a message that includes the code for AI analysis
     const analysisMessage = `Please analyze this Java code and provide feedback on:
