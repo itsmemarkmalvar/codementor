@@ -45,7 +45,7 @@ export function useCodeExecution() {
   // Execute single Java file
   const executeCode = useCallback(async (
     code: string = codeInput,
-    sessionId?: number | null,
+    sessionId?: string | null,
     topicId?: number | null,
     conversationHistory: ConversationMessage[] = []
   ) => {

@@ -13,6 +13,7 @@ import { isAuthenticated, getToken } from '@/lib/auth-utils';
 import { useTutorChat } from '@/hooks/useTutorChat';
 import { useCodeExecution } from '@/hooks/useCodeExecution';
 import { useEngagementTracker } from '@/hooks/useEngagementTracker';
+import { useSession } from '@/contexts/SessionContext';
 
 // Import refactored components
 import { ChatInterface } from '@/components/solo-room/ChatInterface';
@@ -97,6 +98,9 @@ const SoloRoomRefactored = () => {
     executeCode,
     formatCode
   } = useCodeExecution();
+
+  // Use the new session system
+  const { currentSession, initializeSession, deactivateSession } = useSession();
 
   // Engagement tracking for split-screen mode
   const {
@@ -594,7 +598,7 @@ User Question: ${message}`;
     })();
 
     // Use split-screen message function for simultaneous AI responses
-    await sendSplitScreenMessage(messageWithDifficulty, topicToUse.id, topicToUse.title || 'Learning Session', splitScreenSession?.id);
+            await sendSplitScreenMessage(messageWithDifficulty, topicToUse.id, topicToUse.title || 'Learning Session', currentSession?.session_identifier || splitScreenSession?.session_identifier);
     
     // Track progress for sending a message
     updateProgress(1, 'interaction');
@@ -664,6 +668,7 @@ User Question: ${message}`;
 
   // AI Analysis handler (Blue button - sends code to both AI models for analysis)
   const handleAnalyzeCode = async () => {
+    
     if (!selectedTopic) {
       toast.error('Please select a topic first');
       return;
@@ -699,8 +704,16 @@ Please provide detailed, constructive feedback.`;
 
     try {
       // Send to both AI models in split-screen mode
-      if (isSplitScreenMode && splitScreenSession?.id) {
-        await sendSplitScreenMessage(analysisMessage, selectedTopic.id, selectedTopic.title, splitScreenSession.id);
+      const sessionId = currentSession?.session_identifier || splitScreenSession?.session_identifier;
+      if (isSplitScreenMode) {
+        const result = await sendSplitScreenMessage(analysisMessage, selectedTopic.id, selectedTopic.title, sessionId);
+        
+        // If a new session was created, update the session state
+        if (result?.sessionId && !currentSession?.session_identifier) {
+          console.log('New session created:', result.sessionId);
+          // The session will be automatically created by the backend and returned in the response
+          // We need to wait for the session to be available in the context
+        }
         
         // Track engagement
         trackCodeExecution();
@@ -712,7 +725,7 @@ Please provide detailed, constructive feedback.`;
         toast.dismiss(loadingToastId);
         toast.success('Code sent to AI models for analysis! Check the chat for feedback.', { duration: 3000 });
       } else {
-        // Fallback to single AI mode
+        // Fallback to single AI mode or create a new session
         await sendMessage(analysisMessage);
         setActiveTab('chat');
         
@@ -1176,10 +1189,25 @@ Please help me understand this topic step by step. Start with an overview of wha
                 </div>
                                  <div className="flex-1 p-4 min-h-0 overflow-hidden">
                    <SplitScreenChatInterface
-                     messages={combinedMessages.map(msg => ({
-                       ...msg,
-                       sender: msg.sender === 'bot' ? 'gemini' : msg.sender === 'ai' ? 'together' : 'user'
-                     }))}
+                     messages={combinedMessages.map(msg => {
+                       // Map sender values correctly
+                       let mappedSender: 'user' | 'gemini' | 'together' = 'user';
+                       if (msg.sender === 'bot') {
+                         mappedSender = 'gemini';
+                       } else if (msg.sender === 'ai') {
+                         // Check if this is a Together AI message by looking at the _model property
+                         mappedSender = (msg as any)._model === 'together' ? 'together' : 'gemini';
+                       } else if (msg.sender === 'user') {
+                         mappedSender = 'user';
+                       }
+                       
+
+                       
+                       return {
+                         ...msg,
+                         sender: mappedSender
+                       };
+                     })}
                      isLoading={isChatLoading}
                                            onSendMessage={async (message) => {
                         await handleSendMessage(message);

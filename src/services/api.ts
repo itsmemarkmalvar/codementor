@@ -116,7 +116,7 @@ export const getTutorResponse = async (params: {
   preferences: any;
   topic?: string;
   topic_id?: number;
-  session_id?: number;
+  session_id?: string;
   lesson_context?: string;
   model?: 'together' | 'gemini'; // Add model selection parameter
 }) => {
@@ -148,7 +148,7 @@ export const getTutorResponse = async (params: {
       requestParams.topic_id = Number(params.topic_id);
     }
     if (params.session_id !== undefined && params.session_id !== null) {
-      requestParams.session_id = Number(params.session_id);
+      requestParams.session_id = params.session_id;
     }
     if (params.lesson_context && typeof params.lesson_context === 'string') {
       requestParams.lesson_context = params.lesson_context;
@@ -275,7 +275,7 @@ export const getSplitScreenTutorResponse = async (params: {
   conversation_history?: Array<{role: string; content: string}>;
   conversationHistory?: Array<{role: string; content: string}>;
   topic_id?: number;
-  session_id?: number;
+  session_id?: string;
   preferences?: any;
   lesson_context?: string;
 }) => {
@@ -290,7 +290,7 @@ export const getSplitScreenTutorResponse = async (params: {
       requestParams.topic_id = Number(params.topic_id);
     }
     if (params.session_id !== undefined && params.session_id !== null) {
-      requestParams.session_id = Number(params.session_id);
+      requestParams.session_id = params.session_id;
     }
     if (params.lesson_context && typeof params.lesson_context === 'string') {
       requestParams.lesson_context = params.lesson_context;
@@ -398,7 +398,7 @@ export const getSplitScreenTutorResponse = async (params: {
 export const executeJavaCode = async (params: {
   code: string;
   input?: string;
-  session_id?: number;
+  session_id?: string;
   topic_id?: number;
   conversation_history?: Array<{role: string; content: string}>;
   chat_message_id?: number;
@@ -464,7 +464,7 @@ export const executeJavaProject = async (params: {
   files: Array<{path: string; content: string}>;
   main_class: string;
   input?: string;
-  session_id?: number;
+  session_id?: string;
   topic_id?: number;
   conversation_history?: Array<{role: string; content: string}>;
   chat_message_id?: number;
@@ -1635,4 +1635,58 @@ export const getUserAIPreferences = async (params: {
   
   const response = await api.get(`/ai-preference-logs?${queryParams.toString()}`);
   return response.data;
+};
+
+// =============
+// Preserved Session API
+// =============
+
+export const getActivePreservedSession = async (userId: string) => {
+  try {
+    const response = await api.get(`/preserved-sessions/active/${userId}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error getting active preserved session:', error);
+    throw error;
+  }
+};
+
+export const reactivatePreservedSession = async (sessionId: string) => {
+  try {
+    const response = await api.post(`/preserved-sessions/reactivate/${sessionId}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error reactivating preserved session:', error);
+    throw error;
+  }
+};
+
+export const deactivatePreservedSession = async (sessionId: string) => {
+  try {
+    const response = await api.post(`/preserved-sessions/deactivate/${sessionId}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error deactivating preserved session:', error);
+    throw error;
+  }
+};
+
+export const deletePreservedSession = async (sessionId: string) => {
+  try {
+    const response = await api.delete(`/preserved-sessions/${sessionId}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error deleting preserved session:', error);
+    throw error;
+  }
+};
+
+export const getUserSessionHistory = async (userId: string) => {
+  try {
+    const response = await api.get(`/preserved-sessions/user/${userId}/history`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error getting user session history:', error);
+    throw error;
+  }
 };

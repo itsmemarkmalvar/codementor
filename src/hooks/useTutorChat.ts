@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { getTutorResponse, getSplitScreenTutorResponse } from '@/services/api';
+import { useSession } from '@/contexts/SessionContext';
 
 interface Message {
   id: number;
@@ -23,17 +24,15 @@ export interface TutorPreferences {
 }
 
 export function useTutorChat(initialMessages: Message[] = []) {
+  // Use session context for preserved session management
+  const { currentSession, updateSessionActivity } = useSession();
+  
   // Maintain separate histories per model so switching models shows independent conversations
   const [messagesByModel, setMessagesByModel] = useState<Record<'together' | 'gemini', Message[]>>({
     together: initialMessages,
     gemini: [],
   });
   const [isLoading, setIsLoading] = useState(false);
-  // Maintain separate session IDs per model
-  const [sessionIdByModel, setSessionIdByModel] = useState<Record<'together' | 'gemini', number | null>>({
-    together: null,
-    gemini: null,
-  });
   const [tutorPreferences, setTutorPreferences] = useState<TutorPreferences>({
     responseLength: 'medium',
     codeExamples: true,
@@ -44,7 +43,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
 
   const currentModel = useMemo(() => (tutorPreferences.aiModel ?? 'together') as 'together' | 'gemini', [tutorPreferences.aiModel]);
   const currentMessages = messagesByModel[currentModel];
-  const currentSessionId = sessionIdByModel[currentModel];
+  const currentSessionId = currentSession?.session_identifier;
   
   // For split-screen mode, combine messages from both models
   const combinedMessages = useMemo(() => {
@@ -158,13 +157,8 @@ export function useTutorChat(initialMessages: Message[] = []) {
         [currentModel]: [...prev[currentModel], aiMessage]
       }));
 
-      // Update session ID if provided in response
-      if (!isError && !isFallback && response.session_id) {
-        setSessionIdByModel(prev => ({
-          ...prev,
-          [currentModel]: response.session_id
-        }));
-      }
+      // Update session activity
+      updateSessionActivity();
 
       return {
         success: !isError && !isFallback,
@@ -233,13 +227,8 @@ export function useTutorChat(initialMessages: Message[] = []) {
         [currentModel]: [welcomeMessage]
       }));
       
-      // Update session ID if provided
-      if (!isError && !isFallback && response.session_id) {
-        setSessionIdByModel(prev => ({
-          ...prev,
-          [currentModel]: response.session_id
-        }));
-      }
+      // Update session activity
+      updateSessionActivity();
 
       return {
         success: !isError && !isFallback,
@@ -285,7 +274,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
     messageText: string, 
     topicId?: number, 
     topicTitle?: string,
-    sessionId?: number
+    sessionId?: string
   ) => {
     if (!messageText.trim()) return;
 
@@ -309,13 +298,21 @@ export function useTutorChat(initialMessages: Message[] = []) {
       const recentMessages = [...combinedMessages.slice(-9), userMessage];
       const conversationHistory = formatConversationHistory(recentMessages);
 
+      // Debug session ID
+      console.log('Debug session ID in sendSplitScreenMessage:', {
+        sessionId,
+        currentSessionId,
+        finalSessionId: sessionId ?? currentSessionId,
+        type: typeof (sessionId ?? currentSessionId)
+      });
+
       // Make API call to get responses from both models
       const response = await getSplitScreenTutorResponse({
         question: messageText,
         conversationHistory: conversationHistory,
         preferences: tutorPreferences,
         topic_id: topicId,
-        session_id: sessionId ?? currentSessionId ?? undefined
+        session_id: sessionId ?? currentSessionId
       });
 
       // Check for errors
@@ -339,6 +336,10 @@ export function useTutorChat(initialMessages: Message[] = []) {
         sender: 'ai', // Use 'ai' for Together to match the expected format
         timestamp: new Date(),
       };
+
+      // Add _model property for proper identification in combinedMessages
+      (geminiMessage as any)._model = 'gemini';
+      (togetherMessage as any)._model = 'together';
 
       // Debug logging for Together AI response
       console.log('Together AI Response Debug:', {
@@ -376,13 +377,8 @@ export function useTutorChat(initialMessages: Message[] = []) {
         };
       });
 
-      // Update session ID if provided in response
-      if (!isError && response.session_id) {
-        setSessionIdByModel(prev => ({
-          together: response.session_id,
-          gemini: response.session_id
-        }));
-      }
+      // Update session activity
+      updateSessionActivity();
 
       return {
         success: !isError,
@@ -400,6 +396,9 @@ export function useTutorChat(initialMessages: Message[] = []) {
         sender: 'ai',
         timestamp: new Date(),
       };
+
+      // Add _model property for proper identification
+      (errorMessage as any)._model = 'together';
 
       setMessagesByModel(prev => ({
         together: [...prev.together, errorMessage],
@@ -427,9 +426,8 @@ export function useTutorChat(initialMessages: Message[] = []) {
     updatePreferences,
     // setters act on the currently selected model to preserve separation
     setMessages: (msgs: Message[]) => setMessagesByModel(prev => ({ ...prev, [currentModel]: msgs })),
-    setCurrentSessionId: (id: number | null) => setSessionIdByModel(prev => ({ ...prev, [currentModel]: id })),
     // optional debug accessors
-    _debug: { messagesByModel, sessionIdByModel },
+    _debug: { messagesByModel },
   };
 }
 
