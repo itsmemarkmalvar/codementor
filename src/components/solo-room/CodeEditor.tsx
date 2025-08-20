@@ -154,7 +154,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               onClick={onRun}
               disabled={isExecuting}
               className="bg-green-600 hover:bg-green-700"
-              title="Run code"
+              title="Execute code via Judge0 API"
             >
               {isExecuting ? (
                 <Loader className="h-4 w-4 animate-spin" />

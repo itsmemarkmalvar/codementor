@@ -74,6 +74,7 @@ const SoloRoomRefactored = () => {
   const [engagementTriggered, setEngagementTriggered] = useState(false);
   const [lastThresholdTime, setLastThresholdTime] = useState<number>(0);
   const [preferencePollType, setPreferencePollType] = useState<'quiz' | 'practice' | 'code_execution'>('quiz');
+  const [isAnalyzingCode, setIsAnalyzingCode] = useState(false);
 
   // Use custom hooks
   const {
@@ -593,7 +594,7 @@ User Question: ${message}`;
     })();
 
     // Use split-screen message function for simultaneous AI responses
-    await sendSplitScreenMessage(messageWithDifficulty, topicToUse.id, topicToUse.title || 'Learning Session');
+    await sendSplitScreenMessage(messageWithDifficulty, topicToUse.id, topicToUse.title || 'Learning Session', splitScreenSession?.id);
     
     // Track progress for sending a message
     updateProgress(1, 'interaction');
@@ -618,7 +619,7 @@ User Question: ${message}`;
     }
   };
 
-  // Code execution handler
+  // Code execution handler (Green button - executes code via Judge0)
   const handleRunCode = async () => {
     // Mark as activity
     lastActivityRef.current = Date.now();
@@ -660,6 +661,72 @@ User Question: ${message}`;
     
     return result;
   };
+
+  // AI Analysis handler (Blue button - sends code to both AI models for analysis)
+  const handleAnalyzeCode = async () => {
+    if (!selectedTopic) {
+      toast.error('Please select a topic first');
+      return;
+    }
+
+    if (!codeInput.trim()) {
+      toast.error('Please write some code to analyze');
+      return;
+    }
+
+    // Mark as activity
+    lastActivityRef.current = Date.now();
+    
+    // Set analyzing state
+    setIsAnalyzingCode(true);
+    
+    // Show loading state
+    toast.loading('Sending code to AI models for analysis...', { duration: 2000 });
+    
+    // Create a message that includes the code for AI analysis
+    const analysisMessage = `Please analyze this Java code and provide feedback on:
+1. Code structure and organization
+2. Best practices and potential improvements
+3. Any bugs or issues you can identify
+4. Suggestions for optimization
+
+Here's the code:
+\`\`\`java
+${codeInput}
+\`\`\`
+
+Please provide detailed, constructive feedback.`;
+
+    try {
+      // Send to both AI models in split-screen mode
+      if (isSplitScreenMode && splitScreenSession?.id) {
+        await sendSplitScreenMessage(analysisMessage, selectedTopic.id, selectedTopic.title, splitScreenSession.id);
+        
+        // Track engagement
+        trackCodeExecution();
+        
+        // Switch to chat tab to show the analysis
+        setActiveTab('chat');
+        
+        toast.success('Code sent to AI models for analysis! Check the chat for feedback.');
+      } else {
+        // Fallback to single AI mode
+        await sendMessage(analysisMessage);
+        setActiveTab('chat');
+        toast.success('Code sent for analysis! Check the chat for feedback.');
+      }
+      
+      // Track progress for code analysis
+      updateProgress(2, 'code_analysis');
+      
+    } catch (error) {
+      console.error('Error sending code for analysis:', error);
+      toast.error('Failed to send code for analysis');
+    } finally {
+      // Reset analyzing state
+      setIsAnalyzingCode(false);
+    }
+  };
   // Editor change handler that also marks activity
   const handleEditorChange = (val: string) => {
     lastActivityRef.current = Date.now();
@@ -675,6 +742,7 @@ User Question: ${message}`;
       const progressData = {
         interaction: progressType === 'interaction' ? progressIncrement : 0,
         code_execution: progressType === 'code_execution' ? progressIncrement : 0,
+        code_analysis: progressType === 'code_analysis' ? progressIncrement : 0,
         knowledge_check: progressType === 'knowledge_check' ? progressIncrement : 0
       };
 
@@ -1143,18 +1211,19 @@ Please help me understand this topic step by step. Start with an overview of wha
                     </div>
                     <div>
                       <h3 className="font-semibold text-white">Code Editor</h3>
-                      <p className="text-xs text-gray-400">Write and test your Java code</p>
+                      <p className="text-xs text-gray-400">Write, test, and get AI feedback on your Java code</p>
                     </div>
                   </div>
 
                   <motion.button
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={handleRunCode}
-                    disabled={isExecuting}
+                    onClick={handleAnalyzeCode}
+                    disabled={isExecuting || isAnalyzingCode}
+                    title="Send code to AI models for analysis and feedback"
                     className="flex items-center gap-2 px-4 py-2 bg-[#2E5BFF] text-white rounded-lg font-medium text-sm hover:bg-[#2E5BFF]/80 transition-all duration-200 disabled:opacity-50"
                   >
-                    {isExecuting ? (
+                    {isAnalyzingCode ? (
                       <motion.div
                         animate={{ rotate: 360 }}
                         transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
@@ -1162,9 +1231,9 @@ Please help me understand this topic step by step. Start with an overview of wha
                         <Zap className="h-4 w-4" />
                       </motion.div>
                     ) : (
-                      <Play className="h-4 w-4" />
+                      <MessageSquare className="h-4 w-4" />
                     )}
-                    {isExecuting ? 'Running...' : 'Run Code'}
+                    {isAnalyzingCode ? 'Analyzing...' : 'Analyze Code'}
                   </motion.button>
                 </div>
                 

@@ -284,7 +284,8 @@ export function useTutorChat(initialMessages: Message[] = []) {
   const sendSplitScreenMessage = useCallback(async (
     messageText: string, 
     topicId?: number, 
-    topicTitle?: string
+    topicTitle?: string,
+    sessionId?: number
   ) => {
     if (!messageText.trim()) return;
 
@@ -314,7 +315,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
         conversationHistory: conversationHistory,
         preferences: tutorPreferences,
         topic_id: topicId,
-        session_id: currentSessionId ?? undefined
+        session_id: sessionId ?? currentSessionId ?? undefined
       });
 
       // Check for errors

@@ -300,7 +300,8 @@ export const getSplitScreenTutorResponse = async (params: {
       question: requestParams.question,
       conversation_history_length: requestParams.conversation_history?.length || 0,
       topic_id: requestParams.topic_id,
-      session_id: requestParams.session_id
+      session_id: requestParams.session_id,
+      full_params: requestParams
     });
     
     // Set a timeout to prevent hanging requests
@@ -352,6 +353,10 @@ export const getSplitScreenTutorResponse = async (params: {
         errorMessage = 'The request timed out. The AI service might be overloaded. Please try again in a few minutes.';
       } else if (error.response.data && error.response.data.message) {
         errorMessage = `Error: ${error.response.data.message}`;
+      } else if (error.response.data && error.response.data.errors) {
+        // Handle validation errors
+        const validationErrors = Object.values(error.response.data.errors).flat();
+        errorMessage = `Validation Error: ${validationErrors.join(', ')}`;
       }
     } else if (error.request) {
       console.error('No response received:', error.request);
