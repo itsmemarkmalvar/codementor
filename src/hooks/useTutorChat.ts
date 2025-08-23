@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { getTutorResponse, getSplitScreenTutorResponse } from '@/services/api';
 import { useSession } from '@/contexts/SessionContext';
 
@@ -25,13 +25,71 @@ export interface TutorPreferences {
 
 export function useTutorChat(initialMessages: Message[] = []) {
   // Use session context for preserved session management
-  const { currentSession, updateSessionActivity } = useSession();
+  const { 
+    currentSession, 
+    updateSessionActivity, 
+    loadConversationHistory, 
+    saveConversationHistory, 
+    syncConversationWithBackend,
+    isConversationSynced 
+  } = useSession();
   
   // Maintain separate histories per model so switching models shows independent conversations
   const [messagesByModel, setMessagesByModel] = useState<Record<'together' | 'gemini', Message[]>>({
-    together: initialMessages,
+    together: [],
     gemini: [],
   });
+
+  // Load conversation history from preserved session on mount
+  useEffect(() => {
+    const loadPreservedConversation = () => {
+      try {
+        const preservedHistory = loadConversationHistory();
+        if (preservedHistory.length > 0) {
+          console.log('Loading preserved conversation history:', preservedHistory.length, 'messages');
+          
+          // Separate messages by model
+          const togetherMessages: Message[] = [];
+          const geminiMessages: Message[] = [];
+          
+          preservedHistory.forEach((msg: any) => {
+            const message: Message = {
+              id: msg.id || Date.now() + Math.random(),
+              text: msg.text || msg.content || '',
+              sender: msg.sender || 'user',
+              timestamp: new Date(msg.timestamp || Date.now()),
+            };
+            
+            // Add _model property for proper identification
+            (message as any)._model = msg._model || (msg.sender === 'bot' ? 'gemini' : 'together');
+            
+            if (msg._model === 'gemini' || msg.sender === 'bot') {
+              geminiMessages.push(message);
+            } else if (msg._model === 'together' || msg.sender === 'ai') {
+              togetherMessages.push(message);
+            }
+          });
+          
+          setMessagesByModel({
+            together: togetherMessages,
+            gemini: geminiMessages
+          });
+          
+          console.log('Restored conversation:', {
+            together: togetherMessages.length,
+            gemini: geminiMessages.length
+          });
+        }
+      } catch (error) {
+        console.error('Error loading preserved conversation:', error);
+      }
+    };
+
+    // Load preserved conversation when session is available
+    if (currentSession?.session_identifier) {
+      loadPreservedConversation();
+    }
+  }, [currentSession?.session_identifier, loadConversationHistory]);
   const [isLoading, setIsLoading] = useState(false);
   const [tutorPreferences, setTutorPreferences] = useState<TutorPreferences>({
     responseLength: 'medium',
@@ -108,10 +166,21 @@ export function useTutorChat(initialMessages: Message[] = []) {
     };
 
     // Append to current model's history
-    setMessagesByModel(prev => ({
-      ...prev,
-      [currentModel]: [...prev[currentModel], userMessage]
-    }));
+    setMessagesByModel(prev => {
+      const updated = {
+        ...prev,
+        [currentModel]: [...prev[currentModel], userMessage]
+      };
+      
+      // Save conversation history after updating
+      const allMessages = [
+        ...updated.together.map((msg: Message) => ({ ...msg, _model: 'together' as const })),
+        ...updated.gemini.map((msg: Message) => ({ ...msg, _model: 'gemini' as const }))
+      ];
+      saveConversationHistory(allMessages);
+      
+      return updated;
+    });
     setIsLoading(true);
 
     try {
@@ -152,10 +221,21 @@ export function useTutorChat(initialMessages: Message[] = []) {
         model: response.model,
       };
       // Append AI message to current model's history
-      setMessagesByModel(prev => ({
-        ...prev,
-        [currentModel]: [...prev[currentModel], aiMessage]
-      }));
+      setMessagesByModel(prev => {
+        const updated = {
+          ...prev,
+          [currentModel]: [...prev[currentModel], aiMessage]
+        };
+        
+        // Save conversation history after updating
+        const allMessages = [
+          ...updated.together.map(msg => ({ ...msg, _model: 'together' as const })),
+          ...updated.gemini.map(msg => ({ ...msg, _model: 'gemini' as const }))
+        ];
+        saveConversationHistory(allMessages);
+        
+        return updated;
+      });
 
       // Update session activity
       updateSessionActivity();
@@ -287,10 +367,21 @@ export function useTutorChat(initialMessages: Message[] = []) {
     };
 
     // Append to both models' histories
-    setMessagesByModel(prev => ({
-      together: [...prev.together, userMessage],
-      gemini: [...prev.gemini, userMessage]
-    }));
+    setMessagesByModel(prev => {
+      const updated = {
+        together: [...prev.together, userMessage],
+        gemini: [...prev.gemini, userMessage]
+      };
+      
+      // Save conversation history after updating
+      const allMessages = [
+        ...updated.together.map((msg: Message) => ({ ...msg, _model: 'together' as const })),
+        ...updated.gemini.map((msg: Message) => ({ ...msg, _model: 'gemini' as const }))
+      ];
+      saveConversationHistory(allMessages);
+      
+      return updated;
+    });
     setIsLoading(true);
 
     try {
@@ -365,16 +456,26 @@ export function useTutorChat(initialMessages: Message[] = []) {
 
       // Append AI messages to both models' histories
       setMessagesByModel(prev => {
+        const updated = {
+          together: [...prev.together, togetherMessage],
+          gemini: [...prev.gemini, geminiMessage]
+        };
+        
         console.log('Adding messages to both models:', {
           gemini: geminiMessage,
           together: togetherMessage,
           prevTogether: prev.together.length,
           prevGemini: prev.gemini.length
         });
-        return {
-          together: [...prev.together, togetherMessage],
-          gemini: [...prev.gemini, geminiMessage]
-        };
+        
+        // Save conversation history after updating
+        const allMessages = [
+          ...updated.together.map((msg: Message) => ({ ...msg, _model: 'together' as const })),
+          ...updated.gemini.map((msg: Message) => ({ ...msg, _model: 'gemini' as const }))
+        ];
+        saveConversationHistory(allMessages);
+        
+        return updated;
       });
 
       // Update session activity

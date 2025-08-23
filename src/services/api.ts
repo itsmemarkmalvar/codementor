@@ -99,15 +99,22 @@ export const loginUser = async (credentials: any) => {
   return response.data;
 };
 
+export const getCurrentUser = async () => {
+  try {
+    const response = await api.get('/user');
+    return response.data;
+  } catch (error: any) {
+    console.error('Error getting current user:', error);
+    throw error;
+  }
+};
+
 export const logoutUser = async () => {
   const response = await api.post('/logout');
   return response.data;
 };
 
-export const getCurrentUser = async () => {
-  const response = await api.get('/user');
-  return response.data;
-};
+
 
 // AI Tutor related API calls
 export const getTutorResponse = async (params: {
@@ -1687,6 +1694,18 @@ export const getUserSessionHistory = async (userId: string) => {
     return response.data;
   } catch (error: any) {
     console.error('Error getting user session history:', error);
+    throw error;
+  }
+};
+
+export const updateConversationHistory = async (sessionId: string, conversationHistory: any[]) => {
+  try {
+    const response = await api.put(`/preserved-sessions/${sessionId}/conversation`, {
+      conversation_history: conversationHistory
+    });
+    return response.data;
+  } catch (error: any) {
+    console.error('Error updating conversation history:', error);
     throw error;
   }
 };

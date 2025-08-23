@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight, Users } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement } from '@/services/api';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser } from '@/services/api';
 import { toast } from 'sonner';
 import { isAuthenticated, getToken } from '@/lib/auth-utils';
 
@@ -100,7 +100,13 @@ const SoloRoomRefactored = () => {
   } = useCodeExecution();
 
   // Use the new session system
-  const { currentSession, initializeSession, deactivateSession } = useSession();
+  const { 
+    currentSession, 
+    initializeSession, 
+    deactivateSession,
+    syncConversationWithBackend,
+    isConversationSynced 
+  } = useSession();
 
   // Engagement tracking for split-screen mode
   const {
@@ -363,6 +369,37 @@ const SoloRoomRefactored = () => {
       }
     };
 
+    // Initialize session and sync conversation on mount
+    const initializeSessionAndSync = async () => {
+      try {
+        // Check if user is authenticated
+        const token = getToken();
+        if (token) {
+          // Get the current user to get their ID
+          const userResponse = await getCurrentUser();
+          const userId = userResponse.user?.id?.toString();
+          
+          if (userId) {
+            console.log('Initializing session for user:', userId);
+            // Initialize session for the current user
+            const session = await initializeSession(userId);
+            
+            // Only sync if a session was found (session will be created when user starts conversation)
+            if (session) {
+              // Sync conversation with backend after a short delay
+              setTimeout(async () => {
+                await syncConversationWithBackend();
+              }, 1000);
+            }
+          } else {
+            console.error('Could not get user ID from response:', userResponse);
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing session:', error);
+      }
+    };
+
     const createDefaultProject = () => {
       const mainFileId = 'file-1';
       const defaultProject = {
@@ -414,6 +451,7 @@ const SoloRoomRefactored = () => {
     // Only fetch topics and create project on initial load
     fetchTopics();
     createDefaultProject();
+    initializeSessionAndSync();
     // Fetch Piston health
     getPistonHealth().then(setPistonHealth).catch(()=>setPistonHealth({ok:false} as any));
     // Initial load of progress summary and apply RL difficulty
@@ -441,8 +479,20 @@ const SoloRoomRefactored = () => {
       } catch {}
     }, 60000);
 
+    // Periodically sync conversation with backend
+    const conversationSyncTimer = setInterval(async () => {
+      try {
+        if (currentSession && !isConversationSynced) {
+          await syncConversationWithBackend();
+        }
+      } catch (error) {
+        console.error('Error syncing conversation:', error);
+      }
+    }, 30000); // Sync every 30 seconds
+
     return () => {
       clearInterval(summaryTimer);
+      clearInterval(conversationSyncTimer);
     };
   }, []); // Empty dependency array - run only once
 
@@ -828,6 +878,26 @@ Please provide detailed, constructive feedback.`;
     };
   }, [selectedTopic]);
 
+  // Page visibility API for conversation sync
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (!document.hidden && currentSession) {
+        // Page became visible - sync conversation only if session exists
+        try {
+          await syncConversationWithBackend();
+        } catch (error) {
+          console.error('Error syncing conversation on page visibility:', error);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [syncConversationWithBackend]);
+
   // File operations
   const handleFileSelect = (fileId: string) => {
     if (currentProject) {
@@ -1181,10 +1251,16 @@ Please help me understand this topic step by step. Start with an overview of wha
                          Engagement: {engagementScore}
                        </span>
                      </div>
-                     <div className="flex items-center gap-2">
-                       <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                       <span className="text-xs text-gray-400">Online</span>
-                     </div>
+                                           <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                        <span className="text-xs text-gray-400">Online</span>
+                        {!isConversationSynced && (
+                          <div className="flex items-center gap-1">
+                            <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                            <span className="text-xs text-yellow-400">Syncing...</span>
+                          </div>
+                        )}
+                      </div>
                    </div>
                 </div>
                                  <div className="flex-1 p-4 min-h-0 overflow-hidden">
