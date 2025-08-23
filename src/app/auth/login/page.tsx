@@ -26,6 +26,39 @@ export default function LoginPage() {
     setError("");
     
     try {
+      // Clear any existing user data before login
+      const clearExistingUserData = () => {
+        // Clear all possible user-specific keys
+        const keysToRemove = [];
+        
+        // Clear legacy keys
+        keysToRemove.push('preserved_session', 'session_metadata', 'conversation_history');
+        
+        // Clear user-specific keys for common user IDs
+        for (let i = 1; i <= 10; i++) {
+          keysToRemove.push(
+            `preserved_session_${i}`,
+            `session_metadata_${i}`,
+            `conversation_history_${i}`
+          );
+        }
+        
+        // Clear anonymous keys
+        keysToRemove.push(
+          'preserved_session_anonymous',
+          'session_metadata_anonymous',
+          'conversation_history_anonymous'
+        );
+        
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key);
+        });
+        
+        console.log('Cleared existing user data before login');
+      };
+      
+      clearExistingUserData();
+      
       // Call the login API endpoint
       const response = await loginUser({ email, password });
       

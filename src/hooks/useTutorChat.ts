@@ -44,7 +44,10 @@ export function useTutorChat(initialMessages: Message[] = []) {
   useEffect(() => {
     const loadPreservedConversation = () => {
       try {
+        console.log('Attempting to load preserved conversation history...');
         const preservedHistory = loadConversationHistory();
+        console.log('Raw preserved history:', preservedHistory);
+        
         if (preservedHistory.length > 0) {
           console.log('Loading preserved conversation history:', preservedHistory.length, 'messages');
           
@@ -52,7 +55,15 @@ export function useTutorChat(initialMessages: Message[] = []) {
           const togetherMessages: Message[] = [];
           const geminiMessages: Message[] = [];
           
-          preservedHistory.forEach((msg: any) => {
+          // Simple approach: separate messages by _model field
+          preservedHistory.forEach((msg: any, index) => {
+            console.log(`Processing message ${index}:`, {
+              id: msg.id,
+              sender: msg.sender,
+              _model: msg._model,
+              textPreview: msg.text?.substring(0, 50) + '...'
+            });
+            
             const message: Message = {
               id: msg.id || Date.now() + Math.random(),
               text: msg.text || msg.content || '',
@@ -61,12 +72,27 @@ export function useTutorChat(initialMessages: Message[] = []) {
             };
             
             // Add _model property for proper identification
-            (message as any)._model = msg._model || (msg.sender === 'bot' ? 'gemini' : 'together');
+            (message as any)._model = msg._model;
             
-            if (msg._model === 'gemini' || msg.sender === 'bot') {
+            // Add user messages to both conversations
+            if (msg.sender === 'user') {
+              const geminiCopy = { ...message };
+              const togetherCopy = { ...message };
+              geminiMessages.push(geminiCopy);
+              togetherMessages.push(togetherCopy);
+              console.log(`Added user message to both conversations`);
+            }
+            // Add AI responses to their respective conversations
+            else if (msg._model === 'gemini') {
               geminiMessages.push(message);
-            } else if (msg._model === 'together' || msg.sender === 'ai') {
+              console.log(`Added Gemini AI response`);
+            }
+            else if (msg._model === 'together') {
               togetherMessages.push(message);
+              console.log(`Added Together AI response`);
+            }
+            else {
+              console.log(`Skipped message with unknown model: ${msg._model}`);
             }
           });
           
@@ -86,8 +112,11 @@ export function useTutorChat(initialMessages: Message[] = []) {
     };
 
     // Load preserved conversation when session is available
+    console.log('useTutorChat: Session changed, attempting to load conversation. Session:', currentSession?.session_identifier);
     if (currentSession?.session_identifier) {
       loadPreservedConversation();
+    } else {
+      console.log('useTutorChat: No session available, skipping conversation load');
     }
   }, [currentSession?.session_identifier, loadConversationHistory]);
   const [isLoading, setIsLoading] = useState(false);

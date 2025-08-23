@@ -69,6 +69,7 @@ export const SESSION_SYNC_EVENTS = {
   SESSION_ACTIVATED: 'session_activated',
   SESSION_DEACTIVATED: 'session_deactivated',
   CONVERSATION_UPDATED: 'conversation_updated',
+  METADATA_UPDATED: 'metadata_updated',
   TAB_FOCUSED: 'tab_focused',
   TAB_BLURRED: 'tab_blurred'
 } as const;
@@ -98,6 +99,11 @@ export const sessionSync = {
     crossTabSync.broadcast(SESSION_SYNC_EVENTS.CONVERSATION_UPDATED, conversationData);
   },
 
+  // Notify other tabs when metadata is updated
+  notifyMetadataUpdate: (metadataData: any) => {
+    crossTabSync.broadcast(SESSION_SYNC_EVENTS.METADATA_UPDATED, metadataData);
+  },
+
   // Subscribe to session updates
   onSessionUpdate: (callback: (sessionData: any) => void) => {
     return crossTabSync.subscribe(SESSION_SYNC_EVENTS.SESSION_UPDATED, callback);
@@ -116,6 +122,11 @@ export const sessionSync = {
   // Subscribe to conversation updates
   onConversationUpdate: (callback: (conversationData: any) => void) => {
     return crossTabSync.subscribe(SESSION_SYNC_EVENTS.CONVERSATION_UPDATED, callback);
+  },
+
+  // Subscribe to metadata updates
+  onMetadataUpdate: (callback: (metadataData: any) => void) => {
+    return crossTabSync.subscribe(SESSION_SYNC_EVENTS.METADATA_UPDATED, callback);
   }
 };
 

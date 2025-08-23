@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
+import { useSession } from '@/contexts/SessionContext';
 
 interface EngagementTrackerOptions {
   threshold: number;
@@ -30,10 +31,81 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const sessionIdRef = useRef<number | undefined>(options.sessionId);
 
+  // Get session context for preservation
+  const { 
+    currentSession, 
+    loadSessionMetadata, 
+    saveSessionMetadata, 
+    syncMetadataWithBackend,
+    isMetadataSynced 
+  } = useSession();
+
   // Update session ID when it changes
   useEffect(() => {
     sessionIdRef.current = options.sessionId;
   }, [options.sessionId]);
+
+  // Load engagement data from session metadata on mount
+  useEffect(() => {
+    if (currentSession) {
+      const metadata = loadSessionMetadata();
+      const engagementData = metadata.engagement_data;
+      
+      if (engagementData) {
+        console.log('Loading engagement data from session:', engagementData);
+        setEngagementScore(engagementData.score || 0);
+        setIsThresholdReached(engagementData.is_threshold_reached || false);
+        setEvents(engagementData.events || []);
+        setTriggeredActivity(engagementData.triggered_activity || null);
+        setAssessmentSequence(engagementData.assessment_sequence || null);
+        
+        // Restore last activity timestamp
+        if (engagementData.last_activity) {
+          lastActivityRef.current = new Date(engagementData.last_activity);
+        }
+      }
+    }
+  }, [currentSession, loadSessionMetadata]);
+
+  // Save engagement data to session metadata
+  const saveEngagementData = useCallback(() => {
+    if (!currentSession) return;
+
+    const engagementData = {
+      score: engagementScore,
+      is_threshold_reached: isThresholdReached,
+      events: events,
+      triggered_activity: triggeredActivity,
+      assessment_sequence: assessmentSequence,
+      last_activity: lastActivityRef.current.toISOString()
+    };
+
+    const metadata = {
+      engagement_data: engagementData
+    };
+
+    saveSessionMetadata(metadata);
+  }, [currentSession, engagementScore, isThresholdReached, events, triggeredActivity, assessmentSequence, saveSessionMetadata]);
+
+  // Save engagement data whenever it changes
+  useEffect(() => {
+    saveEngagementData();
+  }, [saveEngagementData]);
+
+  // Sync engagement data with backend periodically
+  useEffect(() => {
+    if (!currentSession || isMetadataSynced) return;
+
+    const syncTimer = setInterval(async () => {
+      try {
+        await syncMetadataWithBackend();
+      } catch (error) {
+        console.error('Error syncing engagement data:', error);
+      }
+    }, 30000); // Sync every 30 seconds
+
+    return () => clearInterval(syncTimer);
+  }, [currentSession, isMetadataSynced, syncMetadataWithBackend]);
 
   // Track user activity
   const trackActivity = useCallback((type: EngagementEvent['type'], points: number = 1) => {
@@ -143,12 +215,16 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   // Start tracking
   const startTracking = useCallback(() => {
     setIsTracking(true);
-    setIsThresholdReached(false);
-    setEngagementScore(0);
-    setEvents([]);
-    setTriggeredActivity(null);
-    setAssessmentSequence(null);
-    lastActivityRef.current = new Date();
+    
+    // Don't reset engagement data if it's already loaded from session
+    if (events.length === 0) {
+      setIsThresholdReached(false);
+      setEngagementScore(0);
+      setEvents([]);
+      setTriggeredActivity(null);
+      setAssessmentSequence(null);
+      lastActivityRef.current = new Date();
+    }
 
     // Set up activity timeout
     activityTimeoutRef.current = setInterval(trackTimeEngagement, 300000); // Check every 5 minutes
@@ -166,31 +242,19 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       }, 2000); // Only track after 2 seconds of inactivity
     };
 
-    const handleScroll = () => {
-      // Debounce scroll tracking
-      if (activityTimeout) {
-        clearTimeout(activityTimeout);
-      }
-      activityTimeout = setTimeout(() => {
-        trackScroll();
-      }, 3000); // Only track after 3 seconds of inactivity
-    };
-
     document.addEventListener('mousemove', handleActivity, { passive: true });
     document.addEventListener('keydown', handleActivity, { passive: true });
     document.addEventListener('click', handleActivity, { passive: true });
-    document.addEventListener('scroll', handleScroll, { passive: true });
 
     return () => {
       document.removeEventListener('mousemove', handleActivity);
       document.removeEventListener('keydown', handleActivity);
       document.removeEventListener('click', handleActivity);
-      document.removeEventListener('scroll', handleScroll);
       if (activityTimeout) {
         clearTimeout(activityTimeout);
       }
     };
-  }, [trackInteraction, trackScroll, trackTimeEngagement]);
+  }, [trackInteraction, trackTimeEngagement, events.length]);
 
   // Stop tracking
   const stopTracking = useCallback(() => {

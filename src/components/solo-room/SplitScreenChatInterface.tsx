@@ -34,11 +34,20 @@ interface Topic {
   description?: string;
 }
 
+interface Lesson {
+  id: number;
+  title: string;
+  description?: string;
+  content?: string;
+  topic_id?: number;
+}
+
 interface SplitScreenChatInterfaceProps {
   messages: Message[];
   isLoading: boolean;
   onSendMessage: (message: string) => Promise<any>;
   topic: Topic | null;
+  lesson?: Lesson | null;
   sessionId?: number;
   engagementScore?: number;
   onEngagementThreshold?: () => void;
@@ -85,10 +94,18 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
   isLoading,
   onSendMessage,
   topic,
+  lesson,
   sessionId,
   engagementScore = 0,
   onEngagementThreshold
 }) => {
+  // Debug logging
+  console.log('SplitScreenChatInterface received props:', {
+    topic: topic ? { id: topic.id, title: topic.title } : null,
+    lesson: lesson ? { id: lesson.id, title: lesson.title } : null,
+    sessionId,
+    engagementScore
+  });
   const [inputMessage, setInputMessage] = useState('');
   const [fullScreenPanel, setFullScreenPanel] = useState<'gemini' | 'together' | null>(null);
   const [isNearBottom, setIsNearBottom] = useState(true);
@@ -103,20 +120,16 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
   const geminiMessages = messages.filter(msg => msg.sender === 'gemini' || msg.sender === 'user');
   const togetherMessages = messages.filter(msg => msg.sender === 'together' || msg.sender === 'user');
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    if (isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, isNearBottom]);
 
-  // Handle scroll to detect if user is near bottom
+
+  // Handle scroll to detect if user is near bottom (for scroll-to-bottom button)
   const handleScroll = useCallback((event: any) => {
     const { scrollTop, scrollHeight, clientHeight } = event.target;
-    const isAtBottom = scrollHeight - scrollTop - clientHeight < 100;
+    const threshold = 100; // Simple threshold for showing scroll button
+    const isAtBottom = scrollHeight - scrollTop - clientHeight < threshold;
     
     setIsNearBottom(isAtBottom);
-    setShowScrollToBottom(!isAtBottom && messages.length > 10);
+    setShowScrollToBottom(!isAtBottom && messages.length > 3); // Show button when not at bottom and have messages
   }, [messages.length]);
 
   // Synchronized scrolling between panels
@@ -292,11 +305,11 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
 
                  {/* Messages Area */}
          <Card className="h-[500px] overflow-hidden bg-gradient-to-b from-white/5 to-white/3 border-white/10 relative shadow-inner">
-           <ScrollArea 
-             ref={scrollRef}
-             className="h-full p-4 custom-scrollbar overflow-y-auto overflow-x-hidden w-full"
-             onScrollCapture={model === 'gemini' ? handleGeminiScroll : handleTogetherScroll}
-           >
+                       <ScrollArea 
+              ref={scrollRef}
+              className="h-full p-4 custom-scrollbar overflow-y-auto overflow-x-hidden w-full"
+              onScrollCapture={model === 'gemini' ? handleGeminiScroll : handleTogetherScroll}
+            >
                          {messages.length === 0 ? (
                <div className="flex flex-col items-center justify-center h-full text-center p-8">
                  <div className={`w-20 h-20 rounded-2xl flex items-center justify-center mb-6 shadow-lg ${model === 'gemini' ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/20' : 'bg-gradient-to-br from-green-500/20 to-green-600/20'}`}>
@@ -332,14 +345,27 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
 
      return (
      <div className="flex flex-col overflow-hidden split-screen-chat">
-             {/* Topic Header */}
-       {topic && (
+             {/* Topic and Lesson Header */}
+       {(topic || lesson || sessionId) && (
          <div className="flex-shrink-0 p-3 bg-gradient-to-r from-[#2E5BFF]/20 to-[#1E40AF]/20 rounded-xl mb-1 border border-[#2E5BFF]/30 backdrop-blur-sm">
            <div className="flex items-center justify-between">
              <div>
-               <h3 className="font-semibold text-base text-white mb-1">{topic.title}</h3>
-               {topic.description && (
+               {topic && (
+                 <h3 className="font-semibold text-base text-white mb-1">{topic.title}</h3>
+               )}
+               {lesson && (
+                 <div className="flex items-center gap-2 mb-1">
+                   <h4 className="font-medium text-sm text-blue-300">{lesson.title}</h4>
+                   {lesson.description && (
+                     <span className="text-xs text-gray-400">• {lesson.description}</span>
+                   )}
+                 </div>
+               )}
+               {topic?.description && (
                  <p className="text-xs text-gray-300 leading-relaxed">{topic.description}</p>
+               )}
+               {!topic && !lesson && (
+                 <h3 className="font-semibold text-base text-white mb-1">AI Chat Session</h3>
                )}
              </div>
              <div className="flex items-center gap-2">
@@ -381,7 +407,13 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
              value={inputMessage}
              onChange={(e) => setInputMessage(e.target.value)}
              onKeyDown={handleKeyPress}
-             placeholder={topic ? `Ask about ${topic.title}...` : 'Type a message...'}
+             placeholder={
+               lesson 
+                 ? `Ask about ${lesson.title}...` 
+                 : topic 
+                   ? `Ask about ${topic.title}...` 
+                   : 'Type a message...'
+             }
              className="flex-1 min-h-[36px] max-h-[100px] bg-transparent border-0 text-white placeholder:text-gray-400 focus:ring-0 focus:outline-none resize-none text-sm leading-relaxed"
              disabled={isLoading}
            />

@@ -105,7 +105,11 @@ const SoloRoomRefactored = () => {
     initializeSession, 
     deactivateSession,
     syncConversationWithBackend,
-    isConversationSynced 
+    isConversationSynced,
+    loadSessionMetadata,
+    saveSessionMetadata,
+    syncMetadataWithBackend,
+    isMetadataSynced
   } = useSession();
 
   // Engagement tracking for split-screen mode
@@ -452,7 +456,89 @@ const SoloRoomRefactored = () => {
     fetchTopics();
     createDefaultProject();
     initializeSessionAndSync();
-    // Fetch Piston health
+  }, []); // Empty dependency array - run only once
+
+      // Load session data when currentSession changes or when topics are loaded
+    useEffect(() => {
+      console.log('Session data loading effect triggered. currentSession:', currentSession, 'topics.length:', topics.length);
+      const loadSessionData = async () => {
+        if (currentSession) {
+          console.log('Current session:', currentSession);
+          const metadata = loadSessionMetadata();
+          console.log('Loading session metadata:', metadata);
+        
+        // Load topic data
+        if (metadata.topic_data && topics.length > 0) {
+          const savedTopic = topics.find(t => t.id === metadata.topic_data.id);
+          if (savedTopic) {
+            console.log('Loading saved topic from session:', savedTopic.title);
+            setSelectedTopic(savedTopic);
+          } else {
+            console.log('Topic not found in topics array:', metadata.topic_data.id, 'Available topics:', topics.map(t => ({ id: t.id, title: t.title })));
+          }
+        }
+        
+        // Load lesson data - we need to fetch lesson plans first if topic is available
+        if (metadata.lesson_data && metadata.topic_data) {
+          try {
+            console.log('Fetching lesson plans for topic:', metadata.topic_data.id);
+            // Fetch lesson plans for the topic
+            const plans = await getLessonPlans(metadata.topic_data.id);
+            console.log('Fetched lesson plans:', plans);
+            if (plans && Array.isArray(plans)) {
+              const savedLesson = plans.find(l => l.id === metadata.lesson_data.id);
+              if (savedLesson) {
+                console.log('Loading saved lesson from session:', savedLesson.title);
+                setSelectedLesson(savedLesson);
+              } else {
+                console.log('Lesson not found in plans:', metadata.lesson_data.id, 'Available lessons:', plans.map(l => ({ id: l.id, title: l.title })));
+              }
+            }
+          } catch (error) {
+            console.error('Error loading lesson from session:', error);
+          }
+        }
+      }
+    };
+    
+    // Load session data when session changes or when topics are available
+    if (currentSession && topics.length > 0) {
+      loadSessionData();
+    }
+    
+    // Debug: Manually save current topic and lesson to metadata for testing
+    if (currentSession && selectedTopic && selectedLesson) {
+      console.log('Debug: Manually saving current topic and lesson to metadata');
+      const debugMetadata = {
+        topic_data: {
+          id: selectedTopic.id,
+          title: selectedTopic.title,
+          description: selectedTopic.description,
+          difficulty_level: selectedTopic.difficulty_level
+        },
+        lesson_data: {
+          id: selectedLesson.id,
+          title: selectedLesson.title,
+          content: selectedLesson.content,
+          topic_id: selectedLesson.topic_id
+        }
+      };
+      console.log('Debug metadata to save:', debugMetadata);
+      saveSessionMetadata(debugMetadata);
+    }
+  }, [currentSession, topics, loadSessionMetadata, selectedTopic, selectedLesson]);
+
+  // Auto-switch to lesson tab when lesson is loaded from session
+  useEffect(() => {
+    if (selectedLesson && currentSession) {
+      // Switch to lesson tab to show the selected lesson
+      setActiveTab('lesson-plans');
+      console.log('Auto-switched to lesson tab for saved lesson:', selectedLesson.title);
+    }
+  }, [selectedLesson, currentSession]);
+
+  // Fetch Piston health
+  useEffect(() => {
     getPistonHealth().then(setPistonHealth).catch(()=>setPistonHealth({ok:false} as any));
     // Initial load of progress summary and apply RL difficulty
     (async () => {
@@ -490,11 +576,23 @@ const SoloRoomRefactored = () => {
       }
     }, 30000); // Sync every 30 seconds
 
+    // Periodically sync metadata with backend
+    const metadataSyncTimer = setInterval(async () => {
+      try {
+        if (currentSession && !isMetadataSynced) {
+          await syncMetadataWithBackend();
+        }
+      } catch (error) {
+        console.error('Error syncing metadata:', error);
+      }
+    }, 30000); // Sync every 30 seconds
+
     return () => {
       clearInterval(summaryTimer);
       clearInterval(conversationSyncTimer);
+      clearInterval(metadataSyncTimer);
     };
-  }, []); // Empty dependency array - run only once
+  }, [currentSession, isConversationSynced, isMetadataSynced, updatePreferences]);
 
 
 
@@ -535,6 +633,23 @@ const SoloRoomRefactored = () => {
   const handleTopicSelect = async (topic: Topic) => {
     console.log('Topic selected:', topic);
     setSelectedTopic(topic);
+    
+    // Save topic data to session metadata
+    if (currentSession) {
+      console.log('Saving topic data to session metadata. Topic:', topic.title);
+      const metadata = {
+        topic_data: {
+          id: topic.id,
+          title: topic.title,
+          description: topic.description,
+          difficulty_level: topic.difficulty_level
+        }
+      };
+      console.log('Topic metadata to save:', metadata);
+      saveSessionMetadata(metadata);
+    } else {
+      console.log('No current session available for saving topic metadata');
+    }
     
     // Reset engagement state for new session
     setEngagementTriggered(false);
@@ -878,15 +993,16 @@ Please provide detailed, constructive feedback.`;
     };
   }, [selectedTopic]);
 
-  // Page visibility API for conversation sync
+  // Page visibility API for conversation and metadata sync
   useEffect(() => {
     const handleVisibilityChange = async () => {
       if (!document.hidden && currentSession) {
-        // Page became visible - sync conversation only if session exists
+        // Page became visible - sync conversation and metadata only if session exists
         try {
           await syncConversationWithBackend();
+          await syncMetadataWithBackend();
         } catch (error) {
-          console.error('Error syncing conversation on page visibility:', error);
+          console.error('Error syncing on page visibility:', error);
         }
       }
     };
@@ -959,6 +1075,28 @@ Please provide detailed, constructive feedback.`;
         console.error('No topic found for lesson:', lesson);
         toast.error('Unable to find topic for this lesson');
         return;
+      }
+      
+      // Save lesson and topic data to session metadata
+      if (currentSession) {
+        console.log('Saving lesson and topic data to session metadata. Current session:', currentSession);
+        const metadata = {
+          lesson_data: {
+            id: lesson.id,
+            title: lesson.title,
+            content: lesson.content,
+            topic_id: lesson.topic_id
+          },
+          topic_data: {
+            id: topicToUse.id,
+            title: topicToUse.title,
+            description: topicToUse.description
+          }
+        };
+        console.log('Metadata to save:', metadata);
+        saveSessionMetadata(metadata);
+      } else {
+        console.log('No current session available for saving metadata');
       }
       
       // Switch to chat tab FIRST
@@ -1264,20 +1402,44 @@ Please help me understand this topic step by step. Start with an overview of wha
                    </div>
                 </div>
                                  <div className="flex-1 p-4 min-h-0 overflow-hidden">
+                   {(() => {
+                     console.log('SplitScreenChatInterface props:', {
+                       selectedTopic,
+                       selectedLesson,
+                       sessionId: currentSession?.session_identifier || splitScreenSession?.id || undefined,
+                       engagementScore
+                     });
+                     return null;
+                   })()}
                    <SplitScreenChatInterface
                      messages={combinedMessages.map(msg => {
-                       // Map sender values correctly
+                       // Map sender values correctly based on _model field
                        let mappedSender: 'user' | 'gemini' | 'together' = 'user';
-                       if (msg.sender === 'bot') {
-                         mappedSender = 'gemini';
-                       } else if (msg.sender === 'ai') {
-                         // Check if this is a Together AI message by looking at the _model property
-                         mappedSender = (msg as any)._model === 'together' ? 'together' : 'gemini';
-                       } else if (msg.sender === 'user') {
+                       
+                       if (msg.sender === 'user') {
                          mappedSender = 'user';
+                       } else if (msg.sender === 'bot') {
+                         // Check the _model field to determine which AI this is
+                         const model = (msg as any)._model;
+                         if (model === 'together') {
+                           mappedSender = 'together';
+                         } else if (model === 'gemini') {
+                           mappedSender = 'gemini';
+                         } else {
+                           // Default to gemini if no model specified
+                           mappedSender = 'gemini';
+                         }
+                       } else if (msg.sender === 'ai') {
+                         // Legacy support for 'ai' sender
+                         mappedSender = (msg as any)._model === 'together' ? 'together' : 'gemini';
                        }
                        
-
+                       console.log('Message mapping:', {
+                         originalSender: msg.sender,
+                         model: (msg as any)._model,
+                         mappedSender: mappedSender,
+                         textPreview: msg.text?.substring(0, 30) + '...'
+                       });
                        
                        return {
                          ...msg,
@@ -1293,7 +1455,8 @@ Please help me understand this topic step by step. Start with an overview of wha
                         }
                       }}
                      topic={selectedTopic}
-                     sessionId={splitScreenSession?.id || undefined}
+                     lesson={selectedLesson}
+                     sessionId={currentSession?.session_identifier || splitScreenSession?.id || undefined}
                      engagementScore={engagementScore}
                      onEngagementThreshold={() => {
                        if (splitScreenSession?.id) {

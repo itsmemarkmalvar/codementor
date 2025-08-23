@@ -1709,3 +1709,20 @@ export const updateConversationHistory = async (sessionId: string, conversationH
     throw error;
   }
 };
+
+export const updateSessionMetadata = async (sessionId: string, metadata: {
+  engagement_data?: any;
+  topic_data?: any;
+  lesson_data?: any;
+  user_preferences?: any;
+}) => {
+  try {
+    console.log('updateSessionMetadata API call:', { sessionId, metadata });
+    const response = await api.put(`/preserved-sessions/${sessionId}/metadata`, metadata);
+    console.log('updateSessionMetadata API response:', response.data);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error updating session metadata:', error);
+    throw error;
+  }
+};

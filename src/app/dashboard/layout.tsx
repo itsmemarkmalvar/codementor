@@ -70,6 +70,48 @@ export default function DashboardLayout({
       // Remove token from localStorage
       removeToken();
       
+      // Clear all user-specific session data from localStorage
+      const clearUserData = () => {
+        // Get current user ID from session if available
+        const currentSession = localStorage.getItem('preserved_session');
+        let userId = 'anonymous';
+        
+        if (currentSession) {
+          try {
+            const session = JSON.parse(currentSession);
+            userId = session.user_id || 'anonymous';
+          } catch (err) {
+            console.error('Error parsing session for cleanup:', err);
+          }
+        }
+        
+        // Clear all user-specific data
+        const keysToRemove = [
+          `preserved_session_${userId}`,
+          `session_metadata_${userId}`,
+          `conversation_history_${userId}`
+        ];
+        
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key);
+          console.log(`Cleared localStorage key: ${key}`);
+        });
+        
+        // Also clear any legacy keys (for backward compatibility)
+        const legacyKeys = [
+          'preserved_session',
+          'session_metadata',
+          'conversation_history'
+        ];
+        
+        legacyKeys.forEach(key => {
+          localStorage.removeItem(key);
+          console.log(`Cleared legacy localStorage key: ${key}`);
+        });
+      };
+      
+      clearUserData();
+      
       // Show success message
       toast.success("Logged out successfully");
       
@@ -79,8 +121,23 @@ export default function DashboardLayout({
       console.error("Logout error:", error);
       toast.error("Failed to logout. Please try again.");
       
-      // Still redirect to login page
+      // Still redirect to login page and clear data
       removeToken();
+      
+      // Clear user data even on error
+      const clearUserData = () => {
+        const keysToRemove = [
+          'preserved_session',
+          'session_metadata',
+          'conversation_history'
+        ];
+        
+        keysToRemove.forEach(key => {
+          localStorage.removeItem(key);
+        });
+      };
+      
+      clearUserData();
       router.push("/auth/login");
     }
   };
