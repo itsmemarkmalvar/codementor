@@ -687,6 +687,7 @@ export const getJudge0Health = async () => {
 
 export const startSplitScreenSession = async (params: {
   topic_id?: number;
+  lesson_id?: number;
   session_type: 'comparison' | 'single';
   ai_models: ('gemini' | 'together')[];
 }) => {
@@ -1654,6 +1655,16 @@ export const getActivePreservedSession = async (userId: string) => {
     return response.data;
   } catch (error: any) {
     console.error('Error getting active preserved session:', error);
+    throw error;
+  }
+};
+
+export const getActivePreservedSessionByLesson = async (userId: string, lessonId: number) => {
+  try {
+    const response = await api.get(`/preserved-sessions/active/${userId}/lesson/${lessonId}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error getting active preserved session by lesson:', error);
     throw error;
   }
 };

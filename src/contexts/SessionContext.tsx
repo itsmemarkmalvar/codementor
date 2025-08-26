@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getActivePreservedSession, reactivatePreservedSession, deactivatePreservedSession, updateConversationHistory, updateSessionMetadata } from '@/services/api';
+import { getActivePreservedSession, reactivatePreservedSession, deactivatePreservedSession, updateConversationHistory, updateSessionMetadata, getActivePreservedSessionByLesson } from '@/services/api';
 import { sessionSync } from '@/utils/crossTabSync';
 
 interface PreservedSession {
@@ -25,10 +25,12 @@ interface SessionContextType {
   isLoading: boolean;
   error: string | null;
   initializeSession: (userId: string) => Promise<PreservedSession | null>;
+  getOrCreateSessionForLesson: (lessonId: number, topicId: number) => Promise<PreservedSession | null>;
   reactivateSession: (sessionId: string) => Promise<void>;
   deactivateSession: (sessionId: string) => Promise<void>;
   clearSession: () => void;
   updateSessionActivity: () => void;
+  setCurrentSession: (session: PreservedSession | null) => void;
   // Enhanced conversation preservation methods
   loadConversationHistory: () => any[];
   saveConversationHistory: (messages: any[]) => void;
@@ -590,6 +592,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     deactivateSession,
     clearSession,
     updateSessionActivity,
+    setCurrentSession,
     // Enhanced conversation preservation methods
     loadConversationHistory,
     saveConversationHistory,

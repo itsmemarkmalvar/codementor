@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight, Users } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser } from '@/services/api';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser, getActivePreservedSessionByLesson } from '@/services/api';
 import { toast } from 'sonner';
 import { isAuthenticated, getToken } from '@/lib/auth-utils';
 
@@ -34,11 +34,28 @@ interface Topic {
   order?: number;
 }
 
+interface Lesson {
+  id: number;
+  title: string;
+  content: string;
+  topic_id: number;
+  lesson_plan_id: number;
+  order_index: number;
+  description?: string;
+  examples?: string;
+  key_points?: string;
+  guidance_notes?: string;
+  estimated_minutes?: number;
+  teaching_strategy?: any;
+  common_misconceptions?: any;
+  is_published?: boolean;
+}
+
 const SoloRoomRefactored = () => {
   // Core state
   const [activeTab, setActiveTab] = useState<'chat' | 'lesson-plans' | 'sessions' | 'quiz'>('chat');
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
-  const [selectedLesson, setSelectedLesson] = useState<any | null>(null);
+  const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [isLoadingTopics, setIsLoadingTopics] = useState(false);
   const [summary, setSummary] = useState<any | null>(null);
@@ -106,10 +123,12 @@ const SoloRoomRefactored = () => {
     deactivateSession,
     syncConversationWithBackend,
     isConversationSynced,
-    loadSessionMetadata,
-    saveSessionMetadata,
+    loadSessionMetadata, 
+    saveSessionMetadata, 
     syncMetadataWithBackend,
-    isMetadataSynced
+    isMetadataSynced,
+    setCurrentSession,
+    saveConversationHistory
   } = useSession();
 
   // Engagement tracking for split-screen mode
@@ -460,8 +479,7 @@ const SoloRoomRefactored = () => {
 
       // Load session data when currentSession changes or when topics are loaded
     useEffect(() => {
-      console.log('Session data loading effect triggered. currentSession:', currentSession, 'topics.length:', topics.length);
-      const loadSessionData = async () => {
+      console.log('Session data loading effect triggered. currentSession:', currentSession, 'topics.length:', topics.length);      const loadSessionData = async () => {
         if (currentSession) {
           console.log('Current session:', currentSession);
           const metadata = loadSessionMetadata();
@@ -528,14 +546,51 @@ const SoloRoomRefactored = () => {
     }
   }, [currentSession, topics, loadSessionMetadata, selectedTopic, selectedLesson]);
 
-  // Auto-switch to lesson tab when lesson is loaded from session
+  // Save active tab to session metadata when it changes
   useEffect(() => {
-    if (selectedLesson && currentSession) {
-      // Switch to lesson tab to show the selected lesson
+    if (currentSession && activeTab) {
+      try {
+        const metadata = {
+          user_preferences: {
+            last_active_tab: activeTab
+          }
+        };
+        saveSessionMetadata(metadata);
+        console.log('Saved active tab to session metadata:', activeTab);
+      } catch (error) {
+        console.error('Error saving active tab to session metadata:', error);
+      }
+    }
+  }, [currentSession, activeTab, saveSessionMetadata]);
+
+  // Load active tab from session metadata when session is loaded
+  useEffect(() => {
+    if (currentSession) {
+      try {
+        const metadata = loadSessionMetadata();
+        const lastActiveTab = metadata.user_preferences?.last_active_tab;
+        
+        if (lastActiveTab && lastActiveTab !== activeTab) {
+          console.log('Restoring last active tab from session:', lastActiveTab);
+          setActiveTab(lastActiveTab as 'chat' | 'lesson-plans' | 'sessions' | 'quiz');
+        }
+      } catch (error) {
+        console.error('Error loading active tab from session metadata:', error);
+      }
+    }
+  }, [currentSession, loadSessionMetadata]); // Removed activeTab to prevent infinite loop
+
+  // Auto-switch to lesson tab when lesson is loaded from session (but only if user was not already on chat tab)
+  useEffect(() => {
+    if (selectedLesson && currentSession && activeTab !== 'chat') {
+      // Only switch to lesson tab if user wasn't already on chat tab
       setActiveTab('lesson-plans');
       console.log('Auto-switched to lesson tab for saved lesson:', selectedLesson.title);
+    } else if (selectedLesson && currentSession && activeTab === 'chat') {
+      // If user is on chat tab, keep them there and just log the lesson info
+      console.log('User on chat tab - keeping them there with saved lesson:', selectedLesson.title);
     }
-  }, [selectedLesson, currentSession]);
+  }, [selectedLesson, currentSession, activeTab]);
 
   // Fetch Piston health
   useEffect(() => {
@@ -634,7 +689,7 @@ const SoloRoomRefactored = () => {
     console.log('Topic selected:', topic);
     setSelectedTopic(topic);
     
-    // Save topic data to session metadata
+    // Save topic data to session metadata (but don't create session)
     if (currentSession) {
       console.log('Saving topic data to session metadata. Topic:', topic.title);
       const metadata = {
@@ -651,81 +706,14 @@ const SoloRoomRefactored = () => {
       console.log('No current session available for saving topic metadata');
     }
     
-    // Reset engagement state for new session
+    // Reset engagement state for new topic (but don't start tracking yet)
     setEngagementTriggered(false);
     setLastThresholdTime(0);
     
-    // Check if user is authenticated before trying to create session
-    if (!isAuthenticated()) {
-      console.log('User not authenticated - continuing without session management');
-      setSplitScreenSession(null);
-      return;
-    }
+    // Clear any existing split screen session since we're switching topics
+    setSplitScreenSession(null);
     
-    // Automatically start a split-screen session when a topic is selected
-    try {
-      console.log('Starting split-screen session for topic:', topic.id);
-      const session = await startSplitScreenSession({
-        topic_id: topic.id,
-        session_type: 'comparison',
-        ai_models: ['gemini', 'together']
-      });
-      
-      console.log('Session creation response:', session);
-      
-      // Check if session was created successfully
-      if (session && session.data && session.data.session_id) {
-        // Create a session object with the expected structure
-        const sessionData = {
-          id: session.data.session_id,
-          session_type: session.data.session_type,
-          ai_models: session.data.ai_models,
-          started_at: session.data.started_at
-        };
-        setSplitScreenSession(sessionData);
-        resetTracking(); // Reset tracking before starting new session
-        
-        // Start engagement tracking immediately but with a delay to prevent immediate triggers
-        setTimeout(() => {
-          startTracking();
-          console.log('Split-screen session started for topic:', topic.title, 'Session ID:', sessionData.id);
-          
-          // Check if user completed practice and returned to Solo Room
-          const practiceCompleted = localStorage.getItem('practiceCompleted');
-          const practiceCompletionTime = localStorage.getItem('practiceCompletionTime');
-          
-          if (practiceCompleted === 'true' && practiceCompletionTime) {
-            const completionTime = parseInt(practiceCompletionTime);
-            const timeSinceCompletion = Date.now() - completionTime;
-            
-            // If practice was completed within the last 10 minutes, show preference poll
-            if (timeSinceCompletion < 600000) { // 10 minutes
-              setTimeout(() => {
-                setPreferencePollType('practice');
-                setShowAIPreferenceModal(true);
-                // Clear the flag
-                localStorage.removeItem('practiceCompleted');
-                localStorage.removeItem('practiceCompletionTime');
-              }, 3000); // 3 second delay
-            } else {
-              // Clear old flags
-              localStorage.removeItem('practiceCompleted');
-              localStorage.removeItem('practiceCompletionTime');
-            }
-          }
-        }, 2000); // Reduced delay to 2 seconds
-      } else {
-        console.warn('Session creation returned invalid response:', session);
-        setSplitScreenSession(null);
-        // Continue without session - split-screen will still work
-        console.log('Continuing without session - split-screen functionality will work without engagement tracking');
-      }
-    } catch (sessionError) {
-      console.error('Split-screen session start failed for topic:', sessionError);
-      setSplitScreenSession(null);
-      // Continue without session - split-screen will still work
-      console.log('Continuing without session - split-screen functionality will work without engagement tracking');
-    }
+    console.log('Topic selected:', topic.title, '- No session created yet. Session will be created when user selects a lesson.');
   };
 
   // Message sending handler
@@ -745,7 +733,7 @@ const SoloRoomRefactored = () => {
     if (selectedLesson) {
       messageWithContext = `Current Lesson: "${selectedLesson.title}"
 ${selectedLesson.description ? `Lesson Description: ${selectedLesson.description}` : ''}
-${selectedLesson.learning_objectives ? `Learning Objectives: ${selectedLesson.learning_objectives}` : ''}
+${selectedLesson.key_points ? `Key Points: ${selectedLesson.key_points}` : ''}
 
 User Question: ${message}`;
     }
@@ -1051,35 +1039,30 @@ Please provide detailed, constructive feedback.`;
     toast.info('This functionality is simplified in the demo');
   };
 
-  // Lesson click handler - Switch to chat and start AI conversation about the lesson
-  const handleLessonClick = async (lesson: any) => {
-    try {
-      console.log('Lesson clicked:', lesson);
+  // Lesson selection handler
+  const handleLessonClick = async (lesson: Lesson) => {
+    console.log('Lesson clicked:', lesson);
+    setSelectedLesson(lesson);
+    
+    // Find the topic for this lesson
+    const topicForLesson = topics.find(t => t.id === lesson.topic_id);
+    
+    // Use the found topic or the already selected one
+    const topicToUse = topicForLesson || selectedTopic;
+    
+    if (!topicToUse) {
+      console.error('No topic found for lesson:', lesson);
+      toast.error('Unable to find topic for this lesson');
+      return;
+    }
+    
+    // Check if user is authenticated before trying to manage sessions
+    if (!isAuthenticated()) {
+      console.log('User not authenticated - continuing without session management for lesson');
+      setSplitScreenSession(null);
       
-      // Set the selected lesson for quiz tab
-      setSelectedLesson(lesson);
-      
-      // Find the topic for this lesson
-      const topicForLesson = topics.find(t => t.id === lesson.topic_id) || selectedTopic;
-      console.log('Topic for lesson:', topicForLesson);
-      
-      // Set the selected topic if not already set
-      if (!selectedTopic && topicForLesson) {
-        setSelectedTopic(topicForLesson);
-      }
-      
-      // Use the found topic or the already selected one
-      const topicToUse = topicForLesson || selectedTopic;
-      
-      if (!topicToUse) {
-        console.error('No topic found for lesson:', lesson);
-        toast.error('Unable to find topic for this lesson');
-        return;
-      }
-      
-      // Save lesson and topic data to session metadata
+      // Save lesson and topic data to session metadata anyway
       if (currentSession) {
-        console.log('Saving lesson and topic data to session metadata. Current session:', currentSession);
         const metadata = {
           lesson_data: {
             id: lesson.id,
@@ -1093,72 +1076,151 @@ Please provide detailed, constructive feedback.`;
             description: topicToUse.description
           }
         };
-        console.log('Metadata to save:', metadata);
         saveSessionMetadata(metadata);
-      } else {
-        console.log('No current session available for saving metadata');
       }
       
-      // Switch to chat tab FIRST
+      // Switch to chat tab and continue
       setActiveTab('chat');
+      return;
+    }
+    
+    try {
+      // Get current user ID
+      const userResponse = await getCurrentUser();
+      const userId = userResponse.user?.id?.toString();
       
-      // Reset engagement state for new session
-      setEngagementTriggered(false);
-      setLastThresholdTime(0);
+      if (!userId) {
+        console.error('Could not get user ID');
+        toast.error('Authentication error');
+        return;
+      }
       
-      // Check if user is authenticated before trying to create session
-      if (!isAuthenticated()) {
-        console.log('User not authenticated - continuing without session management for lesson');
-        setSplitScreenSession(null);
+      // Check if there's an existing session for this specific lesson
+      console.log('Checking for existing session for lesson:', lesson.id);
+      const existingSessionResponse = await getActivePreservedSessionByLesson(userId, lesson.id);
+      
+      if (existingSessionResponse && existingSessionResponse.data) {
+        console.log('Found existing session for lesson:', existingSessionResponse.data.session_identifier);
+        
+        // Use the existing session from backend
+        const existingSession = existingSessionResponse.data;
+        
+        // Save lesson and topic data to session metadata
+        const metadata = {
+          lesson_data: {
+            id: lesson.id,
+            title: lesson.title,
+            content: lesson.content,
+            topic_id: lesson.topic_id
+          },
+          topic_data: {
+            id: topicToUse.id,
+            title: topicToUse.title,
+            description: topicToUse.description
+          }
+        };
+        saveSessionMetadata(metadata);
+        
+        // Switch to chat tab FIRST
+        setActiveTab('chat');
+        
+        // Update the SessionContext with the existing session
+        setCurrentSession(existingSession);
+        
+        // Set the split screen session for engagement tracking
+        const sessionData = {
+          id: existingSession.session_identifier,
+          session_type: existingSession.session_type,
+          ai_models: existingSession.ai_models_used,
+          started_at: existingSession.created_at
+        };
+        setSplitScreenSession(sessionData);
+        
+        // Load conversation history from the existing session
+        if (existingSession.conversation_history && existingSession.conversation_history.length > 0) {
+          console.log('Loading conversation history from existing session:', existingSession.conversation_history.length, 'messages');
+          saveConversationHistory(existingSession.conversation_history);
+        }
+        
+        // Reset tracking and start with existing session
+        resetTracking();
+        setTimeout(() => {
+          startTracking();
+          console.log('Resumed existing session for lesson:', lesson.title, 'Session ID:', sessionData.id);
+        }, 2000);
+        
+        toast.success(`Resumed your previous session for "${lesson.title}"`);
+        
       } else {
-         // Start a split-screen session for this topic and lesson
-         try {
-           console.log('Starting split-screen session for lesson:', lesson.title, 'Topic ID:', topicToUse.id);
-           const session = await startSplitScreenSession({
-             topic_id: topicToUse.id,
-             session_type: 'comparison',
-             ai_models: ['gemini', 'together']
-           });
-           
-           console.log('Session creation response for lesson:', session);
-           
-           // Check if session was created successfully
-           if (session && session.data && session.data.session_id) {
-             // Create a session object with the expected structure
-             const sessionData = {
-               id: session.data.session_id,
-               session_type: session.data.session_type,
-               ai_models: session.data.ai_models,
-               started_at: session.data.started_at
-             };
-             setSplitScreenSession(sessionData);
-             resetTracking(); // Reset tracking before starting new session
-             
-             // Delay starting engagement tracking to prevent immediate triggers
-             setTimeout(() => {
-               const cleanup = startTracking();
-               console.log('Split-screen session started successfully for lesson:', lesson.title, 'Session ID:', sessionData.id);
-             }, 5000); // 5 second delay
-           } else {
-             console.warn('Session creation returned invalid response for lesson:', session);
-             setSplitScreenSession(null);
-             // Continue without session - split-screen will still work
-             console.log('Continuing without session - split-screen functionality will work without engagement tracking');
-           }
-         } catch (sessionError) {
-           console.error('Split-screen session start failed for lesson:', sessionError);
-           setSplitScreenSession(null);
-           // Continue without session - split-screen will still work
-           console.log('Continuing without session - split-screen functionality will work without engagement tracking');
-         }
-       }
+        console.log('No existing session found for lesson, creating new session');
+        
+        // Save lesson and topic data to session metadata
+        const metadata = {
+          lesson_data: {
+            id: lesson.id,
+            title: lesson.title,
+            content: lesson.content,
+            topic_id: lesson.topic_id
+          },
+          topic_data: {
+            id: topicToUse.id,
+            title: topicToUse.title,
+            description: topicToUse.description
+          }
+        };
+        saveSessionMetadata(metadata);
+        
+        // Switch to chat tab FIRST
+        setActiveTab('chat');
+        
+        // Reset engagement state for new session
+        setEngagementTriggered(false);
+        setLastThresholdTime(0);
+        
+        // Create a new split-screen session for this lesson
+        console.log('Starting new split-screen session for lesson:', lesson.title, 'Topic ID:', topicToUse.id, 'Lesson ID:', lesson.id);
+        const session = await startSplitScreenSession({
+          topic_id: topicToUse.id,
+          lesson_id: lesson.id,
+          session_type: 'comparison',
+          ai_models: ['gemini', 'together']
+        });
+        
+        console.log('Session creation response for lesson:', session);
+        
+        // Check if session was created successfully
+        if (session && session.data && session.data.session_id) {
+          // Create a session object with the expected structure
+          const sessionData = {
+            id: session.data.session_id,
+            session_type: session.data.session_type,
+            ai_models: session.data.ai_models,
+            started_at: session.data.started_at
+          };
+          setSplitScreenSession(sessionData);
+          resetTracking(); // Reset tracking before starting new session
+          
+          // Delay starting engagement tracking to prevent immediate triggers
+          setTimeout(() => {
+            startTracking();
+            console.log('New split-screen session started successfully for lesson:', lesson.title, 'Session ID:', sessionData.id);
+          }, 5000); // 5 second delay
+          
+          toast.success(`Started new session for "${lesson.title}"`);
+        } else {
+          console.warn('Session creation returned invalid response for lesson:', session);
+          setSplitScreenSession(null);
+          // Continue without session - split-screen will still work
+          console.log('Continuing without session - split-screen functionality will work without engagement tracking');
+        }
+      }
       
       // Start AI conversation about this specific lesson with better context
       const welcomeMessage = `Hello! I'd like to start learning about "${lesson.title}". 
 
 ${lesson.description ? `Lesson Description: ${lesson.description}` : ''}
-${lesson.learning_objectives ? `\nLearning Objectives: ${lesson.learning_objectives}` : ''}
-${lesson.prerequisites ? `\nPrerequisites: ${lesson.prerequisites}` : ''}
+${lesson.key_points ? `\nKey Points: ${lesson.key_points}` : ''}
+${lesson.examples ? `\nExamples: ${lesson.examples}` : ''}
 
 Please help me understand this topic step by step. Start with an overview of what we'll be learning, then guide me through the key concepts with clear examples.`;
       
@@ -1167,40 +1229,17 @@ Please help me understand this topic step by step. Start with an overview of wha
         await handleSendMessage(welcomeMessage, topicToUse.id, topicToUse.title);
         console.log('Welcome message sent successfully');
       } catch (messageError) {
-        console.error('Failed to send welcome message:', messageError);
-        // Continue anyway - user can manually start conversation
+        console.error('Error sending welcome message:', messageError);
+        toast.error('Failed to send welcome message');
       }
       
-      // Track progress for lesson selection
-      try {
-        updateProgress(1, 'interaction');
-      } catch (progressError) {
-        console.warn('Progress tracking failed:', progressError);
-      }
-      
-      toast.success(`Started split-screen AI comparison for: ${lesson.title}`);
-
-      // Load modules for this lesson and preselect first module
-      try {
-        const modules = await getLessonModules(lesson.id);
-        setLessonModules(modules || []);
-        if (Array.isArray(modules) && modules.length > 0) {
-          const firstModuleId = modules[0].id;
-          setSelectedModuleId(firstModuleId);
-          const quizzesRes = await getModuleQuizzes(firstModuleId);
-          setModuleQuizzes(quizzesRes?.quizzes || []);
-        } else {
-          setSelectedModuleId(null);
-          setModuleQuizzes([]);
-        }
-      } catch (e) {
-        setLessonModules([]);
-        setSelectedModuleId(null);
-        setModuleQuizzes([]);
-      }
     } catch (error) {
-      console.error('Error in handleLessonClick:', error);
-      toast.error(`Failed to start lesson: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Error handling lesson selection:', error);
+      toast.error('Failed to load lesson session');
+      
+      // Fallback: just switch to chat tab and continue without session
+      setActiveTab('chat');
+      setSplitScreenSession(null);
     }
   };
 
@@ -1277,6 +1316,23 @@ Please help me understand this topic step by step. Start with an overview of wha
       toast.error(`Failed to start quiz: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
+
+  // Load active tab from session metadata when session is loaded
+  useEffect(() => {
+    if (currentSession) {
+      try {
+        const metadata = loadSessionMetadata();
+        const lastActiveTab = metadata.user_preferences?.last_active_tab;
+        
+        if (lastActiveTab && lastActiveTab !== activeTab) {
+          console.log('Restoring last active tab from session:', lastActiveTab);
+          setActiveTab(lastActiveTab as 'chat' | 'lesson-plans' | 'sessions' | 'quiz');
+        }
+      } catch (error) {
+        console.error('Error loading active tab from session metadata:', error);
+      }
+    }
+  }, [currentSession, loadSessionMetadata]); // Removed activeTab to prevent infinite loop
 
   // Render main content
   return (
@@ -1739,7 +1795,7 @@ Please help me understand this topic step by step. Start with an overview of wha
                                   )}
                                   <span className="flex items-center gap-1 bg-white/5 px-2 py-1 rounded">
                                     <Target className="h-3 w-3 text-[#2E5BFF]" />
-                                    {lesson.learning_objectives ? lesson.learning_objectives.split(',').length : 3} goals
+                                    {lesson.key_points ? lesson.key_points.split(',').length : 3} goals
                                   </span>
                                 </div>
                               </div>
@@ -1882,20 +1938,8 @@ Please help me understand this topic step by step. Start with an overview of wha
                       <p className="text-gray-400">Test your understanding of this lesson</p>
                     </div>
                     <div className="text-right">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        selectedLesson.difficulty_level === 1 ? 'bg-green-500/20 text-green-400' :
-                        selectedLesson.difficulty_level === 2 ? 'bg-yellow-500/20 text-yellow-400' :
-                        selectedLesson.difficulty_level === 3 ? 'bg-orange-500/20 text-orange-400' :
-                        selectedLesson.difficulty_level === 4 ? 'bg-red-500/20 text-red-400' :
-                        selectedLesson.difficulty_level === 5 ? 'bg-purple-500/20 text-purple-400' :
-                        'bg-gray-500/20 text-gray-400'
-                      }`}>
-                        {selectedLesson.difficulty_level === 1 ? 'Beginner' :
-                         selectedLesson.difficulty_level === 2 ? 'Easy' :
-                         selectedLesson.difficulty_level === 3 ? 'Medium' :
-                         selectedLesson.difficulty_level === 4 ? 'Hard' :
-                         selectedLesson.difficulty_level === 5 ? 'Expert' :
-                         'Beginner'}
+                      <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-400">
+                        Lesson {selectedLesson.order_index}
                       </span>
                     </div>
                   </div>
@@ -1916,50 +1960,41 @@ Please help me understand this topic step by step. Start with an overview of wha
                       
                       {/* Lesson Stats */}
                       <div className="grid grid-cols-2 gap-4 mb-4">
-                        {selectedLesson.modules_count && (
-                          <div className="bg-white/5 rounded-lg p-3 text-center">
-                            <div className="text-[#2E5BFF] font-semibold text-lg">{selectedLesson.modules_count}</div>
-                            <div className="text-gray-400 text-xs">Modules</div>
-                          </div>
-                        )}
                         {selectedLesson.estimated_minutes && (
                           <div className="bg-white/5 rounded-lg p-3 text-center">
                             <div className="text-[#2E5BFF] font-semibold text-lg">{selectedLesson.estimated_minutes}</div>
                             <div className="text-gray-400 text-xs">Minutes</div>
                           </div>
                         )}
+                        <div className="bg-white/5 rounded-lg p-3 text-center">
+                          <div className="text-[#2E5BFF] font-semibold text-lg">{selectedLesson.order_index}</div>
+                          <div className="text-gray-400 text-xs">Order</div>
+                        </div>
                       </div>
 
-                      {/* Learning Objectives */}
-                      {selectedLesson.learning_objectives && (
+                      {/* Key Points */}
+                      {selectedLesson.key_points && (
                         <div className="mb-4">
-                          <h5 className="text-sm font-medium text-white mb-2">Learning Objectives:</h5>
+                          <h5 className="text-sm font-medium text-white mb-2">Key Points:</h5>
                           <div className="text-gray-300 text-sm">
-                            {selectedLesson.learning_objectives.split(',').map((objective: string, index: number) => (
+                            {selectedLesson.key_points.split(',').map((point: string, index: number) => (
                               <div key={index} className="flex items-start gap-2 mb-1">
                                 <Target className="h-3 w-3 text-[#2E5BFF] mt-0.5 flex-shrink-0" />
-                                <span>{objective.trim()}</span>
+                                <span>{point.trim()}</span>
                               </div>
                             ))}
                           </div>
                         </div>
                       )}
 
-                      {/* Prerequisites */}
-                      {selectedLesson.prerequisites ? (
-                        <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                      {/* Examples */}
+                      {selectedLesson.examples && (
+                        <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                           <div className="flex items-center gap-2 mb-1">
-                            <Info className="h-4 w-4 text-amber-400" />
-                            <span className="text-sm font-medium text-amber-300">Prerequisites:</span>
+                            <Code2 className="h-4 w-4 text-blue-400" />
+                            <span className="text-sm font-medium text-blue-300">Examples:</span>
                           </div>
-                          <span className="text-sm text-amber-200">{selectedLesson.prerequisites}</span>
-                        </div>
-                      ) : (
-                        <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                          <div className="flex items-center gap-2">
-                            <Trophy className="h-4 w-4 text-green-400" />
-                            <span className="text-sm font-medium text-green-300">No prerequisites required</span>
-                          </div>
+                          <span className="text-sm text-blue-200">{selectedLesson.examples}</span>
                         </div>
                       )}
                     </div>

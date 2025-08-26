@@ -48,43 +48,61 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   // Load engagement data from session metadata on mount
   useEffect(() => {
     if (currentSession) {
-      const metadata = loadSessionMetadata();
-      const engagementData = metadata.engagement_data;
-      
-      if (engagementData) {
-        console.log('Loading engagement data from session:', engagementData);
-        setEngagementScore(engagementData.score || 0);
-        setIsThresholdReached(engagementData.is_threshold_reached || false);
-        setEvents(engagementData.events || []);
-        setTriggeredActivity(engagementData.triggered_activity || null);
-        setAssessmentSequence(engagementData.assessment_sequence || null);
+      try {
+        const metadata = loadSessionMetadata();
+        const engagementData = metadata.engagement_data;
         
-        // Restore last activity timestamp
-        if (engagementData.last_activity) {
-          lastActivityRef.current = new Date(engagementData.last_activity);
+        if (engagementData) {
+          console.log('Loading engagement data from session:', engagementData);
+          setEngagementScore(engagementData.score || 0);
+          setIsThresholdReached(engagementData.is_threshold_reached || false);
+          setEvents(engagementData.events || []);
+          setTriggeredActivity(engagementData.triggered_activity || null);
+          setAssessmentSequence(engagementData.assessment_sequence || null);
+          
+          // Restore last activity timestamp
+          if (engagementData.last_activity) {
+            lastActivityRef.current = new Date(engagementData.last_activity);
+          }
+          
+          console.log('Engagement data restored successfully:', {
+            score: engagementData.score || 0,
+            is_threshold_reached: engagementData.is_threshold_reached || false,
+            events_count: engagementData.events?.length || 0
+          });
+        } else {
+          console.log('No engagement data found in session metadata');
         }
+      } catch (error) {
+        console.error('Error loading engagement data from session metadata:', error);
       }
     }
   }, [currentSession, loadSessionMetadata]);
+
+
 
   // Save engagement data to session metadata
   const saveEngagementData = useCallback(() => {
     if (!currentSession) return;
 
-    const engagementData = {
-      score: engagementScore,
-      is_threshold_reached: isThresholdReached,
-      events: events,
-      triggered_activity: triggeredActivity,
-      assessment_sequence: assessmentSequence,
-      last_activity: lastActivityRef.current.toISOString()
-    };
+    try {
+      const engagementData = {
+        score: engagementScore,
+        is_threshold_reached: isThresholdReached,
+        events: events,
+        triggered_activity: triggeredActivity,
+        assessment_sequence: assessmentSequence,
+        last_activity: lastActivityRef.current.toISOString()
+      };
 
-    const metadata = {
-      engagement_data: engagementData
-    };
+      const metadata = {
+        engagement_data: engagementData
+      };
 
-    saveSessionMetadata(metadata);
+      saveSessionMetadata(metadata);
+    } catch (error) {
+      console.error('Error saving engagement data to session metadata:', error);
+    }
   }, [currentSession, engagementScore, isThresholdReached, events, triggeredActivity, assessmentSequence, saveSessionMetadata]);
 
   // Save engagement data whenever it changes
