@@ -40,6 +40,18 @@ export function useTutorChat(initialMessages: Message[] = []) {
     gemini: [],
   });
 
+  // Add state to track when conversation history needs to be saved
+  const [pendingConversationSave, setPendingConversationSave] = useState<any[] | null>(null);
+
+  // Save conversation history when pending save is set
+  useEffect(() => {
+    if (pendingConversationSave) {
+      console.log('Saving conversation history from pending state:', pendingConversationSave.length, 'messages');
+      saveConversationHistory(pendingConversationSave);
+      setPendingConversationSave(null); // Clear the pending state
+    }
+  }, [pendingConversationSave, saveConversationHistory]);
+
   // Load conversation history from preserved session on mount
   useEffect(() => {
     const loadPreservedConversation = () => {
@@ -206,7 +218,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
         ...updated.together.map((msg: Message) => ({ ...msg, _model: 'together' as const })),
         ...updated.gemini.map((msg: Message) => ({ ...msg, _model: 'gemini' as const }))
       ];
-      saveConversationHistory(allMessages);
+      setPendingConversationSave(allMessages); // Set pending save
       
       return updated;
     });
@@ -261,7 +273,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
           ...updated.together.map(msg => ({ ...msg, _model: 'together' as const })),
           ...updated.gemini.map(msg => ({ ...msg, _model: 'gemini' as const }))
         ];
-        saveConversationHistory(allMessages);
+        setPendingConversationSave(allMessages); // Set pending save
         
         return updated;
       });
@@ -407,7 +419,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
         ...updated.together.map((msg: Message) => ({ ...msg, _model: 'together' as const })),
         ...updated.gemini.map((msg: Message) => ({ ...msg, _model: 'gemini' as const }))
       ];
-      saveConversationHistory(allMessages);
+      setPendingConversationSave(allMessages); // Set pending save
       
       return updated;
     });
@@ -502,7 +514,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
           ...updated.together.map((msg: Message) => ({ ...msg, _model: 'together' as const })),
           ...updated.gemini.map((msg: Message) => ({ ...msg, _model: 'gemini' as const }))
         ];
-        saveConversationHistory(allMessages);
+        setPendingConversationSave(allMessages); // Set pending save
         
         return updated;
       });

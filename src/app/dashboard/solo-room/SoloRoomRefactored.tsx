@@ -542,7 +542,7 @@ const SoloRoomRefactored = () => {
         }
       };
       console.log('Debug metadata to save:', debugMetadata);
-      saveSessionMetadata(debugMetadata);
+      setPendingSessionMetadata(debugMetadata);
     }
   }, [currentSession, topics, loadSessionMetadata, selectedTopic, selectedLesson]);
 
@@ -701,7 +701,7 @@ const SoloRoomRefactored = () => {
         }
       };
       console.log('Topic metadata to save:', metadata);
-      saveSessionMetadata(metadata);
+      setPendingSessionMetadata(metadata);
     } else {
       console.log('No current session available for saving topic metadata');
     }
@@ -1119,7 +1119,7 @@ Please provide detailed, constructive feedback.`;
             description: topicToUse.description
           }
         };
-        saveSessionMetadata(metadata);
+        setPendingSessionMetadata(metadata);
         
         // Switch to chat tab FIRST
         setActiveTab('chat');
@@ -1139,7 +1139,7 @@ Please provide detailed, constructive feedback.`;
         // Load conversation history from the existing session
         if (existingSession.conversation_history && existingSession.conversation_history.length > 0) {
           console.log('Loading conversation history from existing session:', existingSession.conversation_history.length, 'messages');
-          saveConversationHistory(existingSession.conversation_history);
+          setPendingConversationHistory(existingSession.conversation_history);
         }
         
         // Reset tracking and start with existing session
@@ -1168,7 +1168,7 @@ Please provide detailed, constructive feedback.`;
             description: topicToUse.description
           }
         };
-        saveSessionMetadata(metadata);
+        setPendingSessionMetadata(metadata);
         
         // Switch to chat tab FIRST
         setActiveTab('chat');
@@ -1333,6 +1333,30 @@ Please help me understand this topic step by step. Start with an overview of wha
       }
     }
   }, [currentSession, loadSessionMetadata]); // Removed activeTab to prevent infinite loop
+
+  // Add state to track conversation history loading
+  const [pendingConversationHistory, setPendingConversationHistory] = useState<any[] | null>(null);
+  
+  // Add state to track session metadata saving
+  const [pendingSessionMetadata, setPendingSessionMetadata] = useState<any | null>(null);
+
+  // Load conversation history when pending history is set
+  useEffect(() => {
+    if (pendingConversationHistory) {
+      console.log('Loading conversation history from pending state:', pendingConversationHistory.length, 'messages');
+      saveConversationHistory(pendingConversationHistory);
+      setPendingConversationHistory(null); // Clear the pending state
+    }
+  }, [pendingConversationHistory, saveConversationHistory]);
+
+  // Save session metadata when pending metadata is set
+  useEffect(() => {
+    if (pendingSessionMetadata) {
+      console.log('Saving session metadata from pending state:', pendingSessionMetadata);
+      saveSessionMetadata(pendingSessionMetadata);
+      setPendingSessionMetadata(null); // Clear the pending state
+    }
+  }, [pendingSessionMetadata, saveSessionMetadata]);
 
   // Render main content
   return (
