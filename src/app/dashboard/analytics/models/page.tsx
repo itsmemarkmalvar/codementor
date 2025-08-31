@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { getModelComparison, getTopics, getAIPreferenceAnalytics } from "@/services/api";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Clock3, Bug, Star, ShieldAlert, Activity, Calendar, Hash, Timer, SlidersHorizontal, BookOpen, Users, BarChart3, Trophy, TrendingUp, GraduationCap, Code } from "lucide-react";
+import { CheckCircle2, Clock3, Bug, Star, ShieldAlert, Activity, Calendar, Hash, Timer, SlidersHorizontal, BookOpen, Users, BarChart3, Trophy, TrendingUp, GraduationCap, Code, Brain } from "lucide-react";
 
 export default function ModelsComparisonPage() {
   const [data, setData] = useState<any | null>(null);
@@ -39,120 +39,123 @@ export default function ModelsComparisonPage() {
     return () => { mounted = false; };
   }, [filters]);
 
-  const renderBar = (pct: number, colorClass: string) => (
-    <div className="h-2 bg-white/10 rounded">
-      <div className={`h-full rounded ${colorClass}`} style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} />
-    </div>
-  );
+  const renderBar = (pct: number, colorClass: string) =>
+    <div className="w-full bg-gray-700 rounded-full h-2">
+      <div className={`h-2 rounded-full ${colorClass}`} style={{width: `${Math.min(pct, 100)}%`}}></div>
+    </div>;
 
-  const UM = (m: string) => (data?.user_model || []).find((x: any) => x.model === m);
+  const UM = (model: string) => (data?.user_model || []).find((x: any) => x.model === model);
+  const disabled = (n: number | undefined) => (n ?? 0) < (data?.nmin ?? filters.nmin);
 
-  const disabled = (n?: number) => typeof n === 'number' && data?.nmin && n < data.nmin;
-
-  const StatRow = ({
-    label,
-    value,
-    icon,
-  }: { label: string; value: React.ReactNode; icon: React.ReactNode }) => (
-    <div className="flex items-center justify-between text-sm">
-      <span className="flex items-center gap-2 text-gray-400">{icon}<span>{label}</span></span>
-      <span className="text-white">{value}</span>
+  const StatRow = ({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) => (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        {icon}
+        <span className="text-gray-300">{label}</span>
+      </div>
+      <span className="text-white font-medium">{value}</span>
     </div>
   );
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-3">
-        <h1 className="text-2xl font-bold text-white">AI Models Comparison</h1>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <Badge variant="outline" className="border-white/10 text-gray-300">Window: {data?.window || filters.window}</Badge>
-          <Badge variant="outline" className="border-white/10 text-gray-300">K={data?.k_runs ?? filters.k_runs}</Badge>
-          <Badge variant="outline" className="border-white/10 text-gray-300">Lookahead={data?.lookahead_min ?? filters.lookahead_min}m</Badge>
-          <Badge variant="outline" className="border-white/10 text-gray-300">Nmin={data?.nmin ?? filters.nmin}</Badge>
+    <div className="space-y-6 p-6">
+      {/* TICA-E Algorithm Header */}
+      <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 rounded-lg p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <Brain className="h-8 w-8 text-blue-400" />
+          <div>
+            <h1 className="text-2xl font-bold text-white">TICA-E Algorithm Analysis</h1>
+            <p className="text-blue-200">Tutor Impact Comparative Algorithm - Extended</p>
+          </div>
         </div>
-        <div className="bg-white/5 border border-white/10 rounded-lg p-3 grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
-          <Select value={filters.window} onValueChange={(v)=>setFilters(f=>({...f, window:v}))}>
-            <SelectTrigger className="bg-white/5 border-white/10 text-white min-w-[150px] w-full">
-              <span className="flex items-center gap-2 min-w-0">
-                <Calendar className="h-4 w-4 text-gray-400" />
-                <SelectValue placeholder="Window" className="truncate" />
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="7d">Last 7d</SelectItem>
-              <SelectItem value="30d">Last 30d</SelectItem>
-              <SelectItem value="90d">Last 90d</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={String(filters.quiz_pass_percent)} onValueChange={(v)=>setFilters(f=>({...f, quiz_pass_percent: Number(v)}))}>
-            <SelectTrigger className="bg-white/5 border-white/10 text-white min-w-[150px] w-full">
-              <span className="flex items-center gap-2 min-w-0">
-                <Star className="h-4 w-4 text-yellow-400" />
-                <SelectValue placeholder="Quiz pass %" className="truncate" />
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {[50,60,70,80,90].map(p=> (
-                <SelectItem key={p} value={String(p)}>{p}% pass</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={String(filters.k_runs)} onValueChange={(v)=>setFilters(f=>({...f, k_runs: Number(v)}))}>
-            <SelectTrigger className="bg-white/5 border-white/10 text-white min-w-[150px] w-full">
-              <span className="flex items-center gap-2 min-w-0">
-                <Hash className="h-4 w-4 text-gray-400" />
-                <SelectValue placeholder="K runs" className="truncate" />
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {[1,3,5].map(k=>(
-                <SelectItem key={k} value={String(k)}>K={k}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={String(filters.lookahead_min)} onValueChange={(v)=>setFilters(f=>({...f, lookahead_min: Number(v)}))}>
-            <SelectTrigger className="bg-white/5 border-white/10 text-white min-w-[150px] w-full">
-              <span className="flex items-center gap-2 min-w-0">
-                <Timer className="h-4 w-4 text-gray-400" />
-                <SelectValue placeholder="Lookahead" className="truncate" />
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              {[15,30,60].map(m=>(
-                <SelectItem key={m} value={String(m)}>{m} min</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filters.difficulty ?? 'all'} onValueChange={(v)=>setFilters(f=>({...f, difficulty: v === 'all' ? undefined : v}))}>
-            <SelectTrigger className="bg-white/5 border-white/10 text-white min-w-[150px] w-full">
-              <span className="flex items-center gap-2 min-w-0">
-                <SlidersHorizontal className="h-4 w-4 text-gray-400" />
-                <SelectValue placeholder="Difficulty" className="truncate" />
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All difficulties</SelectItem>
-              {['beginner','easy','medium','hard','expert'].map(l=>(
-                <SelectItem key={l} value={l}><span className="capitalize">{l}</span></SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={filters.topic_id ? String(filters.topic_id) : 'all'} onValueChange={(v)=>setFilters(f=>({...f, topic_id: v === 'all' ? undefined : Number(v)}))}>
-            <SelectTrigger className="bg-white/5 border-white/10 text-white min-w-[200px] w-full">
-              <span className="flex items-center gap-2 min-w-0">
-                <BookOpen className="h-4 w-4 text-gray-400" />
-                <SelectValue placeholder="Topic" className="truncate" />
-              </span>
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All topics</SelectItem>
-              {topics.map(t => (
-                <SelectItem key={t.id} value={String(t.id)}>{t.title}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+          <div className="bg-white/5 rounded p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <TrendingUp className="h-4 w-4 text-green-400" />
+              <span className="text-white font-medium">Hybrid Analysis</span>
+            </div>
+            <p className="text-gray-300">Combines causal analysis with preference correlation</p>
+          </div>
+          <div className="bg-white/5 rounded p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="h-4 w-4 text-blue-400" />
+              <span className="text-white font-medium">Poll-Driven</span>
+            </div>
+            <p className="text-gray-300">User preference data from practice, quiz, and code execution</p>
+          </div>
+          <div className="bg-white/5 rounded p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <BarChart3 className="h-4 w-4 text-purple-400" />
+              <span className="text-white font-medium">Multi-Source</span>
+            </div>
+            <p className="text-gray-300">Enhanced confidence with multiple data points</p>
+          </div>
         </div>
       </div>
+
+      {/* Filters */}
+      <Card className="border-white/10 bg-white/5 p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <SlidersHorizontal className="h-5 w-5 text-gray-400" />
+          <h2 className="text-lg font-semibold text-white">TICA-E Parameters</h2>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div>
+            <label className="text-sm text-gray-400 mb-1 block">Time Window</label>
+            <Select value={filters.window} onValueChange={(v) => setFilters(prev => ({...prev, window: v}))}>
+              <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7d">7 days</SelectItem>
+                <SelectItem value="30d">30 days</SelectItem>
+                <SelectItem value="90d">90 days</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm text-gray-400 mb-1 block">Min Sample Size</label>
+            <Select value={String(filters.nmin)} onValueChange={(v) => setFilters(prev => ({...prev, nmin: parseInt(v)}))}>
+              <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="3">3</SelectItem>
+                <SelectItem value="5">5</SelectItem>
+                <SelectItem value="10">10</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm text-gray-400 mb-1 block">Topic</label>
+            <Select value={filters.topic_id ? String(filters.topic_id) : "all"} onValueChange={(v) => setFilters(prev => ({...prev, topic_id: v === "all" ? undefined : parseInt(v)}))}>
+              <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                <SelectValue placeholder="All topics" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All topics</SelectItem>
+                {topics.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.title}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-sm text-gray-400 mb-1 block">Difficulty</label>
+            <Select value={filters.difficulty || "all"} onValueChange={(v) => setFilters(prev => ({...prev, difficulty: v === "all" ? undefined : v}))}>
+              <SelectTrigger className="bg-white/5 border-white/10 text-white">
+                <SelectValue placeholder="All difficulties" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All difficulties</SelectItem>
+                <SelectItem value="beginner">Beginner</SelectItem>
+                <SelectItem value="easy">Easy</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="hard">Hard</SelectItem>
+                <SelectItem value="expert">Expert</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </Card>
 
 
 

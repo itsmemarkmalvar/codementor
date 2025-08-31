@@ -682,31 +682,20 @@ export const getJudge0Health = async () => {
 };
 
 // =============
-// Split-Screen Session API
+// Session Management API
 // =============
-
-export const startSplitScreenSession = async (params: {
+export const startSplitScreenSession = async (data: {
   topic_id?: number;
   lesson_id?: number;
-  session_type: 'comparison' | 'single';
-  ai_models: ('gemini' | 'together')[];
+  session_type: string;
+  ai_models: string[];
 }) => {
-  try {
-    const response = await api.post('/sessions/start', params);
-    return response.data;
-  } catch (error: any) {
-    console.error('Error in startSplitScreenSession:', error);
-    throw error;
-  }
+  const response = await api.post('/sessions/start', data);
+  return response.data;
 };
 
 export const getActiveSession = async () => {
   const response = await api.get('/sessions/active');
-  return response.data;
-};
-
-export const getSession = async (sessionId: number) => {
-  const response = await api.get(`/sessions/${sessionId}`);
   return response.data;
 };
 
@@ -715,46 +704,27 @@ export const endSession = async (sessionId: number) => {
   return response.data;
 };
 
-export const recordUserChoice = async (sessionId: number, params: {
+export const recordUserChoice = async (sessionId: number, data: {
   choice: 'gemini' | 'together' | 'both' | 'neither';
   reason?: string;
   activity_type?: 'quiz' | 'practice' | 'code_execution';
-  performance_metrics?: any;
 }) => {
-  const response = await api.post(`/sessions/${sessionId}/choice`, params);
+  const response = await api.post(`/sessions/${sessionId}/choice`, data);
   return response.data;
 };
 
-export const requestClarification = async (sessionId: number, params: {
+export const requestClarification = async (sessionId: number, data: {
   request: string;
 }) => {
-  const response = await api.post(`/sessions/${sessionId}/clarification`, params);
+  const response = await api.post(`/sessions/${sessionId}/clarification`, data);
   return response.data;
 };
 
-export const incrementEngagement = async (sessionId: number, params?: {
+export const incrementEngagement = async (sessionId: number, data?: {
   points?: number;
 }) => {
-  console.log('=== incrementEngagement API Call ===');
-  console.log('Session ID:', sessionId);
-  console.log('Params:', params);
-  
-  // Safety check to prevent undefined sessionId
-  if (!sessionId || sessionId === undefined || sessionId === null) {
-    console.warn('incrementEngagement called with invalid sessionId:', sessionId);
-    return { success: false, message: 'Invalid session ID' };
-  }
-  
-  try {
-    console.log(`Making API call to: /sessions/${sessionId}/engagement`);
-    const response = await api.post(`/sessions/${sessionId}/engagement`, params || {});
-    console.log('Engagement API response:', response.data);
-    return response.data;
-  } catch (error: any) {
-    console.error('Engagement API error:', error);
-    console.error('Error response:', error.response?.data);
-    throw error;
-  }
+  const response = await api.post(`/sessions/${sessionId}/engagement`, data || {});
+  return response.data;
 };
 
 export const getTopicProgress = async (topicId: number) => {
@@ -1615,7 +1585,8 @@ export const getAIPreferenceAnalytics = async (params: {
 // AI Preference Logs API
 // =============
 export const createAIPreferenceLog = async (data: {
-  practice_attempt_id: number;
+  practice_attempt_id?: number;
+  session_id?: number;
   chosen_ai: string;
   choice_reason?: string;
   interaction_type: string;

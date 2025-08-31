@@ -257,7 +257,19 @@ const SoloRoomRefactored = () => {
     }
 
     try {
-      await endSession(splitScreenSession.id);
+      // Ensure we have a numeric session ID
+      const sessionId = typeof splitScreenSession.id === 'number' ? splitScreenSession.id : parseInt(splitScreenSession.id);
+      if (isNaN(sessionId)) {
+        console.error('Invalid session ID for ending session:', splitScreenSession.id);
+        setSplitScreenSession(null);
+        stopTracking();
+        resetTracking();
+        setEngagementTriggered(false);
+        setLastThresholdTime(0);
+        return;
+      }
+      
+      await endSession(sessionId);
       setSplitScreenSession(null);
       stopTracking();
       resetTracking();
@@ -289,8 +301,17 @@ const SoloRoomRefactored = () => {
     }
 
     try {
+      // Ensure we have a numeric session ID
+      const sessionId = typeof splitScreenSession.id === 'number' ? splitScreenSession.id : parseInt(splitScreenSession.id);
+      if (isNaN(sessionId)) {
+        console.error('Invalid session ID for user choice:', splitScreenSession.id);
+        setShowAIPreferenceModal(false);
+        setEngagementTriggered(false);
+        return;
+      }
+      
       // Record user choice for split-screen session
-      await recordUserChoice(splitScreenSession.id, { 
+      await recordUserChoice(sessionId, { 
         choice: choice as 'gemini' | 'together' | 'both' | 'neither', 
         reason,
         activity_type: preferencePollType
@@ -336,7 +357,17 @@ const SoloRoomRefactored = () => {
     }
 
     try {
-      await requestClarification(splitScreenSession.id, { request });
+      // Ensure we have a numeric session ID
+      const sessionId = typeof splitScreenSession.id === 'number' ? splitScreenSession.id : parseInt(splitScreenSession.id);
+      if (isNaN(sessionId)) {
+        console.error('Invalid session ID for clarification request:', splitScreenSession.id);
+        setShowLessonCompletionModal(false);
+        setEngagementTriggered(false);
+        toast.success('Clarification request sent');
+        return;
+      }
+      
+      await requestClarification(sessionId, { request });
       setShowLessonCompletionModal(false);
       toast.success('Clarification request sent');
       // Reset engagement to prevent immediate re-triggering
@@ -763,7 +794,15 @@ User Question: ${message}`;
         console.log('Session ID:', splitScreenSession.id);
         console.log('Session object:', splitScreenSession);
         console.log('Incrementing engagement for session:', splitScreenSession.id);
-        await incrementEngagement(splitScreenSession.id);
+        
+        // Ensure we have a numeric session ID
+        const sessionId = typeof splitScreenSession.id === 'number' ? splitScreenSession.id : parseInt(splitScreenSession.id);
+        if (isNaN(sessionId)) {
+          console.error('Invalid session ID for engagement tracking:', splitScreenSession.id);
+          return;
+        }
+        
+        await incrementEngagement(sessionId);
         console.log('Engagement increment successful');
       } catch (error: any) {
         console.error('Failed to increment engagement:', error);
@@ -793,7 +832,13 @@ User Question: ${message}`;
     // Track engagement for split-screen mode (only for successful code execution)
     if (splitScreenSession?.id && result && result.success) {
       try {
-        await incrementEngagement(splitScreenSession.id);
+        // Ensure we have a numeric session ID
+        const sessionId = typeof splitScreenSession.id === 'number' ? splitScreenSession.id : parseInt(splitScreenSession.id);
+        if (isNaN(sessionId)) {
+          console.error('Invalid session ID for engagement tracking:', splitScreenSession.id);
+        } else {
+          await incrementEngagement(sessionId);
+        }
         trackCodeExecution();
         
         // Show AI preference poll for successful code execution
@@ -1124,17 +1169,48 @@ Please provide detailed, constructive feedback.`;
         // Switch to chat tab FIRST
         setActiveTab('chat');
         
-        // Update the SessionContext with the existing session
+        // Update the SessionContext with the existing PreservedSession
         setCurrentSession(existingSession);
         
-        // Set the split screen session for engagement tracking
-        const sessionData = {
-          id: existingSession.session_identifier,
-          session_type: existingSession.session_type,
-          ai_models: existingSession.ai_models_used,
-          started_at: existingSession.created_at
-        };
-        setSplitScreenSession(sessionData);
+        // Check if there's an active SplitScreenSession for engagement tracking
+        try {
+          const activeSessionResponse = await getActiveSession();
+          if (activeSessionResponse?.data?.session) {
+            // Use existing SplitScreenSession for engagement tracking
+            const splitScreenSessionData = {
+              id: activeSessionResponse.data.session.id, // ✅ Use numeric SplitScreenSession ID
+              session_type: activeSessionResponse.data.session.session_type,
+              ai_models: activeSessionResponse.data.session.ai_models_used,
+              started_at: activeSessionResponse.data.session.started_at
+            };
+            setSplitScreenSession(splitScreenSessionData);
+            console.log('Using existing SplitScreenSession for engagement tracking:', splitScreenSessionData.id);
+          } else {
+            // Create new SplitScreenSession for engagement tracking
+            console.log('Creating new SplitScreenSession for engagement tracking');
+            const newSession = await startSplitScreenSession({
+              topic_id: topicToUse.id,
+              lesson_id: lesson.id,
+              session_type: 'comparison',
+              ai_models: ['gemini', 'together']
+            });
+            
+            if (newSession && newSession.data && newSession.data.session_id) {
+              const splitScreenSessionData = {
+                id: newSession.data.session_id, // ✅ Use numeric SplitScreenSession ID
+                session_type: newSession.data.session_type,
+                ai_models: newSession.data.ai_models,
+                started_at: newSession.data.started_at
+              };
+              setSplitScreenSession(splitScreenSessionData);
+              console.log('Created new SplitScreenSession for engagement tracking:', splitScreenSessionData.id);
+            }
+          }
+        } catch (sessionError) {
+          console.error('Error managing SplitScreenSession:', sessionError);
+          // Continue without engagement tracking
+          setSplitScreenSession(null);
+        }
         
         // Load conversation history from the existing session
         if (existingSession.conversation_history && existingSession.conversation_history.length > 0) {
@@ -1146,7 +1222,7 @@ Please provide detailed, constructive feedback.`;
         resetTracking();
         setTimeout(() => {
           startTracking();
-          console.log('Resumed existing session for lesson:', lesson.title, 'Session ID:', sessionData.id);
+          console.log('Resumed existing session for lesson:', lesson.title, 'PreservedSession ID:', existingSession.session_identifier);
         }, 2000);
         
         toast.success(`Resumed your previous session for "${lesson.title}"`);

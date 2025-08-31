@@ -1,8 +1,9 @@
 "use client";import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { motion } from "framer-motion";
-import { Book, Code, GraduationCap, LineChart, Star, Trophy, Users } from "lucide-react";
+import { Book, Code, GraduationCap, LineChart, Star, Trophy, Users, Brain } from "lucide-react";
 import { getUserProgress, getProgressSummary, getModelComparison } from "@/services/api";
+import { Badge } from "@/components/ui/badge";
 
 interface ProgressEntry {
   id?: number;
@@ -187,8 +188,15 @@ export default function DashboardPage() {
         <Card className="border-white/10 bg-white/5 backdrop-blur-sm">
           <div className="p-6">
             <div className="flex items-center justify-between mb-4">
-              <a href="/dashboard/analytics/models" className="text-lg font-semibold text-white hover:underline">Compare AI Models (30d)</a>
-              <Star className="h-5 w-5 text-gray-400" />
+              <a href="/dashboard/analytics/models" className="text-lg font-semibold text-white hover:underline">TICA-E Analysis (30d)</a>
+              <Brain className="h-5 w-5 text-blue-400" />
+            </div>
+            <div className="mb-3">
+              <p className="text-sm text-gray-400 mb-2">Tutor Impact Comparative Algorithm - Extended</p>
+              <div className="flex gap-2 text-xs">
+                <Badge variant="outline" className="border-blue-500/30 text-blue-300">Hybrid Analysis</Badge>
+                <Badge variant="outline" className="border-purple-500/30 text-purple-300">Poll-Driven</Badge>
+              </div>
             </div>
             {modelCompare ? (
               <div className="grid grid-cols-2 gap-4 text-sm">
@@ -204,23 +212,13 @@ export default function DashboardPage() {
                   );
                 })}
                 <div className="col-span-2 pt-2 border-t border-white/10">
-                  <p className="text-gray-300">
-                    Paired Δ success: {modelCompare.paired?.success1?.mean !== null && modelCompare.paired?.success1 ? (Math.round((modelCompare.paired.success1.mean||0)*100)) : 0}%
+                  <p className="text-xs text-gray-500">
+                    Winner: {modelCompare.winner ? modelCompare.winner.toUpperCase() : 'Tie'}
                   </p>
-                  {modelCompare.enhanced_tica?.preference_rates && (
-                    <div className="mt-2 pt-2 border-t border-white/10">
-                      <p className="text-xs text-gray-400 mb-1">AI Preferences:</p>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-blue-400">Gemini: {modelCompare.enhanced_tica.preference_rates.gemini_preference_rate}%</span>
-                        <span className="text-green-400">Together: {modelCompare.enhanced_tica.preference_rates.together_preference_rate}%</span>
-                        <span className="text-purple-400">Both: {modelCompare.enhanced_tica.preference_rates.both_preference_rate}%</span>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-gray-400">No comparison data yet. Chat with both models at least 5 times each.</p>
+              <p className="text-gray-400 text-sm">Loading TICA-E metrics...</p>
             )}
           </div>
         </Card>
