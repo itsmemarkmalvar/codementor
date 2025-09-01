@@ -176,7 +176,7 @@ export const getTutorResponse = async (params: {
     
     // Set a timeout to prevent hanging requests
     const response = await api.post('/tutor/chat', requestParams, {
-      timeout: 30000 // 30 second timeout (reduced from 60s for better UX)
+      timeout: 60000 // 60 second timeout (increased for AI service reliability)
     });
     
     console.log('getTutorResponse API response status:', response.status);
@@ -313,7 +313,7 @@ export const getSplitScreenTutorResponse = async (params: {
     
     // Set a timeout to prevent hanging requests
     const response = await api.post('/tutor/split-screen-chat', requestParams, {
-      timeout: 60000 // 60 second timeout for split-screen (longer since we're calling both models)
+      timeout: 120000 // 120 second timeout for split-screen (increased for AI service reliability)
     });
     
     console.log('getSplitScreenTutorResponse API response status:', response.status);
