@@ -727,6 +727,11 @@ export const incrementEngagement = async (sessionId: number, data?: {
   return response.data;
 };
 
+export const getThresholdStatus = async (sessionId: number) => {
+  const response = await api.get(`/sessions/${sessionId}/threshold-status`);
+  return response.data;
+};
+
 export const getTopicProgress = async (topicId: number) => {
   try {
     const response = await api.get(`/progress/${topicId}`);
@@ -1049,6 +1054,86 @@ export const getQuiz = async (quizId: number): Promise<{ quiz: LessonQuiz & { qu
 export const getModuleQuizzes = async (moduleId: number): Promise<{ quizzes: LessonQuiz[] }> => {
   const response = await api.get(`/modules/${moduleId}/quizzes`);
   return response.data;
+};
+
+// Get quizzes for a specific lesson
+export const getLessonQuizzes = async (lessonId: number): Promise<LessonQuiz[]> => {
+  try {
+    // First get the lesson plan to find its modules
+    const lessonResponse = await api.get(`/lesson-plans/${lessonId}`);
+    if (!lessonResponse.data || lessonResponse.data.status === 'error') {
+      throw new Error('Failed to fetch lesson plan');
+    }
+    
+    const lesson = lessonResponse.data.data;
+    const modules = lesson.modules || [];
+    
+    // Get quizzes from all modules in this lesson
+    let allQuizzes: LessonQuiz[] = [];
+    for (const module of modules) {
+      try {
+        const quizzesResponse = await getModuleQuizzes(module.id);
+        if (quizzesResponse.quizzes) {
+          allQuizzes = [...allQuizzes, ...quizzesResponse.quizzes];
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch quizzes for module ${module.id}:`, error);
+      }
+    }
+    
+    return allQuizzes;
+  } catch (error) {
+    console.error('Error fetching lesson quizzes:', error);
+    return [];
+  }
+};
+
+// Get practice problems for a specific lesson
+export const getLessonPracticeProblems = async (lessonId: number): Promise<any[]> => {
+  try {
+    // First get the lesson plan to find its modules
+    const lessonResponse = await api.get(`/lesson-plans/${lessonId}`);
+    if (!lessonResponse.data || lessonResponse.data.status === 'error') {
+      throw new Error('Failed to fetch lesson plan');
+    }
+    
+    const lesson = lessonResponse.data.data;
+    const modules = lesson.modules || [];
+    
+    // Get practice problems from all modules in this lesson
+    let allProblems: any[] = [];
+    for (const module of modules) {
+      try {
+        const problemsResponse = await api.get(`/lesson-modules/${module.id}/related-practice`);
+        if (problemsResponse.data && problemsResponse.data.status === 'success') {
+          allProblems = [...allProblems, ...problemsResponse.data.data];
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch practice problems for module ${module.id}:`, error);
+      }
+    }
+    
+    return allProblems;
+  } catch (error) {
+    console.error('Error fetching lesson practice problems:', error);
+    return [];
+  }
+};
+
+// Get topic ID for a lesson
+export const getLessonTopicId = async (lessonId: number): Promise<number | null> => {
+  try {
+    const lessonResponse = await api.get(`/lesson-plans/${lessonId}`);
+    if (!lessonResponse.data || lessonResponse.data.status === 'error') {
+      throw new Error('Failed to fetch lesson plan');
+    }
+    
+    const lesson = lessonResponse.data.data;
+    return lesson.topic_id || null;
+  } catch (error) {
+    console.error('Error fetching lesson topic ID:', error);
+    return null;
+  }
 };
 
 export const startQuizAttempt = async (quizId: number): Promise<{ attempt: any; message?: string }> => {

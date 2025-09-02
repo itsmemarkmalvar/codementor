@@ -378,10 +378,18 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
                  <Target className="h-3 w-3 text-[#2E5BFF]" />
                  <span className="font-medium">Engagement: {engagementScore}</span>
                </div>
-               {onEngagementThreshold && engagementScore >= 10 && (
-                 <div className="flex items-center gap-1 text-xs text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+               {/* Two-Stage Threshold Indicators */}
+               {onEngagementThreshold && engagementScore >= 30 && (
+                 <div className="flex items-center gap-1 text-xs text-green-300 bg-green-500/10 px-2 py-0.5 rounded-lg border border-green-500/20">
                    <Zap className="h-3 w-3" />
-                   <span className="font-medium">Threshold reached!</span>
+                   <span className="font-medium">Quiz Unlocked!</span>
+                 </div>
+               )}
+               
+               {onEngagementThreshold && engagementScore >= 70 && (
+                 <div className="flex items-center gap-1 text-xs text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-lg border border-purple-500/20">
+                   <Zap className="h-3 w-3" />
+                   <span className="font-medium">Practice Unlocked!</span>
                  </div>
                )}
              </div>

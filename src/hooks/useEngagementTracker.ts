@@ -1,9 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useSession } from '@/contexts/SessionContext';
+import { getThresholdStatus, incrementEngagement } from '../services/api';
 
 interface EngagementTrackerOptions {
-  threshold: number;
+  quizThreshold: number;      // Quiz trigger at 30 points
+  practiceThreshold: number;  // Practice trigger at 70 points
   sessionId?: number;
   onThresholdReached?: () => void;
   onQuizTrigger?: () => void;
@@ -21,11 +23,17 @@ interface EngagementEvent {
 
 export function useEngagementTracker(options: EngagementTrackerOptions) {
   const [engagementScore, setEngagementScore] = useState(0);
-  const [isThresholdReached, setIsThresholdReached] = useState(false);
+  const [isQuizThresholdReached, setIsQuizThresholdReached] = useState(false);
+  const [isPracticeThresholdReached, setIsPracticeThresholdReached] = useState(false);
   const [events, setEvents] = useState<EngagementEvent[]>([]);
   const [isTracking, setIsTracking] = useState(false);
   const [triggeredActivity, setTriggeredActivity] = useState<'quiz' | 'practice' | null>(null);
   const [assessmentSequence, setAssessmentSequence] = useState<'quiz' | 'practice' | null>(null);
+  
+  // RISK MITIGATION: Debounce threshold detection to prevent spam
+  const thresholdDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const lastThresholdTimeRef = useRef<number>(0);
+  const THRESHOLD_COOLDOWN = 5000; // 5 second cooldown between thresholds
   
   const lastActivityRef = useRef<Date>(new Date());
   const activityTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -55,7 +63,8 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
         if (engagementData) {
           console.log('Loading engagement data from session:', engagementData);
           setEngagementScore(engagementData.score || 0);
-          setIsThresholdReached(engagementData.is_threshold_reached || false);
+          setIsQuizThresholdReached(engagementData.is_quiz_threshold_reached || false);
+          setIsPracticeThresholdReached(engagementData.is_practice_threshold_reached || false);
           setEvents(engagementData.events || []);
           setTriggeredActivity(engagementData.triggered_activity || null);
           setAssessmentSequence(engagementData.assessment_sequence || null);
@@ -67,7 +76,8 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
           
           console.log('Engagement data restored successfully:', {
             score: engagementData.score || 0,
-            is_threshold_reached: engagementData.is_threshold_reached || false,
+            is_quiz_threshold_reached: engagementData.is_quiz_threshold_reached || false,
+            is_practice_threshold_reached: engagementData.is_practice_threshold_reached || false,
             events_count: engagementData.events?.length || 0
           });
         } else {
@@ -81,6 +91,27 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
 
 
 
+  // Sync threshold status with backend
+  const syncThresholdStatusWithBackend = useCallback(async () => {
+    if (!sessionIdRef.current) return;
+
+    try {
+      const response = await getThresholdStatus(sessionIdRef.current);
+      if (response.status === 'success') {
+        const { threshold_status } = response.data;
+        
+        // Update local state with backend data
+        setEngagementScore(threshold_status.current_score);
+        setIsQuizThresholdReached(threshold_status.quiz_triggered);
+        setIsPracticeThresholdReached(threshold_status.practice_triggered);
+        
+        console.log('Threshold status synced with backend:', threshold_status);
+      }
+    } catch (error) {
+      console.error('Failed to sync threshold status with backend:', error);
+    }
+  }, []);
+
   // Save engagement data to session metadata
   const saveEngagementData = useCallback(() => {
     if (!currentSession) return;
@@ -88,7 +119,8 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     try {
       const engagementData = {
         score: engagementScore,
-        is_threshold_reached: isThresholdReached,
+        is_quiz_threshold_reached: isQuizThresholdReached,
+        is_practice_threshold_reached: isPracticeThresholdReached,
         events: events,
         triggered_activity: triggeredActivity,
         assessment_sequence: assessmentSequence,
@@ -103,7 +135,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     } catch (error) {
       console.error('Error saving engagement data to session metadata:', error);
     }
-  }, [currentSession, engagementScore, isThresholdReached, events, triggeredActivity, assessmentSequence, saveSessionMetadata]);
+  }, [currentSession, engagementScore, isQuizThresholdReached, isPracticeThresholdReached, events, triggeredActivity, assessmentSequence, saveSessionMetadata]);
 
   // Save engagement data whenever it changes
   useEffect(() => {
@@ -125,7 +157,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     return () => clearInterval(syncTimer);
   }, [currentSession, isMetadataSynced, syncMetadataWithBackend]);
 
-  // Track user activity
+  // Track user activity with RISK MITIGATION: Debounced threshold detection
   const trackActivity = useCallback((type: EngagementEvent['type'], points: number = 1) => {
     if (!isTracking) return;
 
@@ -139,18 +171,40 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     setEngagementScore(prev => {
       const newScore = prev + points;
       
-      console.log(`Engagement tracking: ${type} (+${points}) = ${newScore}/${options.threshold}`);
+      console.log(`Engagement tracking: ${type} (+${points}) = ${newScore}/${options.quizThreshold}/${options.practiceThreshold}`);
       
-      // Check if threshold is reached
-      if (newScore >= options.threshold && !isThresholdReached) {
-        console.log('Engagement threshold reached!');
-        setIsThresholdReached(true);
-        options.onThresholdReached?.();
+      // RISK MITIGATION: Debounce threshold detection to prevent spam
+      const now = Date.now();
+      if (now - lastThresholdTimeRef.current < THRESHOLD_COOLDOWN) {
+        console.log('Threshold detection debounced - cooldown active');
+        return newScore;
+      }
+      
+      // Stage 1: Quiz Threshold (30 points)
+      if (newScore >= options.quizThreshold && !isQuizThresholdReached) {
+        console.log('🎯 Quiz threshold reached at', newScore, 'points!');
         
-        // Auto-trigger quiz first (sequential flow)
-        if (options.autoTrigger !== false) {
+        // Clear any existing debounce
+        if (thresholdDebounceRef.current) {
+          clearTimeout(thresholdDebounceRef.current);
+        }
+        
+        // Debounced threshold trigger
+        thresholdDebounceRef.current = setTimeout(async () => {
+          setIsQuizThresholdReached(true);
           setTriggeredActivity('quiz');
           setAssessmentSequence('quiz');
+          lastThresholdTimeRef.current = now;
+          
+          // Sync with backend
+          if (sessionIdRef.current) {
+            try {
+              await incrementEngagement(sessionIdRef.current, { points });
+              console.log('Engagement synced with backend for quiz threshold');
+            } catch (error) {
+              console.error('Failed to sync engagement with backend:', error);
+            }
+          }
           
           // Show toast notification
           toast.success(
@@ -158,16 +212,61 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
             { duration: 3000 }
           );
           
-          // Trigger quiz first
+          // Trigger quiz
           options.onQuizTrigger?.();
+        }, 1000); // 1 second debounce
+      }
+      
+      // Stage 2: Practice Threshold (70 points) - only after quiz completion
+      if (newScore >= options.practiceThreshold && !isPracticeThresholdReached && isQuizThresholdReached) {
+        console.log('🎯 Practice threshold reached at', newScore, 'points!');
+        
+        // Clear any existing debounce
+        if (thresholdDebounceRef.current) {
+          clearTimeout(thresholdDebounceRef.current);
         }
+        
+        // Debounced threshold trigger
+        thresholdDebounceRef.current = setTimeout(async () => {
+          setIsPracticeThresholdReached(true);
+          setTriggeredActivity('practice');
+          setAssessmentSequence('practice');
+          lastThresholdTimeRef.current = now;
+          
+          // Sync with backend
+          if (sessionIdRef.current) {
+            try {
+              await incrementEngagement(sessionIdRef.current, { points });
+              console.log('Engagement synced with backend for practice threshold');
+            } catch (error) {
+              console.error('Failed to sync engagement with backend:', error);
+            }
+          }
+          
+          // Show toast notification
+          toast.success(
+            `Excellent progress! Now let's test your practical skills with coding practice.`,
+            { duration: 4000 }
+          );
+          
+          // Trigger practice
+          options.onPracticeTrigger?.();
+        }, 1000); // 1 second debounce
       }
       
       return newScore;
     });
 
     lastActivityRef.current = new Date();
-  }, [isTracking, options.threshold, isThresholdReached, options.onThresholdReached, options.onQuizTrigger, options.onPracticeTrigger, options.autoTrigger]);
+    
+    // Save to session metadata
+    saveEngagementData();
+    
+    // Sync with backend periodically
+    if (sessionIdRef.current && Math.random() < 0.3) { // 30% chance to sync
+      syncThresholdStatusWithBackend();
+    }
+  }, [isTracking, options.quizThreshold, options.practiceThreshold, isQuizThresholdReached, isPracticeThresholdReached, options.onQuizTrigger, options.onPracticeTrigger, options.autoTrigger, saveEngagementData, syncThresholdStatusWithBackend]);
 
   // Track message sending
   const trackMessage = useCallback(() => {
@@ -204,20 +303,18 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   const trackQuizCompletion = useCallback(() => {
     setTriggeredActivity(null);
     
-    // After quiz completion, trigger practice to test practical knowledge
-    setTimeout(() => {
-      setTriggeredActivity('practice');
-      setAssessmentSequence('practice');
-      
-      toast.success(
-        `Great job on the quiz! Now let's test your practical skills with some coding practice.`,
-        { duration: 4000 }
-      );
-      
-      // Trigger practice after quiz completion
-      options.onPracticeTrigger?.();
-    }, 2000); // 2 second delay before triggering practice
-  }, [options.onPracticeTrigger]);
+    // ✅ RISK MITIGATION: Don't reset engagement score - keep it for practice threshold
+    // The engagement score continues accumulating after quiz completion
+    
+    // After quiz completion, wait for practice threshold (70 points)
+    toast.success(
+      `Great job on the quiz! Continue engaging to unlock practice exercises.`,
+      { duration: 4000 }
+    );
+    
+    // Don't auto-trigger practice - let user reach 70 points naturally
+    // This ensures proper engagement flow and prevents spam
+  }, []);
 
   // Track practice completion (NO POINTS - triggers preference poll and resets sequence)
   const trackPracticeCompletion = useCallback(() => {
@@ -236,7 +333,8 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     
     // Don't reset engagement data if it's already loaded from session
     if (events.length === 0) {
-      setIsThresholdReached(false);
+      setIsQuizThresholdReached(false);
+      setIsPracticeThresholdReached(false);
       setEngagementScore(0);
       setEvents([]);
       setTriggeredActivity(null);
@@ -286,7 +384,8 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   // Reset tracking
   const resetTracking = useCallback(() => {
     setEngagementScore(0);
-    setIsThresholdReached(false);
+    setIsQuizThresholdReached(false);
+    setIsPracticeThresholdReached(false);
     setEvents([]);
     setTriggeredActivity(null);
     setAssessmentSequence(null);
@@ -300,8 +399,10 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     
     return {
       score: engagementScore,
-      threshold: options.threshold,
-      isThresholdReached,
+      quizThreshold: options.quizThreshold,
+      practiceThreshold: options.practiceThreshold,
+      isQuizThresholdReached,
+      isPracticeThresholdReached,
       triggeredActivity,
       sessionDuration: Math.floor(sessionDuration / 1000), // seconds
       eventCount: events.length,
@@ -318,7 +419,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
         practices: 0 // Will be tracked separately
       }
     };
-  }, [engagementScore, options.threshold, isThresholdReached, triggeredActivity, events]);
+  }, [engagementScore, options.quizThreshold, options.practiceThreshold, isQuizThresholdReached, isPracticeThresholdReached, triggeredActivity, events]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -331,7 +432,8 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
 
   return {
     engagementScore,
-    isThresholdReached,
+    isQuizThresholdReached,
+    isPracticeThresholdReached,
     triggeredActivity,
     assessmentSequence,
     isTracking,
@@ -345,6 +447,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     stopTracking,
     resetTracking,
     getEngagementAnalytics,
+    syncThresholdStatusWithBackend,
     events
   };
 }

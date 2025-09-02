@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight, Users } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser, getActivePreservedSessionByLesson } from '@/services/api';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser, getActivePreservedSessionByLesson, createAIPreferenceLog, getLessonTopicId } from '@/services/api';
 import { toast } from 'sonner';
 import { isAuthenticated, getToken } from '@/lib/auth-utils';
 
@@ -66,13 +66,16 @@ const SoloRoomRefactored = () => {
   const [moduleQuizzes, setModuleQuizzes] = useState<any[]>([]);
   const [lessonModules, setLessonModules] = useState<any[]>([]);
   const [selectedModuleId, setSelectedModuleId] = useState<number | null>(null);
-  const [activeQuiz, setActiveQuiz] = useState<any | null>(null);
-  const [activeAttempt, setActiveAttempt] = useState<any | null>(null);
-  const quizInProgress = !!activeAttempt && !activeAttempt.completed_at;
-  const [quizElapsedSec, setQuizElapsedSec] = useState<number>(0);
-  const [quizTimerId, setQuizTimerId] = useState<any>(null);
+  const [activeQuiz, setActiveQuiz] = useState<any>(null);
+  const [activeAttempt, setActiveAttempt] = useState<any>(null);
+  const [quizInProgress, setQuizInProgress] = useState(false);
+  const [quizElapsedSec, setQuizElapsedSec] = useState(0);
+  const [quizTimerId, setQuizTimerId] = useState<NodeJS.Timeout | null>(null);
   const [quizResponses, setQuizResponses] = useState<Record<number, any>>({});
   const [isSubmittingQuiz, setIsSubmittingQuiz] = useState(false);
+  const [showQuizModal, setShowQuizModal] = useState(false);
+  const [quizCompletionData, setQuizCompletionData] = useState<any>(null);
+  const [practiceCompletionData, setPracticeCompletionData] = useState<any>(null);
   const [pistonHealth, setPistonHealth] = useState<{ok:boolean; latency_ms?: number}|null>(null);
   
   // Project state (simplified for demo)
@@ -131,10 +134,11 @@ const SoloRoomRefactored = () => {
     saveConversationHistory
   } = useSession();
 
-  // Engagement tracking for split-screen mode
+  // Engagement tracking for split-screen mode with TWO-STAGE THRESHOLD SYSTEM
   const {
     engagementScore,
-    isThresholdReached,
+    isQuizThresholdReached,
+    isPracticeThresholdReached,
     triggeredActivity,
     assessmentSequence,
     isTracking,
@@ -147,21 +151,13 @@ const SoloRoomRefactored = () => {
     startTracking,
     stopTracking,
     resetTracking,
-    getEngagementAnalytics
+    getEngagementAnalytics,
+    syncThresholdStatusWithBackend
   } = useEngagementTracker({
-    threshold: 50, // Increased threshold to prevent spam
+    quizThreshold: 30,      // Quiz triggers at 30 engagement points
+    practiceThreshold: 70,  // Practice triggers at 70 engagement points
     sessionId: splitScreenSession?.id,
     autoTrigger: true, // Enable automatic quiz/practice triggering
-    onThresholdReached: () => {
-      const now = Date.now();
-      const COOLDOWN_PERIOD = 120000; // 2 minutes cooldown
-      
-      // Only trigger if enough time has passed since last threshold
-      if (now - lastThresholdTime > COOLDOWN_PERIOD) {
-        setEngagementTriggered(true);
-        setLastThresholdTime(now);
-      }
-    },
     onQuizTrigger: () => {
       // Auto-trigger quiz first (sequential flow)
       handleAutoTriggerQuiz();
@@ -310,16 +306,57 @@ const SoloRoomRefactored = () => {
         return;
       }
       
-      // Record user choice for split-screen session
+      // ✅ ENHANCED: Create comprehensive AI preference log with performance data
+      let preferenceLogData: any = {
+        session_id: sessionId,
+        chosen_ai: choice,
+        choice_reason: reason,
+        interaction_type: preferencePollType,
+        topic_id: currentSession?.lesson_id ? await getLessonTopicId(currentSession.lesson_id) : null,
+        difficulty_level: 'medium', // Default, can be enhanced later
+        attempt_count: 1
+      };
+
+      // Add performance data based on interaction type
+      if (preferencePollType === 'quiz' && quizCompletionData) {
+        preferenceLogData = {
+          ...preferenceLogData,
+          performance_score: quizCompletionData.score,
+          success_rate: quizCompletionData.passed ? 100 : (quizCompletionData.percentage || 0),
+          time_spent_seconds: quizCompletionData.time_spent_seconds,
+          context_data: {
+            quiz_id: quizCompletionData.quiz_id,
+            score: quizCompletionData.score,
+            percentage: quizCompletionData.percentage,
+            passed: quizCompletionData.passed,
+            session_id: quizCompletionData.session_id
+          }
+        };
+      } else if (preferencePollType === 'practice' && practiceCompletionData) {
+        preferenceLogData = {
+          ...preferenceLogData,
+          performance_score: practiceCompletionData.points_earned,
+          success_rate: practiceCompletionData.is_correct ? 100 : 0,
+          time_spent_seconds: practiceCompletionData.time_spent_seconds,
+          context_data: {
+            problem_id: practiceCompletionData.problem_id,
+            is_correct: practiceCompletionData.is_correct,
+            points_earned: practiceCompletionData.points_earned,
+            complexity_score: practiceCompletionData.complexity_score,
+            session_id: practiceCompletionData.session_id
+          }
+        };
+      }
+
+      // Create AI preference log
+      await createAIPreferenceLog(preferenceLogData);
+
+      // Record user choice for split-screen session (for backward compatibility)
       await recordUserChoice(sessionId, { 
         choice: choice as 'gemini' | 'together' | 'both' | 'neither', 
         reason,
         activity_type: preferencePollType
       });
-
-      // Note: The session choice endpoint (/sessions/{sessionId}/choice) already creates
-      // the AIPreferenceLog entry for Compare AI analytics, so we don't need to call
-      // createAIPreferenceLog separately here.
 
       setShowAIPreferenceModal(false);
       
@@ -335,6 +372,10 @@ const SoloRoomRefactored = () => {
       if (preferencePollType === 'code_execution') {
         toast.success('Thank you for your feedback!');
       }
+
+      // Clear completion data
+      setQuizCompletionData(null);
+      setPracticeCompletionData(null);
     } catch (error) {
       console.error('Error recording user choice:', error);
       // Continue anyway - close modal and show completion
@@ -1434,6 +1475,9 @@ Please help me understand this topic step by step. Start with an overview of wha
     }
   }, [pendingSessionMetadata, saveSessionMetadata]);
 
+  // Router for navigation
+  const router = useRouter();
+
   // Render main content
   return (
     <div className="flex flex-col h-screen bg-[#0A1929] custom-scrollbar">
@@ -1545,6 +1589,33 @@ Please help me understand this topic step by step. Start with an overview of wha
                          Engagement: {engagementScore}
                        </span>
                      </div>
+                     
+                     {/* Two-Stage Threshold Indicators */}
+                     {isQuizThresholdReached && (
+                       <div className="flex items-center gap-2 px-2 py-1 bg-green-500/20 border border-green-500/30 rounded-lg">
+                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                         <span className="text-xs text-green-600 font-medium">Quiz Unlocked</span>
+                       </div>
+                     )}
+                     
+                     {isPracticeThresholdReached && (
+                       <div className="flex items-center gap-2 px-2 py-1 bg-purple-500/20 border border-purple-500/30 rounded-lg">
+                         <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
+                         <span className="text-xs text-purple-600 font-medium">Practice Unlocked</span>
+                       </div>
+                     )}
+                     
+                     {/* Progress to Next Threshold */}
+                     {!isQuizThresholdReached && (
+                       <div className="text-xs text-gray-400 px-2">
+                         Quiz in: {30 - engagementScore} pts
+                       </div>
+                     )}
+                     {isQuizThresholdReached && !isPracticeThresholdReached && (
+                       <div className="text-xs text-gray-400 px-2">
+                         Practice in: {70 - engagementScore} pts
+                       </div>
+                     )}
                                            <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
                         <span className="text-xs text-gray-400">Online</span>
@@ -2270,8 +2341,21 @@ Please help me understand this topic step by step. Start with an overview of wha
                                     setQuizTimerId(null);
                                   }
                                   
-                                  // Show preference poll after quiz completion
+                                  // ✅ AUTOMATIC AI PREFERENCE POLL TRIGGER
+                                  // Set preference poll type and show modal
                                   setPreferencePollType('quiz');
+                                  
+                                  // Store quiz completion data for preference poll
+                                  setQuizCompletionData({
+                                    quiz_id: activeQuiz?.id,
+                                    score: res.score,
+                                    percentage: res.percentage,
+                                    passed: res.passed,
+                                    time_spent_seconds: quizElapsedSec,
+                                    session_id: splitScreenSession?.id
+                                  });
+                                  
+                                  // Show preference poll after quiz completion
                                   setTimeout(() => {
                                     setShowAIPreferenceModal(true);
                                   }, 1000);
