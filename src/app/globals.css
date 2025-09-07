@@ -119,13 +119,16 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
-/* Fix chat bubble text cropping */
+/* Fix chat bubble text cropping and overlapping */
 .message-bubble {
   max-width: 100% !important;
   word-wrap: break-word !important;
   overflow-wrap: break-word !important;
   width: 100% !important;
   min-width: 0 !important;
+  box-sizing: border-box !important;
+  display: block !important;
+  position: relative !important;
 }
 
 .message-bubble p {
@@ -135,6 +138,9 @@
   max-width: 100% !important;
   width: 100% !important;
   min-width: 0 !important;
+  box-sizing: border-box !important;
+  hyphens: auto !important;
+  word-break: break-word !important;
 }
 
 /* Force text wrapping in all chat elements */
@@ -145,6 +151,38 @@
   min-width: 0 !important;
   word-wrap: break-word !important;
   overflow-wrap: break-word !important;
+  box-sizing: border-box !important;
+  display: block !important;
+  hyphens: auto !important;
+  word-break: break-word !important;
+}
+
+/* Ensure proper flex behavior for message containers */
+.split-screen-chat .flex {
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.split-screen-chat .flex-1 {
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* Fix code blocks in messages */
+.message-bubble pre {
+  max-width: 100% !important;
+  overflow-x: auto !important;
+  word-wrap: break-word !important;
+  white-space: pre-wrap !important;
+  box-sizing: border-box !important;
+}
+
+.message-bubble code {
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  white-space: pre-wrap !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
 }
 
 @layer base {

@@ -189,7 +189,7 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
     
          return (
               <div key={`${message.id}-${index || 0}-${message.timestamp.getTime()}`} 
-            className={`flex gap-2 mb-2 w-full ${isUser ? 'justify-end' : 'justify-start'}`}>
+            className={`flex gap-2 mb-3 w-full ${isUser ? 'justify-end' : 'justify-start'} min-h-0`}>
                  {!isUser && (
            <div className="flex-shrink-0 mt-1">
              <Avatar className={`h-6 w-6 ${message.sender === 'gemini' ? 'bg-gradient-to-br from-blue-500 to-blue-600' : 'bg-gradient-to-br from-green-500 to-green-600'}`}>
@@ -200,8 +200,8 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
            </div>
          )}
         
-                                   <div className={`w-full ${isUser ? 'order-1' : 'order-2'}`}>
-            <div className={`rounded-2xl px-3 py-2 shadow-sm message-bubble ${
+                                   <div className={`flex-1 min-w-0 ${isUser ? 'order-1' : 'order-2'}`}>
+            <div className={`rounded-2xl px-3 py-2 shadow-sm message-bubble max-w-full ${
               isUser 
                 ? 'bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] text-white ml-auto' 
                 : message.sender === 'gemini'
@@ -221,19 +221,19 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
                </div>
              )}
             
-                         <div className="message-content chat-message w-full">
+                         <div className="message-content chat-message w-full min-w-0">
                {parts.map((part, partIndex) => {
                  if (part.type === 'code') {
                    return (
                      <div key={partIndex} className="my-2 relative group">
-                       <pre className="bg-black/60 p-2 rounded-lg overflow-x-auto border border-white/20 max-h-32 overflow-y-auto shadow-inner">
-                         <code className="text-xs font-mono text-gray-100 leading-relaxed">{part.content}</code>
+                       <pre className="bg-black/60 p-2 rounded-lg overflow-x-auto border border-white/20 max-h-32 overflow-y-auto shadow-inner max-w-full">
+                         <code className="text-xs font-mono text-gray-100 leading-relaxed break-words">{part.content}</code>
                        </pre>
                      </div>
                    );
                  } else {
                    return (
-                     <p key={partIndex} className={`whitespace-pre-wrap text-xs leading-relaxed ${
+                     <p key={partIndex} className={`whitespace-pre-wrap text-xs leading-relaxed break-words max-w-full ${
                        isUser ? 'text-white' : 'text-gray-100'
                      }`}>
                        {part.content}
@@ -253,7 +253,7 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
                  {isUser && (
            <div className="flex-shrink-0 mt-1">
              <Avatar className="h-6 w-6 bg-gradient-to-br from-gray-600 to-gray-700">
-               <AvatarFallback className="bg-gradient-to-br from-gray-600 to-gray-700 text-white text-xs font-semibold">You</AvatarFallback>
+               <AvatarFallback className="bg-gradient-to-br from-gray-600 to-gray-700 text-white text-xs font-semibold">U</AvatarFallback>
              </Avatar>
            </div>
          )}
