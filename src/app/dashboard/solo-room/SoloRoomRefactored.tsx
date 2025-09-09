@@ -906,7 +906,7 @@ User Question: ${message}`;
           return;
         }
         
-        await incrementEngagement(sessionId);
+        await incrementEngagement(sessionId, { points: 3 });
         console.log('Engagement increment successful');
       } catch (error: any) {
         console.error('Failed to increment engagement:', error);
@@ -941,7 +941,7 @@ User Question: ${message}`;
         if (isNaN(sessionId)) {
           console.error('Invalid session ID for engagement tracking:', splitScreenSession.id);
         } else {
-          await incrementEngagement(sessionId);
+          await incrementEngagement(sessionId, { points: 5 });
         }
         trackCodeExecution();
         
