@@ -45,7 +45,7 @@ export default function ModelsComparisonPage() {
     </div>;
 
   const UM = (model: string) => (data?.user_model || []).find((x: any) => x.model === model);
-  const disabled = (n: number | undefined) => (n ?? 0) < (data?.nmin ?? filters.nmin);
+  const disabled = (n: number | undefined): boolean => (n ?? 0) < (data?.nmin ?? filters.nmin);
 
   const StatRow = ({ label, value, icon }: { label: string; value: string; icon: React.ReactNode }) => (
     <div className="flex items-center justify-between">

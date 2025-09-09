@@ -71,7 +71,14 @@ export const SESSION_SYNC_EVENTS = {
   CONVERSATION_UPDATED: 'conversation_updated',
   METADATA_UPDATED: 'metadata_updated',
   TAB_FOCUSED: 'tab_focused',
-  TAB_BLURRED: 'tab_blurred'
+  TAB_BLURRED: 'tab_blurred',
+  // New engagement and progress events
+  ENGAGEMENT_UPDATED: 'engagement_updated',
+  THRESHOLD_REACHED: 'threshold_reached',
+  PROGRESS_UPDATED: 'progress_updated',
+  QUIZ_UNLOCKED: 'quiz_unlocked',
+  PRACTICE_UNLOCKED: 'practice_unlocked',
+  UI_STATE_UPDATED: 'ui_state_updated'
 } as const;
 
 // Create a global instance
@@ -127,6 +134,72 @@ export const sessionSync = {
   // Subscribe to metadata updates
   onMetadataUpdate: (callback: (metadataData: any) => void) => {
     return crossTabSync.subscribe(SESSION_SYNC_EVENTS.METADATA_UPDATED, callback);
+  }
+};
+
+// Engagement and progress sync utilities
+export const engagementSync = {
+  // Notify other tabs when engagement score changes
+  notifyEngagementUpdate: (engagementData: { score: number; sessionId: number; userId: string }) => {
+    crossTabSync.broadcast(SESSION_SYNC_EVENTS.ENGAGEMENT_UPDATED, engagementData);
+  },
+
+  // Notify other tabs when threshold is reached
+  notifyThresholdReached: (thresholdData: { type: 'quiz' | 'practice'; score: number; sessionId: number }) => {
+    crossTabSync.broadcast(SESSION_SYNC_EVENTS.THRESHOLD_REACHED, thresholdData);
+  },
+
+  // Notify other tabs when quiz is unlocked
+  notifyQuizUnlocked: (sessionId: number) => {
+    crossTabSync.broadcast(SESSION_SYNC_EVENTS.QUIZ_UNLOCKED, { sessionId, timestamp: Date.now() });
+  },
+
+  // Notify other tabs when practice is unlocked
+  notifyPracticeUnlocked: (sessionId: number) => {
+    crossTabSync.broadcast(SESSION_SYNC_EVENTS.PRACTICE_UNLOCKED, { sessionId, timestamp: Date.now() });
+  },
+
+  // Subscribe to engagement updates
+  onEngagementUpdate: (callback: (engagementData: { score: number; sessionId: number; userId: string }) => void) => {
+    return crossTabSync.subscribe(SESSION_SYNC_EVENTS.ENGAGEMENT_UPDATED, callback);
+  },
+
+  // Subscribe to threshold events
+  onThresholdReached: (callback: (thresholdData: { type: 'quiz' | 'practice'; score: number; sessionId: number }) => void) => {
+    return crossTabSync.subscribe(SESSION_SYNC_EVENTS.THRESHOLD_REACHED, callback);
+  },
+
+  // Subscribe to quiz unlock events
+  onQuizUnlocked: (callback: (data: { sessionId: number; timestamp: number }) => void) => {
+    return crossTabSync.subscribe(SESSION_SYNC_EVENTS.QUIZ_UNLOCKED, callback);
+  },
+
+  // Subscribe to practice unlock events
+  onPracticeUnlocked: (callback: (data: { sessionId: number; timestamp: number }) => void) => {
+    return crossTabSync.subscribe(SESSION_SYNC_EVENTS.PRACTICE_UNLOCKED, callback);
+  }
+};
+
+// Progress and UI state sync utilities
+export const progressSync = {
+  // Notify other tabs when progress updates
+  notifyProgressUpdate: (progressData: { type: 'quiz' | 'practice' | 'lesson'; progress: number; sessionId: number }) => {
+    crossTabSync.broadcast(SESSION_SYNC_EVENTS.PROGRESS_UPDATED, progressData);
+  },
+
+  // Notify other tabs when UI state changes
+  notifyUIStateUpdate: (uiStateData: { component: string; state: any; sessionId: number }) => {
+    crossTabSync.broadcast(SESSION_SYNC_EVENTS.UI_STATE_UPDATED, uiStateData);
+  },
+
+  // Subscribe to progress updates
+  onProgressUpdate: (callback: (progressData: { type: 'quiz' | 'practice' | 'lesson'; progress: number; sessionId: number }) => void) => {
+    return crossTabSync.subscribe(SESSION_SYNC_EVENTS.PROGRESS_UPDATED, callback);
+  },
+
+  // Subscribe to UI state updates
+  onUIStateUpdate: (callback: (uiStateData: { component: string; state: any; sessionId: number }) => void) => {
+    return crossTabSync.subscribe(SESSION_SYNC_EVENTS.UI_STATE_UPDATED, callback);
   }
 };
 

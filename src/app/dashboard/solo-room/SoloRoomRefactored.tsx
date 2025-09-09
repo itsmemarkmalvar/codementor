@@ -96,6 +96,7 @@ const SoloRoomRefactored = () => {
   const [lastThresholdTime, setLastThresholdTime] = useState<number>(0);
   const [preferencePollType, setPreferencePollType] = useState<'quiz' | 'practice' | 'code_execution'>('quiz');
   const [isAnalyzingCode, setIsAnalyzingCode] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Use custom hooks
   const {
@@ -157,6 +158,7 @@ const SoloRoomRefactored = () => {
     quizThreshold: 30,      // Quiz triggers at 30 engagement points
     practiceThreshold: 70,  // Practice triggers at 70 engagement points
     sessionId: splitScreenSession?.id,
+    userId: currentUser?.id?.toString() || undefined,
     autoTrigger: true, // Enable automatic quiz/practice triggering
     onQuizTrigger: () => {
       // Auto-trigger quiz first (sequential flow)
@@ -175,6 +177,64 @@ const SoloRoomRefactored = () => {
       setShowLessonCompletionModal(true);
     }
   });
+
+  // If user returns with a PreservedSession but no SplitScreenSession, ensure one exists and restore engagement
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!currentSession || splitScreenSession?.id) return;
+
+        // Try to bind to an active split-screen session first
+        const active = await getActiveSession();
+        if (active?.data?.session?.id) {
+          const s = active.data.session;
+          setSplitScreenSession({
+            id: s.id,
+            session_type: s.session_type,
+            ai_models: s.ai_models_used,
+            started_at: s.started_at
+          });
+          return;
+        }
+
+        // Otherwise create one based on the preserved session's lesson/topic
+        const lessonId = currentSession.lesson_id;
+        if (!lessonId) return;
+        let topicId: number | undefined = undefined;
+        try {
+          const topicResp = await getLessonTopicId(lessonId);
+          topicId = (topicResp as any)?.topic_id ?? (topicResp as any)?.data?.topic_id;
+        } catch (e) {
+          console.warn('Could not resolve topic for lesson', lessonId, e);
+        }
+
+        const newSession = await startSplitScreenSession({
+          topic_id: topicId,
+          lesson_id: lessonId,
+          session_type: 'comparison',
+          ai_models: ['gemini', 'together']
+        });
+        if (newSession?.data?.session_id) {
+          setSplitScreenSession({
+            id: newSession.data.session_id,
+            session_type: newSession.data.session_type,
+            ai_models: newSession.data.ai_models,
+            started_at: newSession.data.started_at
+          });
+        }
+      } catch (e) {
+        console.error('Failed to ensure split-screen session from preserved session:', e);
+      }
+    })();
+  }, [currentSession, splitScreenSession?.id]);
+
+  // Ensure engagement tracking starts when a preserved session exists (better UX)
+  // This allows engagement to accrue even if a SplitScreenSession hasn't been created yet
+  useEffect(() => {
+    if (isSplitScreenMode && !isTracking && (splitScreenSession?.id || currentSession?.session_identifier)) {
+      startTracking();
+    }
+  }, [isSplitScreenMode, isTracking, splitScreenSession?.id, currentSession?.session_identifier, startTracking]);
 
   // Auto-trigger quiz function
   const handleAutoTriggerQuiz = async () => {
@@ -473,6 +533,9 @@ const SoloRoomRefactored = () => {
           // Get the current user to get their ID
           const userResponse = await getCurrentUser();
           const userId = userResponse.user?.id?.toString();
+          
+          // Set current user state
+          setCurrentUser(userResponse.user);
           
           if (userId) {
             console.log('Initializing session for user:', userId);
@@ -1175,6 +1238,9 @@ Please provide detailed, constructive feedback.`;
       const userResponse = await getCurrentUser();
       const userId = userResponse.user?.id?.toString();
       
+      // Set current user state
+      setCurrentUser(userResponse.user);
+      
       if (!userId) {
         console.error('Could not get user ID');
         toast.error('Authentication error');
@@ -1215,7 +1281,7 @@ Please provide detailed, constructive feedback.`;
         
         // Check if there's an active SplitScreenSession for engagement tracking
         try {
-          const activeSessionResponse = await getActiveSession();
+          const activeSessionResponse = await getActiveSession({ lesson_id: lesson.id });
           if (activeSessionResponse?.data?.session) {
             // Use existing SplitScreenSession for engagement tracking
             const splitScreenSessionData = {
@@ -1264,7 +1330,7 @@ Please provide detailed, constructive feedback.`;
         setTimeout(() => {
           startTracking();
           console.log('Resumed existing session for lesson:', lesson.title, 'PreservedSession ID:', existingSession.session_identifier);
-        }, 2000);
+        }, 250);
         
         toast.success(`Resumed your previous session for "${lesson.title}"`);
         
@@ -1321,7 +1387,7 @@ Please provide detailed, constructive feedback.`;
           setTimeout(() => {
             startTracking();
             console.log('New split-screen session started successfully for lesson:', lesson.title, 'Session ID:', sessionData.id);
-          }, 5000); // 5 second delay
+          }, 500); // reduced delay for faster UX
           
           toast.success(`Started new session for "${lesson.title}"`);
         } else {
@@ -1633,7 +1699,7 @@ Please help me understand this topic step by step. Start with an overview of wha
                      console.log('SplitScreenChatInterface props:', {
                        selectedTopic,
                        selectedLesson,
-                       sessionId: currentSession?.session_identifier || splitScreenSession?.id || undefined,
+                       sessionId: splitScreenSession?.id || currentSession?.session_identifier || undefined,
                        engagementScore
                      });
                      return null;
@@ -1642,10 +1708,14 @@ Please help me understand this topic step by step. Start with an overview of wha
                      messages={combinedMessages.map(msg => {
                        // Map sender values correctly based on _model field
                        let mappedSender: 'user' | 'gemini' | 'together' = 'user';
+                       const senderStr = String((msg as any).sender);
                        
-                       if (msg.sender === 'user') {
+                       if (senderStr === 'user') {
                          mappedSender = 'user';
-                       } else if (msg.sender === 'bot') {
+                       } else if (senderStr === 'gemini' || senderStr === 'together') {
+                         // Already tagged with model (e.g., after refresh)
+                         mappedSender = senderStr as 'gemini' | 'together';
+                       } else if (senderStr === 'bot') {
                          // Check the _model field to determine which AI this is
                          const model = (msg as any)._model;
                          if (model === 'together') {
@@ -1656,7 +1726,7 @@ Please help me understand this topic step by step. Start with an overview of wha
                            // Default to gemini if no model specified
                            mappedSender = 'gemini';
                          }
-                       } else if (msg.sender === 'ai') {
+                       } else if (senderStr === 'ai') {
                          // Legacy support for 'ai' sender
                          mappedSender = (msg as any)._model === 'together' ? 'together' : 'gemini';
                        }
@@ -1674,17 +1744,18 @@ Please help me understand this topic step by step. Start with an overview of wha
                        };
                      })}
                      isLoading={isChatLoading}
-                                           onSendMessage={async (message) => {
-                        await handleSendMessage(message);
-                        // Only track message if it's substantial
-                        if (message.length > 20) {
-                          trackMessage();
-                        }
-                      }}
+                     onSendMessage={async (message) => {
+                       await handleSendMessage(message);
+                       // Only track message if it's substantial
+                       if (message.length > 20) {
+                         trackMessage();
+                       }
+                     }}
                      topic={selectedTopic}
                      lesson={selectedLesson}
-                     sessionId={currentSession?.session_identifier || splitScreenSession?.id || undefined}
+                     sessionId={splitScreenSession?.id || currentSession?.session_identifier || undefined}
                      engagementScore={engagementScore}
+                     userId={currentUser?.id?.toString() || undefined}
                      onEngagementThreshold={() => {
                        if (splitScreenSession?.id) {
                          setEngagementTriggered(true);

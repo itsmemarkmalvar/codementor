@@ -694,8 +694,8 @@ export const startSplitScreenSession = async (data: {
   return response.data;
 };
 
-export const getActiveSession = async () => {
-  const response = await api.get('/sessions/active');
+export const getActiveSession = async (params?: { lesson_id?: number }) => {
+  const response = await api.get('/sessions/active', { params });
   return response.data;
 };
 

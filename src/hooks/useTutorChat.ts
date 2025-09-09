@@ -469,6 +469,8 @@ export function useTutorChat(initialMessages: Message[] = []) {
         timestamp: new Date(),
       };
 
+      // (Revert) No extra retry path
+
       // Add _model property for proper identification in combinedMessages
       (geminiMessage as any)._model = 'gemini';
       (togetherMessage as any)._model = 'together';

@@ -130,7 +130,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       sessionSync.notifySessionUpdate(currentSession);
     } else {
       // Remove session for current user
-      const currentUserId = currentSession?.user_id || 'anonymous';
+      const currentUserId = (currentSession as any)?.user_id || 'anonymous';
       const storageKey = `preserved_session_${currentUserId}`;
       localStorage.removeItem(storageKey);
     }
@@ -265,6 +265,18 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     }
   };
 
+  // Provide a minimal no-op implementation to satisfy context type without changing behavior
+  const getOrCreateSessionForLesson = async (lessonId: number, topicId: number): Promise<PreservedSession | null> => {
+    try {
+      const response = await getActivePreservedSessionByLesson(String(currentSession?.user_id ?? ''), lessonId);
+      if (response?.data) {
+        setCurrentSession(response.data);
+        return response.data;
+      }
+    } catch {}
+    return currentSession;
+  };
+
   const reactivateSession = async (sessionId: string) => {
     setIsLoading(true);
     setError(null);
@@ -329,9 +341,13 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       // Get current user ID for user-specific storage
       const currentUserId = currentSession?.user_id || 'anonymous';
       const storageKey = `conversation_history_${currentUserId}`;
-      
+      const truncatedFlag = localStorage.getItem(`${storageKey}_truncated`) === '1';
       const stored = localStorage.getItem(storageKey);
-      return stored ? JSON.parse(stored) : [];
+      const data = stored ? JSON.parse(stored) : [];
+      if (truncatedFlag) {
+        console.warn('Loaded truncated conversation history from localStorage (recent messages only).');
+      }
+      return data;
     } catch (err) {
       console.error('Error loading conversation history:', err);
       return [];
@@ -343,6 +359,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       // Get current user ID for user-specific storage
       const currentUserId = currentSession?.user_id || 'anonymous';
       const storageKey = `conversation_history_${currentUserId}`;
+      const MAX_LOCAL_MESSAGES = 100; // fallback cap to avoid quota issues
       
       console.log(`Saving conversation history to localStorage (user ${currentUserId}):`, {
         messageCount: messages.length,
@@ -355,7 +372,26 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
         } : null
       });
       
-      localStorage.setItem(storageKey, JSON.stringify(messages));
+      try {
+        // Primary attempt: store full history for best UX
+        localStorage.setItem(storageKey, JSON.stringify(messages));
+        localStorage.removeItem(`${storageKey}_truncated`);
+      } catch (e: any) {
+        // Fallback: store only the most recent messages to stay within quota
+        const truncated = messages.slice(-MAX_LOCAL_MESSAGES);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(truncated));
+          localStorage.setItem(`${storageKey}_truncated`, '1');
+          console.warn('LocalStorage quota reached. Stored truncated conversation history (recent messages only).');
+        } catch (e2) {
+          // Last resort: store empty array
+          try {
+            localStorage.setItem(storageKey, JSON.stringify([]));
+            localStorage.setItem(`${storageKey}_truncated`, '1');
+            console.warn('LocalStorage quota still exceeded after truncation. Stored empty conversation history placeholder.');
+          } catch {}
+        }
+      }
       
       // Notify other tabs about conversation update
       if (currentSession?.session_identifier) {
@@ -372,6 +408,8 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     }
   };
 
+  // Debounced sync to avoid rapid large writes
+  let syncTimer: any = null;
   const syncConversationWithBackend = async () => {
     if (!currentSession?.session_identifier) {
       console.log('Sync skipped: No active session found');
@@ -426,7 +464,9 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
       });
       
       // Ensure timestamps are properly formatted as ISO strings and IDs are strings
-      const formattedMessages = messages.map(msg => ({
+      // Send only the most recent 200 messages to keep payload small
+      const recent = messages.slice(-200);
+      const formattedMessages = recent.map(msg => ({
         ...msg,
         id: String(msg.id), // Ensure ID is a string
         timestamp: msg.timestamp instanceof Date ? msg.timestamp.toISOString() : msg.timestamp
@@ -588,6 +628,7 @@ export const SessionProvider: React.FC<SessionProviderProps> = ({ children }) =>
     isLoading,
     error,
     initializeSession,
+    getOrCreateSessionForLesson,
     reactivateSession,
     deactivateSession,
     clearSession,

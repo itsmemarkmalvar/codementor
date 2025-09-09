@@ -17,6 +17,7 @@ import {
   Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { engagementSync, progressSync } from '@/utils/crossTabSync';
 
 // Types
 interface Message {
@@ -51,6 +52,7 @@ interface SplitScreenChatInterfaceProps {
   sessionId?: number;
   engagementScore?: number;
   onEngagementThreshold?: () => void;
+  userId?: string;
 }
 
 // Helper function to parse code blocks in messages
@@ -97,7 +99,8 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
   lesson,
   sessionId,
   engagementScore = 0,
-  onEngagementThreshold
+  onEngagementThreshold,
+  userId
 }) => {
   // Debug logging
   console.log('SplitScreenChatInterface received props:', {
@@ -110,6 +113,9 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
   const [fullScreenPanel, setFullScreenPanel] = useState<'gemini' | 'together' | null>(null);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [syncedEngagementScore, setSyncedEngagementScore] = useState(engagementScore);
+  const [isQuizUnlocked, setIsQuizUnlocked] = useState(false);
+  const [isPracticeUnlocked, setIsPracticeUnlocked] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -119,6 +125,73 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
   // Separate messages by model
   const geminiMessages = messages.filter(msg => msg.sender === 'gemini' || msg.sender === 'user');
   const togetherMessages = messages.filter(msg => msg.sender === 'together' || msg.sender === 'user');
+
+  // Cross-tab synchronization effects
+  useEffect(() => {
+    // Update local engagement score when prop changes
+    setSyncedEngagementScore(engagementScore);
+    
+    // Broadcast engagement update to other tabs
+    if (sessionId && userId && engagementScore !== syncedEngagementScore) {
+      engagementSync.notifyEngagementUpdate({
+        score: engagementScore,
+        sessionId,
+        userId
+      });
+    }
+  }, [engagementScore, sessionId, userId, syncedEngagementScore]);
+
+  useEffect(() => {
+    // Subscribe to cross-tab engagement updates
+    const unsubscribeEngagement = engagementSync.onEngagementUpdate((data) => {
+      if (data.sessionId === sessionId && data.userId === userId) {
+        setSyncedEngagementScore(data.score);
+      }
+    });
+
+    // Subscribe to quiz unlock events
+    const unsubscribeQuiz = engagementSync.onQuizUnlocked((data) => {
+      if (data.sessionId === sessionId) {
+        setIsQuizUnlocked(true);
+        // Show notification or update UI
+        console.log('Quiz unlocked in another tab!');
+      }
+    });
+
+    // Subscribe to practice unlock events
+    const unsubscribePractice = engagementSync.onPracticeUnlocked((data) => {
+      if (data.sessionId === sessionId) {
+        setIsPracticeUnlocked(true);
+        // Show notification or update UI
+        console.log('Practice unlocked in another tab!');
+      }
+    });
+
+    // Subscribe to threshold reached events
+    const unsubscribeThreshold = engagementSync.onThresholdReached((data) => {
+      if (data.sessionId === sessionId) {
+        if (data.type === 'quiz') {
+          setIsQuizUnlocked(true);
+        } else if (data.type === 'practice') {
+          setIsPracticeUnlocked(true);
+        }
+      }
+    });
+
+    // Cleanup subscriptions
+    return () => {
+      unsubscribeEngagement();
+      unsubscribeQuiz();
+      unsubscribePractice();
+      unsubscribeThreshold();
+    };
+  }, [sessionId, userId]);
+
+  // Update unlock states based on engagement score
+  useEffect(() => {
+    setIsQuizUnlocked(syncedEngagementScore >= 30);
+    setIsPracticeUnlocked(syncedEngagementScore >= 70);
+  }, [syncedEngagementScore]);
 
 
 
@@ -376,17 +449,17 @@ export const SplitScreenChatInterface: React.FC<SplitScreenChatInterfaceProps> =
                )}
                <div className="flex items-center gap-1 text-xs text-gray-300 bg-white/5 px-2 py-0.5 rounded-lg border border-white/10">
                  <Target className="h-3 w-3 text-[#2E5BFF]" />
-                 <span className="font-medium">Engagement: {engagementScore}</span>
+                 <span className="font-medium">Engagement: {syncedEngagementScore}</span>
                </div>
-               {/* Two-Stage Threshold Indicators */}
-               {onEngagementThreshold && engagementScore >= 30 && (
+               {/* Two-Stage Threshold Indicators - Now synchronized across tabs */}
+               {onEngagementThreshold && isQuizUnlocked && (
                  <div className="flex items-center gap-1 text-xs text-green-300 bg-green-500/10 px-2 py-0.5 rounded-lg border border-green-500/20">
                    <Zap className="h-3 w-3" />
                    <span className="font-medium">Quiz Unlocked!</span>
                  </div>
                )}
                
-               {onEngagementThreshold && engagementScore >= 70 && (
+               {onEngagementThreshold && isPracticeUnlocked && (
                  <div className="flex items-center gap-1 text-xs text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded-lg border border-purple-500/20">
                    <Zap className="h-3 w-3" />
                    <span className="font-medium">Practice Unlocked!</span>

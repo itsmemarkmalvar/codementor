@@ -2,11 +2,13 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useSession } from '@/contexts/SessionContext';
 import { getThresholdStatus, incrementEngagement } from '../services/api';
+import { engagementSync } from '@/utils/crossTabSync';
 
 interface EngagementTrackerOptions {
   quizThreshold: number;      // Quiz trigger at 30 points
   practiceThreshold: number;  // Practice trigger at 70 points
   sessionId?: number;
+  userId?: string;
   onThresholdReached?: () => void;
   onQuizTrigger?: () => void;
   onPracticeTrigger?: () => void;
@@ -30,6 +32,9 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   const [triggeredActivity, setTriggeredActivity] = useState<'quiz' | 'practice' | null>(null);
   const [assessmentSequence, setAssessmentSequence] = useState<'quiz' | 'practice' | null>(null);
   
+  // Buffer for passive engagement points to persist to backend in small batches
+  const pendingPassivePointsRef = useRef<number>(0);
+  
   // RISK MITIGATION: Debounce threshold detection to prevent spam
   const thresholdDebounceRef = useRef<NodeJS.Timeout | null>(null);
   const lastThresholdTimeRef = useRef<number>(0);
@@ -52,6 +57,9 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   useEffect(() => {
     sessionIdRef.current = options.sessionId;
   }, [options.sessionId]);
+
+  // On session change, immediately sync persisted engagement from backend
+  // Defined after syncThresholdStatusWithBackend to satisfy linter
 
   // Load engagement data from session metadata on mount
   useEffect(() => {
@@ -111,6 +119,63 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       console.error('Failed to sync threshold status with backend:', error);
     }
   }, []);
+
+  // On session change, immediately sync persisted engagement from backend
+  useEffect(() => {
+    if (!options.sessionId) return;
+    (async () => {
+      try {
+        await syncThresholdStatusWithBackend();
+      } catch (e) {
+        // Non-fatal: UI will continue with local state
+        console.debug('Initial threshold sync failed:', e);
+      }
+    })();
+  }, [options.sessionId, syncThresholdStatusWithBackend]);
+
+  // Listen for cross-tab engagement updates
+  useEffect(() => {
+    if (!options.userId || !sessionIdRef.current) return;
+
+    const unsubscribeEngagement = engagementSync.onEngagementUpdate((data) => {
+      if (data.sessionId === sessionIdRef.current && data.userId === options.userId) {
+        setEngagementScore(data.score);
+        console.log('Engagement score updated from another tab:', data.score);
+      }
+    });
+
+    const unsubscribeQuiz = engagementSync.onQuizUnlocked((data) => {
+      if (data.sessionId === sessionIdRef.current) {
+        setIsQuizThresholdReached(true);
+        console.log('Quiz unlocked in another tab');
+      }
+    });
+
+    const unsubscribePractice = engagementSync.onPracticeUnlocked((data) => {
+      if (data.sessionId === sessionIdRef.current) {
+        setIsPracticeThresholdReached(true);
+        console.log('Practice unlocked in another tab');
+      }
+    });
+
+    const unsubscribeThreshold = engagementSync.onThresholdReached((data) => {
+      if (data.sessionId === sessionIdRef.current) {
+        if (data.type === 'quiz') {
+          setIsQuizThresholdReached(true);
+        } else if (data.type === 'practice') {
+          setIsPracticeThresholdReached(true);
+        }
+        console.log('Threshold reached in another tab:', data.type);
+      }
+    });
+
+    return () => {
+      unsubscribeEngagement();
+      unsubscribeQuiz();
+      unsubscribePractice();
+      unsubscribeThreshold();
+    };
+  }, [options.userId]);
 
   // Save engagement data to session metadata
   const saveEngagementData = useCallback(() => {
@@ -201,6 +266,15 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
             try {
               await incrementEngagement(sessionIdRef.current, { points });
               console.log('Engagement synced with backend for quiz threshold');
+              
+              // Broadcast engagement update to other tabs
+              if (options.userId) {
+                engagementSync.notifyEngagementUpdate({
+                  score: newScore,
+                  sessionId: sessionIdRef.current,
+                  userId: options.userId
+                });
+              }
             } catch (error) {
               console.error('Failed to sync engagement with backend:', error);
             }
@@ -211,6 +285,16 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
             `Great engagement! Let's test your knowledge with a quiz.`,
             { duration: 3000 }
           );
+          
+          // Broadcast quiz unlock to other tabs
+          if (sessionIdRef.current) {
+            engagementSync.notifyQuizUnlocked(sessionIdRef.current);
+            engagementSync.notifyThresholdReached({
+              type: 'quiz',
+              score: newScore,
+              sessionId: sessionIdRef.current
+            });
+          }
           
           // Trigger quiz
           options.onQuizTrigger?.();
@@ -238,6 +322,15 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
             try {
               await incrementEngagement(sessionIdRef.current, { points });
               console.log('Engagement synced with backend for practice threshold');
+              
+              // Broadcast engagement update to other tabs
+              if (options.userId) {
+                engagementSync.notifyEngagementUpdate({
+                  score: newScore,
+                  sessionId: sessionIdRef.current,
+                  userId: options.userId
+                });
+              }
             } catch (error) {
               console.error('Failed to sync engagement with backend:', error);
             }
@@ -249,6 +342,16 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
             { duration: 4000 }
           );
           
+          // Broadcast practice unlock to other tabs
+          if (sessionIdRef.current) {
+            engagementSync.notifyPracticeUnlocked(sessionIdRef.current);
+            engagementSync.notifyThresholdReached({
+              type: 'practice',
+              score: newScore,
+              sessionId: sessionIdRef.current
+            });
+          }
+          
           // Trigger practice
           options.onPracticeTrigger?.();
         }, 1000); // 1 second debounce
@@ -256,6 +359,11 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       
       return newScore;
     });
+
+    // Accumulate passive engagement (not already persisted elsewhere)
+    if (type === 'interaction' || type === 'scroll' || type === 'time') {
+      pendingPassivePointsRef.current += points;
+    }
 
     lastActivityRef.current = new Date();
     
@@ -267,6 +375,47 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       syncThresholdStatusWithBackend();
     }
   }, [isTracking, options.quizThreshold, options.practiceThreshold, isQuizThresholdReached, isPracticeThresholdReached, options.onQuizTrigger, options.onPracticeTrigger, options.autoTrigger, saveEngagementData, syncThresholdStatusWithBackend]);
+
+  // Periodically flush passive points to backend (integer only)
+  useEffect(() => {
+    if (!sessionIdRef.current) return;
+    let isCancelled = false;
+    const interval = setInterval(async () => {
+      if (isCancelled) return;
+      const available = Math.floor(pendingPassivePointsRef.current);
+      if (!available || available < 1) return;
+      if (!sessionIdRef.current) return;
+      try {
+        await incrementEngagement(sessionIdRef.current, { points: available });
+        pendingPassivePointsRef.current -= available;
+      } catch (err) {
+        // Keep points in buffer; will retry on next tick
+        console.debug('Passive engagement flush failed; will retry', err);
+      }
+    }, 3000);
+
+    // Flush on tab hide/unmount
+    const flushNow = async () => {
+      const availableRaw = pendingPassivePointsRef.current;
+      const toSend = availableRaw >= 1 ? Math.floor(availableRaw) : (availableRaw > 0 ? 1 : 0);
+      if (!toSend || toSend < 1) return;
+      if (!sessionIdRef.current) return;
+      try {
+        await incrementEngagement(sessionIdRef.current, { points: toSend });
+        pendingPassivePointsRef.current -= toSend;
+      } catch {}
+    };
+    const onHide = () => { flushNow(); };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('beforeunload', onHide);
+
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('beforeunload', onHide);
+    };
+  }, [options.userId]);
 
   // Track message sending
   const trackMessage = useCallback(() => {
