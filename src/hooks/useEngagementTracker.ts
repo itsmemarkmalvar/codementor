@@ -419,22 +419,22 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
 
   // Track message sending
   const trackMessage = useCallback(() => {
-    trackActivity('message', 1);
+    trackActivity('message', 3);
   }, [trackActivity]);
 
   // Track code execution
   const trackCodeExecution = useCallback(() => {
-    trackActivity('code_execution', 2);
+    trackActivity('code_execution', 5);
   }, [trackActivity]);
 
   // Track scroll activity
   const trackScroll = useCallback(() => {
-    trackActivity('scroll', 0.5);
+    trackActivity('scroll', 1);
   }, [trackActivity]);
 
   // Track general interaction
   const trackInteraction = useCallback(() => {
-    trackActivity('interaction', 0.5);
+    trackActivity('interaction', 1);
   }, [trackActivity]);
 
   // Track time-based engagement
@@ -442,9 +442,9 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     const now = new Date();
     const timeSinceLastActivity = now.getTime() - lastActivityRef.current.getTime();
     
-    // Award points for sustained activity (every 5 minutes of activity)
-    if (timeSinceLastActivity >= 300000) { // 5 minutes
-      trackActivity('time', 0.5);
+    // Award points for sustained activity (every 2 minutes of activity)
+    if (timeSinceLastActivity >= 120000) { // 2 minutes
+      trackActivity('time', 1);
     }
   }, [trackActivity]);
 
