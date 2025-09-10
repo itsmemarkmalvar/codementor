@@ -1837,50 +1837,17 @@ Please help me understand this topic step by step. Start with an overview of wha
                      </div>
                   </div>
                                      <div className="flex items-center gap-3">
-                     <div className="flex items-center gap-2 px-3 py-1 bg-[#2E5BFF]/20 border border-[#2E5BFF]/30 rounded-lg">
-                       <Users className="h-3 w-3 text-[#2E5BFF]" />
-                       <span className="text-xs text-[#2E5BFF] font-medium">
-                         Engagement: {engagementScore}
-                       </span>
-                     </div>
-                     
-                     {/* Two-Stage Threshold Indicators */}
-                     {isQuizThresholdReached && (
-                       <div className="flex items-center gap-2 px-2 py-1 bg-green-500/20 border border-green-500/30 rounded-lg">
-                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                         <span className="text-xs text-green-600 font-medium">Quiz Unlocked</span>
-                       </div>
-                     )}
-                     
-                     {isPracticeThresholdReached && (
-                       <div className="flex items-center gap-2 px-2 py-1 bg-purple-500/20 border border-purple-500/30 rounded-lg">
-                         <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
-                         <span className="text-xs text-purple-600 font-medium">Practice Unlocked</span>
-                       </div>
-                     )}
-                     
-                     {/* Progress to Next Threshold */}
-                     {!isQuizThresholdReached && (
-                       <div className="text-xs text-gray-400 px-2">
-                         Quiz in: {30 - engagementScore} pts
-                       </div>
-                     )}
-                     {isQuizThresholdReached && !isPracticeThresholdReached && (
-                       <div className="text-xs text-gray-400 px-2">
-                         Practice in: {70 - engagementScore} pts
-                       </div>
-                     )}
-                                           <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                        <span className="text-xs text-gray-400">Online</span>
-                        {!isConversationSynced && (
-                          <div className="flex items-center gap-1">
-                            <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                            <span className="text-xs text-yellow-400">Syncing...</span>
-                          </div>
-                        )}
-                      </div>
-                   </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                      <span className="text-xs text-gray-400">Online</span>
+                      {!isConversationSynced && (
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                          <span className="text-xs text-yellow-400">Syncing...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
                                  <div className="flex-1 p-4 min-h-0 overflow-hidden">
                    {(() => {
