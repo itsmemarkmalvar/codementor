@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight, Users } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser, getActivePreservedSessionByLesson, createAIPreferenceLog, getLessonTopicId, getLessonPlanProgress, updateModuleProgress } from '@/services/api';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser, getActivePreservedSessionByLesson, createAIPreferenceLog, getLessonTopicId, getLessonPlanProgress, updateModuleProgress, getLessonPracticeProblems, getThresholdStatus } from '@/services/api';
 import { progressSync } from '@/utils/crossTabSync';
 
 // Compact per-lesson progress bar that fetches backend percentage
@@ -400,15 +400,46 @@ const SoloRoomRefactored = () => {
 
   // Auto-trigger practice function
   const handleAutoTriggerPractice = async () => {
-    if (!selectedTopic) {
-      toast.error('No topic selected for practice');
-      return;
-    }
-
     try {
-      // Navigate to practice page with the current topic
-      window.location.href = `/dashboard/practice/${selectedTopic.id}`;
-      toast.success('Practice session started!');
+      // Resolve lesson id (prefer selectedLesson)
+      const lessonIdResolved = Number((selectedLesson as any)?.id || 0);
+      if (!lessonIdResolved) {
+        toast.error('No lesson selected for practice');
+        return;
+      }
+
+      // Gate: if practice already completed for this session, do not redirect
+      try {
+        if (splitScreenSession?.id) {
+          const ts = await getThresholdStatus(Number(splitScreenSession.id));
+          const completed = !!ts?.data?.threshold_status?.practice_completed;
+          if (completed) {
+            toast.info('Practice already completed for this lesson. Continue in split screen.');
+            return;
+          }
+        }
+      } catch {}
+
+      // Fetch practice problems related to the current lesson
+      const problems = await getLessonPracticeProblems(lessonIdResolved);
+      if (Array.isArray(problems) && problems.length > 0) {
+        // Prefer the first aligned problem; open in problem page
+        const first = problems[0];
+        window.location.href = `/dashboard/practice/problems/${first.id}`;
+        toast.success('Practice started!');
+        return;
+      }
+
+      // Fallback: route to practice hub filtered by topic if available
+      if (selectedTopic?.id) {
+        window.location.href = `/dashboard/practice/${selectedTopic.id}`;
+        toast.success('Practice hub opened for your topic.');
+        return;
+      }
+
+      // Final fallback
+      window.location.href = `/dashboard/practice`;
+      toast.success('Practice hub opened.');
     } catch (error) {
       console.error('Error auto-triggering practice:', error);
       toast.error('Failed to start practice session');
