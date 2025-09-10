@@ -437,9 +437,11 @@ const SoloRoomRefactored = () => {
     if (!splitScreenSession?.id) {
       console.log('No active session for user choice - skipping');
       setShowAIPreferenceModal(false);
-      // Only show lesson completion modal for quiz/practice, not code execution
+      // Only show lesson completion modal for quiz/practice and when progress is complete
       if (preferencePollType !== 'code_execution') {
-        setShowLessonCompletionModal(true);
+        if (await shouldShowLessonCompletion()) {
+          setShowLessonCompletionModal(true);
+        }
       }
       setEngagementTriggered(false);
       return;
@@ -509,18 +511,18 @@ const SoloRoomRefactored = () => {
 
       setShowAIPreferenceModal(false);
       
-      // Only show lesson completion modal for quiz/practice, not code execution
+      // Only show lesson completion modal for quiz/practice and when progress is complete
       if (preferencePollType !== 'code_execution') {
-        setShowLessonCompletionModal(true);
+        if (await shouldShowLessonCompletion()) {
+          setShowLessonCompletionModal(true);
+        }
       }
       
       // Reset engagement to prevent immediate re-triggering
       setEngagementTriggered(false);
       
-      // Show success message for code execution preference
-      if (preferencePollType === 'code_execution') {
-        toast.success('Thank you for your feedback!');
-      }
+      // Show success message for all activity types
+      toast.success('Thank you for your feedback!');
 
       // Clear completion data
       setQuizCompletionData(null);
@@ -575,6 +577,20 @@ const SoloRoomRefactored = () => {
   const handleLessonCompletion = () => {
     // Show lesson completion modal
     setShowLessonCompletionModal(true);
+  };
+
+  // Decide whether to show lesson completion modal based on backend progress
+  const shouldShowLessonCompletion = async (): Promise<boolean> => {
+    try {
+      const lessonPlanId = (selectedLesson as any)?.lesson_plan_id || (selectedLesson as any)?.id || (currentSession as any)?.lesson_id;
+      if (!lessonPlanId || typeof lessonPlanId !== 'number') return false;
+      const data = await getLessonPlanProgress(lessonPlanId);
+      const percent = Number(data?.engagement_overall_percentage ?? data?.overall_percentage ?? 0);
+      return percent >= 100;
+    } catch (e) {
+      console.warn('Unable to compute lesson completion progress:', e);
+      return false;
+    }
   };
 
   // Function to check if lesson is complete (can be called from various places)
@@ -2527,6 +2543,21 @@ Please help me understand this topic step by step. Start with an overview of wha
                                   
                                   // Track quiz completion for engagement
                                   trackQuizCompletion();
+
+                                  // Award engagement points for completing a quiz (more if passed)
+                                  try {
+                                    const sid = typeof splitScreenSession?.id === 'number'
+                                      ? splitScreenSession.id
+                                      : parseInt(String(splitScreenSession?.id));
+                                    if (!isNaN(sid)) {
+                                      const quizPoints = res.passed ? 8 : 4; // knowledge_check engagement
+                                      await incrementEngagement(sid, { points: quizPoints });
+                                      // Refresh local engagement state from backend
+                                      try { await syncThresholdStatusWithBackend(); } catch {}
+                                    }
+                                  } catch (e) {
+                                    console.warn('Failed to increment engagement for quiz completion:', e);
+                                  }
                                   
                                   // Track quiz points (server computes progress, we send signal)
                                   updateProgress(2, 'knowledge_check');
@@ -2573,13 +2604,9 @@ Please help me understand this topic step by step. Start with an overview of wha
                                     setShowAIPreferenceModal(true);
                                   }, 1000);
                                   
-                                  // Check if lesson should be marked as complete
-                                  if (res.passed && res.percentage >= 80) {
-                                    // High score - consider lesson complete
-                                    setTimeout(() => {
-                                      handleLessonCompletion();
-                                    }, 3000); // Show after preference poll
-                                  }
+                                  // Lesson completion modal is now gated to show only
+                                  // after the preference poll and when backend progress
+                                  // reports the lesson as complete.
                                 } catch (e) {
                                   toast.error('Failed to submit quiz');
                                 } finally {

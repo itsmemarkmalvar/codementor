@@ -189,7 +189,7 @@ export default function ModelsComparisonPage() {
                        <StatRow 
                          label="Quiz Pass Rate" 
                          value={(() => {
-                           const quizData = preferenceData.quiz_analysis?.model_analysis?.[m];
+                           const quizData = preferenceData.quiz_analysis?.model_performance?.[m] || preferenceData.quiz_analysis?.model_analysis?.[m];
                            return quizData ? `${quizData.pass_rate}%` : '—';
                          })()} 
                          icon={<BookOpen className="h-4 w-4 text-indigo-400"/>} 
@@ -197,7 +197,7 @@ export default function ModelsComparisonPage() {
                        <StatRow 
                          label="Avg Quiz Score" 
                          value={(() => {
-                           const quizData = preferenceData.quiz_analysis?.model_analysis?.[m];
+                           const quizData = preferenceData.quiz_analysis?.model_performance?.[m] || preferenceData.quiz_analysis?.model_analysis?.[m];
                            return quizData ? `${quizData.avg_score}%` : '—';
                          })()} 
                          icon={<BarChart3 className="h-4 w-4 text-cyan-400"/>} 
@@ -205,7 +205,7 @@ export default function ModelsComparisonPage() {
                        <StatRow 
                          label="Quiz Attempts" 
                          value={(() => {
-                           const quizData = preferenceData.quiz_analysis?.model_analysis?.[m];
+                           const quizData = preferenceData.quiz_analysis?.model_performance?.[m] || preferenceData.quiz_analysis?.model_analysis?.[m];
                            return quizData ? quizData.total_attempts : '—';
                          })()} 
                          icon={<Users className="h-4 w-4 text-pink-400"/>} 
