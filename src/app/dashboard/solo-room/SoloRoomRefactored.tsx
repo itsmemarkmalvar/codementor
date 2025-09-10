@@ -234,8 +234,8 @@ const SoloRoomRefactored = () => {
       try {
         if (!currentSession || splitScreenSession?.id) return;
 
-        // Try to bind to an active split-screen session first
-        const active = await getActiveSession();
+        // Try to bind to an active split-screen session for this lesson first
+        const active = await getActiveSession({ lesson_id: currentSession.lesson_id });
         if (active?.data?.session?.id) {
           const s = active.data.session;
           setSplitScreenSession({
@@ -247,7 +247,7 @@ const SoloRoomRefactored = () => {
           return;
         }
 
-        // Otherwise create one based on the preserved session's lesson/topic
+        // Otherwise create/reactivate one based on the preserved session's lesson/topic
         const lessonId = currentSession.lesson_id;
         if (!lessonId) return;
         let topicId: number | undefined = undefined;

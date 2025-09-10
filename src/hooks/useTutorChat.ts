@@ -450,6 +450,15 @@ export function useTutorChat(initialMessages: Message[] = []) {
       // Check for errors
       const isError = response.error === true;
 
+      // Debug logging for Gemini response
+      console.log('Gemini Response Debug:', {
+        hasError: !!response.responses.gemini.error,
+        error: response.responses.gemini.error,
+        hasResponse: !!response.responses.gemini.response,
+        responseLength: response.responses.gemini.response ? response.responses.gemini.response.length : 0,
+        responsePreview: response.responses.gemini.response ? response.responses.gemini.response.substring(0, 100) + '...' : 'No response'
+      });
+
       // Add AI responses to both models' histories
       const geminiMessage: Message = {
         id: Date.now() + 1,
