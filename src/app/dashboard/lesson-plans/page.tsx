@@ -6,7 +6,8 @@ import { motion } from "framer-motion";
 import { Book, Filter, Search, Code, ArrowRight, BookOpen, Info } from "lucide-react";
 import { useEffect, useState } from "react";
 import LessonPlanCard from "@/components/lesson-plans/LessonPlanCard";
-import { getLessonPlans, getTopics } from "@/services/api";
+import { getLessonPlans, getTopics, getLessonPlanProgress } from "@/services/api";
+import { progressSync } from "@/utils/crossTabSync";
 import Link from "next/link";
 
 interface LessonPlan {
@@ -52,7 +53,20 @@ export default function LessonPlansPage() {
         };
       });
 
-      setLessonPlans(plansWithTopicNames);
+      // Attach effective progress (engagement preferred, fallback to module average)
+      const withProgress = await Promise.all(plansWithTopicNames.map(async (plan: any) => {
+        try {
+          const prog = await getLessonPlanProgress(plan.id);
+          const effective = Math.max(0, Math.min(100, Number(
+            (prog?.engagement_overall_percentage ?? prog?.overall_percentage ?? 0)
+          )));
+          return { ...plan, progress_effective: effective };
+        } catch {
+          return { ...plan, progress_effective: 0 };
+        }
+      }));
+
+      setLessonPlans(withProgress);
       setTopics(topicsData);
       
       // Canonical order for Java Basics
@@ -67,8 +81,9 @@ export default function LessonPlansPage() {
       ];
 
       // Build groups: For Java Basics topic, show a single ordered list; otherwise use prerequisites hierarchy
-      const javaBasicsPlans = plansWithTopicNames.filter(p => p.topic_name === 'Java Basics');
-      const otherPlans = plansWithTopicNames.filter(p => p.topic_name !== 'Java Basics');
+      const plansForGrouping = withProgress;
+      const javaBasicsPlans = plansForGrouping.filter(p => p.topic_name === 'Java Basics');
+      const otherPlans = plansForGrouping.filter(p => p.topic_name !== 'Java Basics');
 
       const hierarchy: Record<string, LessonPlan[]> = {};
       const order: string[] = [];
@@ -116,6 +131,11 @@ export default function LessonPlansPage() {
 
   useEffect(() => {
     fetchData();
+    // Live refresh when progress events broadcast from split-screen
+    const unsub = progressSync.onProgressUpdate(() => {
+      fetchData();
+    });
+    return () => { unsub(); };
   }, [selectedTopic]);
 
   // Filter plans while maintaining hierarchy
@@ -244,6 +264,8 @@ export default function LessonPlansPage() {
                         modules_count={plan.modules_count}
                         completed_modules={plan.completed_modules}
                         index={index}
+                        // @ts-ignore extra prop used by card for display
+                        progress={Math.max(0, Math.min(100, (plan as any).progress_effective ?? 0))}
                       />
                     </Link>
                     <div className="absolute bottom-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">

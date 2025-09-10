@@ -13,6 +13,7 @@ interface LessonPlanCardProps {
   modules_count: number;
   completed_modules?: number;
   index?: number; // For animation staggering
+  progress?: number; // Optional explicit progress percentage (engagement-based)
 }
 
 export default function LessonPlanCard({
@@ -23,9 +24,11 @@ export default function LessonPlanCard({
   topic_name,
   modules_count,
   completed_modules = 0,
-  index = 0
+  index = 0,
+  progress
 }: LessonPlanCardProps) {
-  const progress = modules_count > 0 ? Math.round((completed_modules / modules_count) * 100) : 0;
+  const computed = modules_count > 0 ? Math.round((completed_modules / modules_count) * 100) : 0;
+  const effectiveProgress = typeof progress === 'number' ? Math.max(0, Math.min(100, progress)) : computed;
   
   return (
     <motion.div
@@ -56,12 +59,12 @@ export default function LessonPlanCard({
           <div className="mt-4">
             <div className="flex items-center justify-between text-sm mb-2">
               <span className="text-gray-400">Progress</span>
-              <span className="text-[#2E5BFF]">{progress}%</span>
+              <span className="text-[#2E5BFF]">{effectiveProgress}%</span>
             </div>
             <div className="h-2 rounded-full bg-white/10">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-[#2E5BFF] to-purple-500"
-                style={{ width: `${progress}%` }}
+                style={{ width: `${effectiveProgress}%` }}
               />
             </div>
           </div>

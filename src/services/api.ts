@@ -971,6 +971,9 @@ export const updateModuleProgress = async (moduleId: number, params: {
   }
 };
 
+// Fetch per-lesson (lesson plan) progress including overall_percentage and module breakdown
+// duplicate removed: getLessonPlanProgress is defined earlier
+
 export const submitExerciseAttempt = async (exerciseId: number, params: {
   code?: string;
   answer?: string;

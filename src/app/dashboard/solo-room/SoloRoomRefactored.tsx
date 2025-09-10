@@ -5,7 +5,57 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight, Users } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser, getActivePreservedSessionByLesson, createAIPreferenceLog, getLessonTopicId } from '@/services/api';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser, getActivePreservedSessionByLesson, createAIPreferenceLog, getLessonTopicId, getLessonPlanProgress, updateModuleProgress } from '@/services/api';
+import { progressSync } from '@/utils/crossTabSync';
+
+// Compact per-lesson progress bar that fetches backend percentage
+const LessonProgressBar: React.FC<{ lessonId: number }> = ({ lessonId }) => {
+  const [percent, setPercent] = React.useState<number>(0);
+  const [loading, setLoading] = React.useState<boolean>(false);
+
+  const fetchProgress = React.useCallback(async () => {
+    try {
+      setLoading(true);
+      const data = await getLessonPlanProgress(lessonId);
+      // Prefer engagement-based value to match Lesson Library display
+      const p = Math.max(0, Math.min(100, Number(
+        (data?.engagement_overall_percentage ?? data?.overall_percentage ?? 0)
+      )));
+      setPercent(p);
+    } catch (e) {
+      // Keep previous percent on error
+      console.error('Failed to fetch lesson progress', e);
+    } finally {
+      setLoading(false);
+    }
+  }, [lessonId]);
+
+  React.useEffect(() => {
+    fetchProgress();
+  }, [fetchProgress]);
+
+  React.useEffect(() => {
+    // Refresh when progress updates are broadcast (quiz/practice/lesson events)
+    const unsub = progressSync.onProgressUpdate((_data) => {
+      fetchProgress();
+    });
+    return () => { unsub(); };
+  }, [fetchProgress]);
+
+  return (
+    <div className="mb-3">
+      <div className="flex items-center gap-2">
+        <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-gradient-to-r from-[#2E5BFF] to-[#60A5FA] rounded-full transition-all duration-500"
+            style={{ width: `${percent}%` }}
+          ></div>
+        </div>
+        <span className="text-xs text-gray-500 min-w-[28px]">{loading ? '...' : `${percent}%`}</span>
+      </div>
+    </div>
+  );
+};
 import { toast } from 'sonner';
 import { isAuthenticated, getToken } from '@/lib/auth-utils';
 
@@ -256,6 +306,10 @@ const SoloRoomRefactored = () => {
       const selectedQuiz = quizzes[Math.floor(Math.random() * quizzes.length)];
       
       // Start the quiz
+      // Mark module as in progress to move lesson progress from 0%
+      if (selectedModuleId) {
+        try { await updateModuleProgress(selectedModuleId, { status: 'in_progress' }); progressSync.notifyProgressUpdate({ type: 'lesson', progress: 0, sessionId: Number(splitScreenSession?.id || 0) }); } catch {}
+      }
       const attempt = await startQuizAttempt(selectedQuiz.id);
       setActiveQuiz(selectedQuiz);
       setActiveAttempt(attempt);
@@ -1075,6 +1129,10 @@ Please provide detailed, constructive feedback.`;
         completed_subtopics: [],
         progress_data: progressData
       });
+      // Broadcast progress change so lesson bars refresh
+      try {
+        progressSync.notifyProgressUpdate({ type: 'lesson', progress: 0, sessionId: Number(splitScreenSession?.id || 0) });
+      } catch {}
     } catch (error) {
       console.error('Error updating progress:', error);
     }
@@ -1473,6 +1531,8 @@ Please help me understand this topic step by step. Start with an overview of wha
           setActiveQuiz(quiz);
           setQuizResponses({});
           // Start attempt
+          // Mark module as in progress on quiz start
+          if (selectedModuleId) { try { await updateModuleProgress(selectedModuleId, { status: 'in_progress' }); progressSync.notifyProgressUpdate({ type: 'lesson', progress: 0, sessionId: Number(splitScreenSession?.id || 0) }); } catch {} }
           const { attempt } = await startQuizAttempt(quiz.id);
           setActiveAttempt(attempt);
         } else {
@@ -2043,14 +2103,7 @@ Please help me understand this topic step by step. Start with an overview of wha
                               </div>
 
                               {/* Progress - Compact */}
-                              <div className="mb-3">
-                                <div className="flex items-center gap-2">
-                                  <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                    <div className="w-0 h-full bg-gradient-to-r from-[#2E5BFF] to-[#60A5FA] rounded-full transition-all duration-500"></div>
-                                  </div>
-                                  <span className="text-xs text-gray-500 min-w-[20px]">0%</span>
-                                </div>
-                              </div>
+                              <LessonProgressBar lessonId={lesson.id} />
 
                               {/* Prerequisites - Compact */}
                               <div className="mb-3 flex-1">
@@ -2396,6 +2449,14 @@ Please help me understand this topic step by step. Start with an overview of wha
                                   
                                   // Track quiz points (server computes progress, we send signal)
                                   updateProgress(2, 'knowledge_check');
+                                  // If passed, mark current module as completed to advance server progress
+                                  try {
+                                    if (res.passed && selectedModuleId) {
+                                      await updateModuleProgress(selectedModuleId, { status: 'completed' });
+                                    }
+                                  } catch {}
+                                  // Notify others to refresh lesson progress bars
+                                  try { progressSync.notifyProgressUpdate({ type: 'quiz', progress: res.percentage, sessionId: Number(splitScreenSession?.id || 0) }); } catch {}
                                   
                                   // Update attempt state and refresh quiz list (unlock next difficulty on pass)
                                   if (res.attempt) {

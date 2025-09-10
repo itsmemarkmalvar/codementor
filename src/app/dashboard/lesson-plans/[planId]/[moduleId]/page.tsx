@@ -368,6 +368,14 @@ export default function ModulePage() {
           </div>
         </div>
         <p className="text-gray-400">{module.description}</p>
+        <div className="pt-2">
+          <Button
+            onClick={() => router.push(`/dashboard/solo-room?lessonId=${planId}`)}
+            className="bg-[#2E5BFF] hover:bg-[#2E5BFF]/80 text-white"
+          >
+            Study with AI (Split Screen)
+          </Button>
+        </div>
       </div>
       
       {/* Tabs */}
@@ -400,9 +408,38 @@ export default function ModulePage() {
           <Card className="relative overflow-hidden border-white/10 bg-white/5 backdrop-blur-sm">
             <div className="absolute inset-0 bg-gradient-to-br from-[#2E5BFF]/20 to-purple-500/20 opacity-10" />
             <div className="relative p-6 prose prose-invert max-w-none">
-              <div className="text-gray-300 whitespace-pre-line">
-                {module.content}
-              </div>
+              {module.content && module.content.trim().length > 0 ? (
+                <div className="text-gray-300 whitespace-pre-line">{module.content}</div>
+              ) : (
+                <div className="space-y-6 text-gray-300">
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Overview</h3>
+                    <p className="mt-2">{module.description || 'This module introduces the key ideas for this lesson.'}</p>
+                  </div>
+                  <div>
+                    <h4 className="text-white font-semibold">How to study this module</h4>
+                    <ul className="list-disc pl-5 mt-2 space-y-1">
+                      <li>Click <span className="text-[#2E5BFF]">Study with AI (Split Screen)</span> to learn with the tutor.</li>
+                      <li>Ask the tutor to explain concepts step-by-step and provide examples.</li>
+                      <li>Open <span className="text-[#2E5BFF]">Related practice</span> below and solve a few problems.</li>
+                      <li>Return to the tutor with any errors; request hints or feedback.</li>
+                    </ul>
+                  </div>
+                  {relatedPractice && relatedPractice.length > 0 && (
+                    <div>
+                      <h4 className="text-white font-semibold">Recommended practice in this module</h4>
+                      <ul className="list-disc pl-5 mt-2 space-y-1">
+                        {relatedPractice.slice(0, 5).map((p) => (
+                          <li key={p.id}>
+                            <Link href={`/dashboard/practice/problems/${p.id}`} className="text-[#2E5BFF] hover:underline">{p.title}</Link>
+                            {p.difficulty_level ? <span className="text-xs text-gray-400 ml-2">({p.difficulty_level})</span> : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </Card>
           

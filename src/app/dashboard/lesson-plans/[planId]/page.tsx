@@ -7,7 +7,7 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Book, BookOpen, ChevronRight, GraduationCap, Info, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getLessonPlanDetails, getLessonModules } from "@/services/api";
+import { getLessonPlanDetails, getLessonModules, getLessonPlanProgress } from "@/services/api";
 import { useParams, useRouter } from "next/navigation";
 
 interface LessonPlan {
@@ -46,6 +46,7 @@ export default function LessonPlanPage() {
   const [modules, setModules] = useState<Module[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'modules' | 'overview'>('modules');
+  const [overallPct, setOverallPct] = useState<number>(0);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -58,6 +59,11 @@ export default function LessonPlanPage() {
         
         setPlan(planData);
         setModules(modulesData);
+        try {
+          const prog = await getLessonPlanProgress(planId);
+          const effective = Math.max(0, Math.min(100, Number((prog?.engagement_overall_percentage ?? prog?.overall_percentage ?? 0))));
+          setOverallPct(effective);
+        } catch {}
       } catch (error) {
         console.error("Error fetching lesson plan data:", error);
       } finally {
@@ -154,6 +160,18 @@ export default function LessonPlanPage() {
             <BookOpen className="h-4 w-4 mr-2" />
             Start Learning
           </Button>
+        </div>
+        {/* Engagement-based progress */}
+        <div className="pt-2">
+          <div className="w-full max-w-md">
+            <div className="flex items-center justify-between text-sm mb-1">
+              <span className="text-gray-400">Lesson progress</span>
+              <span className="text-[#2E5BFF]">{overallPct}%</span>
+            </div>
+            <div className="h-2 rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-gradient-to-r from-[#2E5BFF] to-purple-500" style={{ width: `${overallPct}%` }} />
+            </div>
+          </div>
         </div>
         
         {plan.topic_name && (
