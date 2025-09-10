@@ -300,6 +300,15 @@ const SoloRoomRefactored = () => {
         } catch {}
       }
 
+      // If all quizzes for the lesson are passed, do not auto-redirect to the quiz tab
+      if (lessonIdResolved) {
+        const completed = await areAllLessonQuizzesPassed(Number(lessonIdResolved));
+        if (completed) {
+          toast.message('Quiz unlocked – all quizzes for this lesson are already completed.');
+          return;
+        }
+      }
+
       // Ensure we have a module selected; if not, load the first module of the current lesson
       let moduleIdToUse = selectedModuleId;
       if (!moduleIdToUse) {
@@ -364,6 +373,28 @@ const SoloRoomRefactored = () => {
     } catch (error) {
       console.error('Error auto-triggering quiz:', error);
       toast.error('Failed to start quiz');
+    }
+  };
+
+  // Helper to check if all quizzes across lesson modules are already passed
+  const areAllLessonQuizzesPassed = async (lessonId: number): Promise<boolean> => {
+    try {
+      const modules = await getLessonModules(lessonId);
+      if (!Array.isArray(modules) || modules.length === 0) return true; // nothing to take
+      for (const mod of modules) {
+        try {
+          const res = await getModuleQuizzes(Number(mod.id));
+          const quizzes = res?.quizzes || [];
+          // If any quiz is not passed, user is not done
+          const hasUnpassed = quizzes.some((q: any) => q?.passed !== true);
+          if (hasUnpassed) return false;
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    } catch {
+      return false;
     }
   };
 
