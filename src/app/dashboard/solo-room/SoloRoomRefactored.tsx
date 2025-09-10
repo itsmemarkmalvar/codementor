@@ -288,28 +288,64 @@ const SoloRoomRefactored = () => {
 
   // Auto-trigger quiz function
   const handleAutoTriggerQuiz = async () => {
-    if (!selectedModuleId) {
-      toast.error('No module selected for quiz');
-      return;
-    }
-
     try {
+      // Resolve lesson id from state, preserved session, or metadata
+      let lessonIdResolved: number | undefined = selectedLesson?.id as any;
+      if (!lessonIdResolved && currentSession?.lesson_id) lessonIdResolved = Number(currentSession.lesson_id);
+      if (!lessonIdResolved) {
+        try {
+          const md = loadSessionMetadata?.();
+          const lid = md?.lesson_data?.id;
+          if (lid) lessonIdResolved = Number(lid);
+        } catch {}
+      }
+
+      // Ensure we have a module selected; if not, load the first module of the current lesson
+      let moduleIdToUse = selectedModuleId;
+      if (!moduleIdToUse) {
+        if (!lessonIdResolved) {
+          // As a last resort, prompt user only when no lesson id can be recovered
+          toast.message('Quiz unlocked – select a lesson from the Lessons tab first.');
+          return;
+        }
+        try {
+          const modules = await getLessonModules(Number(lessonIdResolved));
+          setLessonModules(modules || []);
+          if (Array.isArray(modules) && modules.length > 0) {
+            moduleIdToUse = modules[0].id;
+            setSelectedModuleId(moduleIdToUse);
+            // Bind lesson object if we only had the id
+            if (!selectedLesson && selectedTopic?.id) {
+              try {
+                const plans = await getLessonPlans(selectedTopic.id);
+                const found = Array.isArray(plans) ? plans.find((l: any) => l.id === lessonIdResolved) : null;
+                if (found) setSelectedLesson(found);
+              } catch {}
+            }
+          } else {
+            toast.message('Quiz unlocked – this lesson has no modules yet. Please pick another lesson.');
+            return;
+          }
+        } catch (e) {
+          console.error('Failed to load modules for lesson', selectedLesson?.id, e);
+          toast.error('Unable to load modules for this lesson');
+          return;
+        }
+      }
+
       // Get available quizzes for the current module
-      const quizzesResponse = await getModuleQuizzes(selectedModuleId);
+      const quizzesResponse = await getModuleQuizzes(Number(moduleIdToUse));
       const quizzes = quizzesResponse.quizzes || [];
       if (quizzes.length === 0) {
-        toast.error('No quizzes available for this module');
+        toast.message('Quiz unlocked – no quizzes available in this module yet.');
         return;
       }
 
       // Select a random quiz or the first available one
       const selectedQuiz = quizzes[Math.floor(Math.random() * quizzes.length)];
       
-      // Start the quiz
-      // Mark module as in progress to move lesson progress from 0%
-      if (selectedModuleId) {
-        try { await updateModuleProgress(selectedModuleId, { status: 'in_progress' }); progressSync.notifyProgressUpdate({ type: 'lesson', progress: 0, sessionId: Number(splitScreenSession?.id || 0) }); } catch {}
-      }
+      // Mark module as in progress and broadcast
+      try { await updateModuleProgress(Number(moduleIdToUse), { status: 'in_progress' }); progressSync.notifyProgressUpdate({ type: 'lesson', progress: 0, sessionId: Number(splitScreenSession?.id || 0) }); } catch {}
       const attempt = await startQuizAttempt(selectedQuiz.id);
       setActiveQuiz(selectedQuiz);
       setActiveAttempt(attempt);
@@ -324,7 +360,6 @@ const SoloRoomRefactored = () => {
       
       // Switch to quiz tab
       setActiveTab('quiz');
-      
       toast.success('Quiz started! Test your knowledge.');
     } catch (error) {
       console.error('Error auto-triggering quiz:', error);
@@ -769,17 +804,63 @@ const SoloRoomRefactored = () => {
     }
   }, [currentSession, loadSessionMetadata]); // Removed activeTab to prevent infinite loop
 
-  // Auto-switch to lesson tab when lesson is loaded from session (but only if user was not already on chat tab)
+  // Fallback: if metadata is missing but PreservedSession has lesson_id, bind lesson and topic
   useEffect(() => {
-    if (selectedLesson && currentSession && activeTab !== 'chat') {
-      // Only switch to lesson tab if user wasn't already on chat tab
-      setActiveTab('lesson-plans');
-      console.log('Auto-switched to lesson tab for saved lesson:', selectedLesson.title);
-    } else if (selectedLesson && currentSession && activeTab === 'chat') {
-      // If user is on chat tab, keep them there and just log the lesson info
-      console.log('User on chat tab - keeping them there with saved lesson:', selectedLesson.title);
+    (async () => {
+      if (!currentSession?.lesson_id || selectedLesson || topics.length === 0) return;
+      try {
+        // Resolve topic from lesson id
+        const topicResp = await getLessonTopicId(currentSession.lesson_id);
+        const topicId = (topicResp as any)?.topic_id ?? (topicResp as any)?.data?.topic_id;
+        if (topicId) {
+          const topic = topics.find(t => t.id === Number(topicId));
+          if (topic) setSelectedTopic(topic);
+          const plans = await getLessonPlans(Number(topicId));
+          const lesson = Array.isArray(plans) ? plans.find((l: any) => l.id === currentSession.lesson_id) : null;
+          if (lesson) setSelectedLesson(lesson as any);
+        }
+      } catch (e) {
+        console.warn('Fallback binding of lesson from preserved session failed', e);
+      }
+    })();
+  }, [currentSession?.lesson_id, selectedLesson, topics]);
+
+  // Do NOT auto-switch tabs away from quiz/chat; keep user context stable
+  useEffect(() => {
+    if (!selectedLesson || !currentSession) return;
+    // Only set tab if no tab is chosen yet (initial state) – avoid overriding quiz/chat
+    if (!activeTab) {
+      setActiveTab('chat');
     }
-  }, [selectedLesson, currentSession, activeTab]);
+  }, [selectedLesson, currentSession]);
+
+  // When user lands on the Quiz tab, make sure module is selected and quizzes are loaded
+  useEffect(() => {
+    (async () => {
+      if (activeTab !== 'quiz') return;
+      // Ensure we have a lesson and (at least) a module
+      if (!selectedLesson?.id) return;
+      let moduleId = selectedModuleId;
+      if (!moduleId) {
+        try {
+          const modules = await getLessonModules(selectedLesson.id);
+          setLessonModules(modules || []);
+          if (Array.isArray(modules) && modules.length > 0) {
+            moduleId = modules[0].id;
+            setSelectedModuleId(moduleId);
+          }
+        } catch {}
+      }
+      if (!moduleId) return;
+      try {
+        const res = await getModuleQuizzes(Number(moduleId));
+        setModuleQuizzes(res?.quizzes || []);
+        // If quizzes exist and no active attempt yet, keep UI ready; auto-start is handled by threshold trigger
+      } catch (e) {
+        console.warn('Failed to load module quizzes on quiz tab open', e);
+      }
+    })();
+  }, [activeTab, selectedLesson?.id, selectedModuleId]);
 
   // Fetch Piston health
   useEffect(() => {

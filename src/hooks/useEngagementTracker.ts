@@ -31,6 +31,9 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   const [isTracking, setIsTracking] = useState(false);
   const [triggeredActivity, setTriggeredActivity] = useState<'quiz' | 'practice' | null>(null);
   const [assessmentSequence, setAssessmentSequence] = useState<'quiz' | 'practice' | null>(null);
+  // Track auto-trigger one-shot behavior across reloads
+  const quizAutoTriggeredRef = useRef<boolean>(false);
+  const practiceAutoTriggeredRef = useRef<boolean>(false);
   
   // Buffer for passive engagement points to persist to backend in small batches
   const pendingPassivePointsRef = useRef<number>(0);
@@ -206,6 +209,21 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   useEffect(() => {
     saveEngagementData();
   }, [saveEngagementData]);
+
+  // Auto-trigger on restored threshold state (e.g., after reload)
+  useEffect(() => {
+    if (!options.autoTrigger) return;
+    // Quiz auto-trigger
+    if (isQuizThresholdReached && !quizAutoTriggeredRef.current) {
+      quizAutoTriggeredRef.current = true;
+      try { options.onQuizTrigger?.(); } catch (e) { console.error('onQuizTrigger failed', e); }
+    }
+    // Practice auto-trigger (only after quiz was unlocked)
+    if (isQuizThresholdReached && isPracticeThresholdReached && !practiceAutoTriggeredRef.current) {
+      practiceAutoTriggeredRef.current = true;
+      try { options.onPracticeTrigger?.(); } catch (e) { console.error('onPracticeTrigger failed', e); }
+    }
+  }, [options.autoTrigger, isQuizThresholdReached, isPracticeThresholdReached, options.onQuizTrigger, options.onPracticeTrigger]);
 
   // Sync engagement data with backend periodically
   useEffect(() => {
@@ -539,6 +557,8 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     setTriggeredActivity(null);
     setAssessmentSequence(null);
     lastActivityRef.current = new Date();
+    quizAutoTriggeredRef.current = false;
+    practiceAutoTriggeredRef.current = false;
   }, []);
 
   // Get engagement analytics
