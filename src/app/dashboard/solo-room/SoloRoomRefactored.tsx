@@ -401,8 +401,20 @@ const SoloRoomRefactored = () => {
   // Auto-trigger practice function
   const handleAutoTriggerPractice = async () => {
     try {
-      // Resolve lesson id (prefer selectedLesson)
-      const lessonIdResolved = Number((selectedLesson as any)?.id || 0);
+      // Resolve lesson id from selected state, active session, or preserved metadata
+      let lessonIdResolved: number | undefined = (selectedLesson as any)?.id ? Number((selectedLesson as any).id) : undefined;
+      if (!lessonIdResolved && (currentSession as any)?.lesson_id) {
+        lessonIdResolved = Number((currentSession as any).lesson_id);
+      }
+      if (!lessonIdResolved) {
+        try {
+          const md = loadSessionMetadata?.();
+          const lid = md?.lesson_data?.id;
+          if (lid) lessonIdResolved = Number(lid);
+        } catch {}
+      }
+
+      // If still not resolved, show gentle notice (don’t block future attempts)
       if (!lessonIdResolved) {
         toast.error('No lesson selected for practice');
         return;
@@ -410,6 +422,17 @@ const SoloRoomRefactored = () => {
 
       // Gate: if practice already completed for this session, do not redirect
       try {
+        // Local guard: if user just completed practice in this browser
+        try {
+          const lcFlag = typeof window !== 'undefined' ? localStorage.getItem('practiceCompleted') : null;
+          const lcTime = typeof window !== 'undefined' ? Number(localStorage.getItem('practiceCompletionTime') || 0) : 0;
+          const recent = lcFlag === 'true' && (Date.now() - lcTime) < 6 * 60 * 60 * 1000; // 6 hours
+          if (recent) {
+            toast.info('You recently completed a practice. Continue in split screen.');
+            return;
+          }
+        } catch {}
+
         if (splitScreenSession?.id) {
           const ts = await getThresholdStatus(Number(splitScreenSession.id));
           const completed = !!ts?.data?.threshold_status?.practice_completed;
@@ -420,24 +443,29 @@ const SoloRoomRefactored = () => {
         }
       } catch {}
 
-      // Fetch practice problems related to the current lesson
-      const problems = await getLessonPracticeProblems(lessonIdResolved);
+      // Fetch practice problems related to the resolved lesson
+      const problems = await getLessonPracticeProblems(Number(lessonIdResolved));
       if (Array.isArray(problems) && problems.length > 0) {
-        // Prefer the first aligned problem; open in problem page
         const first = problems[0];
         window.location.href = `/dashboard/practice/problems/${first.id}`;
         toast.success('Practice started!');
         return;
       }
 
-      // Fallback: route to practice hub filtered by topic if available
-      if (selectedTopic?.id) {
-        window.location.href = `/dashboard/practice/${selectedTopic.id}`;
+      // Fallback: derive topic and open practice hub
+      let topicIdResolved: number | undefined = selectedTopic?.id;
+      if (!topicIdResolved) {
+        try {
+          const t = await getLessonTopicId(Number(lessonIdResolved));
+          if (t) topicIdResolved = Number(t);
+        } catch {}
+      }
+      if (topicIdResolved) {
+        window.location.href = `/dashboard/practice/${topicIdResolved}`;
         toast.success('Practice hub opened for your topic.');
         return;
       }
 
-      // Final fallback
       window.location.href = `/dashboard/practice`;
       toast.success('Practice hub opened.');
     } catch (error) {
