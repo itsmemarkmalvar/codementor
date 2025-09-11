@@ -414,7 +414,7 @@ const SoloRoomRefactored = () => {
         } catch {}
       }
 
-      // If still not resolved, show gentle notice (don’t block future attempts)
+      // If still not resolved, show gentle notice (don't block future attempts)
       if (!lessonIdResolved) {
         toast.error('No lesson selected for practice');
         return;
@@ -1945,17 +1945,22 @@ Please help me understand this topic step by step. Start with an overview of wha
                          mappedSender = (msg as any)._model === 'together' ? 'together' : 'gemini';
                        }
                        
-                       console.log('Message mapping:', {
-                         originalSender: msg.sender,
-                         model: (msg as any)._model,
-                         mappedSender: mappedSender,
-                         textPreview: msg.text?.substring(0, 30) + '...'
-                       });
-                       
-                       return {
-                         ...msg,
-                         sender: mappedSender
-                       };
+                      try {
+                        const dbg = require('@/utils/debug');
+                        if (dbg?.isDebugEnabled?.()) {
+                          console.log('Message mapping:', {
+                            originalSender: msg.sender,
+                            model: (msg as any)._model,
+                            mappedSender: mappedSender,
+                            textPreview: msg.text?.substring(0, 30) + '...'
+                          });
+                        }
+                      } catch {}
+                      
+                      return {
+                        ...msg,
+                        sender: mappedSender
+                      };
                      })}
                      isLoading={isChatLoading}
                      onSendMessage={async (message) => {

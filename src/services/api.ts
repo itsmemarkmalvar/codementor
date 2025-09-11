@@ -13,6 +13,8 @@ export const api = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
+  // Default timeout to avoid hanging requests
+  timeout: 20000,
 });
 
 // Add request interceptor to add auth token to requests
@@ -65,25 +67,57 @@ api.interceptors.response.use(
     console.log(`API Response from ${response.config.url}: Status ${response.status}`);
     return response;
   },
-  (error) => {
-    // Enhanced error handling
+  async (error) => {
+    // Enhanced error handling + basic retry for transient failures
+    const config: any = error.config || {};
+
+    // Ignore cancelled requests (e.g., rapid tab switches / re-renders)
+    if (error.name === 'CanceledError' || axios.isCancel?.(error)) {
+      console.warn('Request cancelled:', { url: config?.url });
+      return Promise.reject(error);
+    }
+
+    const isNoResponse = !error.response && !!error.request;
+    const isTimeout = error.code === 'ECONNABORTED' || error.message?.toLowerCase?.().includes('timeout');
+    const isNetworkErr = error.code === 'ERR_NETWORK' || /network error/i.test(error.message || '');
+    const isTransient = isNoResponse || isTimeout || isNetworkErr;
+
     if (error.response) {
-      const { status, config } = error.response;
-      console.error(`API Error ${status} for ${config.url}:`, error.response.data);
-      
-      // Handle authentication errors
+      const { status, config: respConfig } = error.response;
+      console.error(`API Error ${status} for ${respConfig?.url}:`, error.response.data);
       if (status === 401 || status === 403) {
         console.error('Authentication error detected');
-        // You could dispatch an action to clear auth state or redirect to login
-        // For now, we'll just log it
       }
-    } else if (error.request) {
+    } else if (isNoResponse) {
       // Request was made but no response received
-      console.error('No response received:', error.request);
+      const logFn = (config?.__retryCount || 0) < 2 ? console.warn : console.error;
+      logFn('No response received', {
+        url: config?.url,
+        method: config?.method,
+        code: error.code,
+        timeout: config?.timeout,
+      });
     } else {
       // Something else caused the error
-      console.error('API request error:', error.message);
+      console.error('API request error:', error.message, { url: config?.url });
     }
+
+    // Retry idempotent GET requests on transient failures (max 2 retries, exp backoff)
+    const method = (config?.method || 'get').toLowerCase();
+    const canRetry = isTransient && (method === 'get' || method === 'head');
+    if (canRetry) {
+      config.__retryCount = config.__retryCount || 0;
+      const MAX_RETRIES = 2;
+      if (config.__retryCount < MAX_RETRIES) {
+        config.__retryCount += 1;
+        const base = 400; // ms
+        const delay = base * Math.pow(2, config.__retryCount - 1) + Math.floor(Math.random() * 150);
+        console.warn(`Retrying ${method.toUpperCase()} ${config.url} (attempt ${config.__retryCount}/${MAX_RETRIES}) in ${delay}ms`);
+        await new Promise((r) => setTimeout(r, delay));
+        return api.request(config);
+      }
+    }
+
     return Promise.reject(error);
   }
 );
@@ -816,16 +850,30 @@ export const getLessonPlans = async (topicId?: number) => {
     
     // If topicId is provided, use the topic-specific endpoint
     console.log(`Fetching lesson plans for specific topic ${topicId}`);
-    const response = await api.get(`/topics/${topicId}/lesson-plans?include_unpublished=true`);
-    console.log(`getLessonPlans for topic ${topicId} API response:`, response);
-    
-    if (!response.data || response.data.status === 'error') {
-      console.warn("Topic-specific lesson plans API returned an error:", response.data);
-      throw new Error(response.data?.message || 'Invalid response from API');
+    try {
+      const response = await api.get(`/topics/${topicId}/lesson-plans?include_unpublished=true`, { timeout: 60000 });
+      console.log(`getLessonPlans for topic ${topicId} API response:`, response);
+      
+      if (!response.data || response.data.status === 'error') {
+        console.warn("Topic-specific lesson plans API returned an error:", response.data);
+        throw new Error(response.data?.message || 'Invalid response from API');
+      }
+      
+      console.log(`Found ${response.data.data.length} lesson plans for topic ${topicId}`);
+      return response.data.data;
+    } catch (topicErr) {
+      console.warn(`Topic endpoint failed or timed out, falling back to all-lesson-plans:`, topicErr);
+      try {
+        const all = await api.get('/all-lesson-plans?include_unpublished=true', { timeout: 60000 });
+        const list = Array.isArray(all.data?.data) ? all.data.data : [];
+        const filtered = list.filter((p: any) => Number(p?.topic_id) === Number(topicId));
+        console.log(`Fallback returned ${filtered.length} plans for topic ${topicId}`);
+        return filtered;
+      } catch (fallbackErr) {
+        console.error('Fallback fetch failed:', fallbackErr);
+        throw fallbackErr;
+      }
     }
-    
-    console.log(`Found ${response.data.data.length} lesson plans for topic ${topicId}`);
-    return response.data.data;
   } catch (error) {
     console.error(`Error in getLessonPlans API call:`, error);
     return []; // Return empty array instead of throwing to avoid breaking UI

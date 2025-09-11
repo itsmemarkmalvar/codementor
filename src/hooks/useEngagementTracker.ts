@@ -27,6 +27,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   const [engagementScore, setEngagementScore] = useState(0);
   const [isQuizThresholdReached, setIsQuizThresholdReached] = useState(false);
   const [isPracticeThresholdReached, setIsPracticeThresholdReached] = useState(false);
+  const [isPracticeCompleted, setIsPracticeCompleted] = useState(false);
   const [events, setEvents] = useState<EngagementEvent[]>([]);
   const [isTracking, setIsTracking] = useState(false);
   const [triggeredActivity, setTriggeredActivity] = useState<'quiz' | 'practice' | null>(null);
@@ -34,6 +35,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   // Track auto-trigger one-shot behavior across reloads
   const quizAutoTriggeredRef = useRef<boolean>(false);
   const practiceAutoTriggeredRef = useRef<boolean>(false);
+  const [hasThresholdSynced, setHasThresholdSynced] = useState<boolean>(false);
   
   // Buffer for passive engagement points to persist to backend in small batches
   const pendingPassivePointsRef = useRef<number>(0);
@@ -115,12 +117,15 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
         setEngagementScore(threshold_status.current_score);
         setIsQuizThresholdReached(threshold_status.quiz_triggered);
         setIsPracticeThresholdReached(threshold_status.practice_triggered);
+        setIsPracticeCompleted(!!threshold_status.practice_completed);
         
         console.log('Threshold status synced with backend:', threshold_status);
       }
     } catch (error) {
       console.error('Failed to sync threshold status with backend:', error);
     }
+    // Mark that we've attempted an initial sync (success or fail)
+    setHasThresholdSynced(true);
   }, []);
 
   // On session change, immediately sync persisted engagement from backend
@@ -213,17 +218,19 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   // Auto-trigger on restored threshold state (e.g., after reload)
   useEffect(() => {
     if (!options.autoTrigger) return;
+    // Avoid triggering based solely on stale local metadata before the first backend sync
+    if (!hasThresholdSynced) return;
     // Quiz auto-trigger
     if (isQuizThresholdReached && !quizAutoTriggeredRef.current) {
       quizAutoTriggeredRef.current = true;
       try { options.onQuizTrigger?.(); } catch (e) { console.error('onQuizTrigger failed', e); }
     }
     // Practice auto-trigger (only after quiz was unlocked)
-    if (isQuizThresholdReached && isPracticeThresholdReached && !practiceAutoTriggeredRef.current) {
+    if (isQuizThresholdReached && isPracticeThresholdReached && !practiceAutoTriggeredRef.current && !isPracticeCompleted) {
       practiceAutoTriggeredRef.current = true;
       try { options.onPracticeTrigger?.(); } catch (e) { console.error('onPracticeTrigger failed', e); }
     }
-  }, [options.autoTrigger, isQuizThresholdReached, isPracticeThresholdReached, options.onQuizTrigger, options.onPracticeTrigger]);
+  }, [options.autoTrigger, hasThresholdSynced, isQuizThresholdReached, isPracticeThresholdReached, isPracticeCompleted, options.onQuizTrigger, options.onPracticeTrigger]);
 
   // Sync engagement data with backend periodically
   useEffect(() => {
@@ -487,6 +494,14 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   const trackPracticeCompletion = useCallback(() => {
     setTriggeredActivity(null);
     setAssessmentSequence(null); // Reset sequence for next cycle
+    setIsPracticeCompleted(true);
+    setIsPracticeThresholdReached(false);
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('practiceCompleted', 'true');
+        localStorage.setItem('practiceCompletionTime', String(Date.now()));
+      }
+    } catch {}
     
     // Show preference poll after practice completion
     setTimeout(() => {
