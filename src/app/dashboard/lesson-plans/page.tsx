@@ -66,7 +66,9 @@ export default function LessonPlansPage() {
         }
       }));
 
-      setLessonPlans(withProgress);
+      // sort locked to the end but preserve canonical order within
+      const sorted = [...withProgress].sort((a, b) => (a.is_locked === b.is_locked) ? 0 : (a.is_locked ? 1 : -1));
+      setLessonPlans(sorted);
       setTopics(topicsData);
       
       // Canonical order for Java Basics
@@ -254,7 +256,7 @@ export default function LessonPlansPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {hierarchy[groupKey]?.map((plan, index) => (
                   <div key={plan.id} className="relative group">
-                    <Link href={`/dashboard/lesson-plans/${plan.id}`}>
+                    <Link href={plan.is_locked ? '#' : `/dashboard/lesson-plans/${plan.id}`}>
                       <LessonPlanCard
                         id={plan.id}
                         title={plan.title}
@@ -266,17 +268,19 @@ export default function LessonPlansPage() {
                         index={index}
                         // @ts-ignore extra prop used by card for display
                         progress={Math.max(0, Math.min(100, (plan as any).progress_effective ?? 0))}
+                        // @ts-ignore from backend
+                        is_locked={(plan as any).is_locked}
                       />
                     </Link>
                     <div className="absolute bottom-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Link href={`/dashboard/lesson-plans/${plan.id}`}>
+                      <Link href={plan.is_locked ? '#' : `/dashboard/lesson-plans/${plan.id}`}>
                         <Button size="sm" variant="outline" className="border-white/10 bg-white/5 hover:bg-white/10 text-white">
                           <Info className="h-3 w-3 mr-1" />
                           Details
                         </Button>
                       </Link>
-                      <Link href={`/dashboard/solo-room?topic=${plan.topic_id}&plan=${plan.id}`}>
-                        <Button size="sm" className="bg-[#2E5BFF] hover:bg-[#2343C3] text-white">
+                      <Link href={plan.is_locked ? '#' : `/dashboard/solo-room?topic=${plan.topic_id}&plan=${plan.id}`}>
+                        <Button size="sm" className={`text-white ${plan.is_locked ? 'bg-gray-600 cursor-not-allowed' : 'bg-[#2E5BFF] hover:bg-[#2343C3]'}`} disabled={Boolean((plan as any).is_locked)}>
                           <Code className="h-3 w-3 mr-1" />
                           Learn with AI
                         </Button>

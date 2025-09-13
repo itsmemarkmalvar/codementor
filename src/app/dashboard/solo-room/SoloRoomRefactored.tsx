@@ -1036,29 +1036,36 @@ const SoloRoomRefactored = () => {
     ) : null
   );
 
-  // Fetch lesson plans when a topic is selected
+  // Fetch lesson plans when a topic is selected and on progress broadcasts (unlocking after completion)
+  const reloadLessonPlans = React.useCallback(async () => {
+    if (!selectedTopic) {
+      setLessonPlans([]);
+      return;
+    }
+    setIsLoadingLessonPlans(true);
+    try {
+      const plans = await getLessonPlans(selectedTopic.id);
+      setLessonPlans(plans || []);
+    } catch (error) {
+      console.error('Error fetching lesson plans:', error);
+      setLessonPlans([]);
+      toast.error('Failed to load lessons');
+    } finally {
+      setIsLoadingLessonPlans(false);
+    }
+  }, [selectedTopic?.id]);
+
   useEffect(() => {
-    const fetchLessonPlans = async () => {
-      if (!selectedTopic) {
-        setLessonPlans([]);
-        return;
-      }
+    reloadLessonPlans();
+  }, [reloadLessonPlans]);
 
-      setIsLoadingLessonPlans(true);
-      try {
-        const plans = await getLessonPlans(selectedTopic.id);
-        setLessonPlans(plans || []);
-      } catch (error) {
-        console.error('Error fetching lesson plans:', error);
-        setLessonPlans([]);
-        toast.error('Failed to load lessons');
-      } finally {
-        setIsLoadingLessonPlans(false);
-      }
-    };
-
-    fetchLessonPlans();
-  }, [selectedTopic?.id]); // Only run when selected topic changes
+  useEffect(() => {
+    const unsub = progressSync.onProgressUpdate(() => {
+      // Refresh lesson list to reflect newly unlocked lessons after completions are stamped
+      reloadLessonPlans();
+    });
+    return () => { unsub(); };
+  }, [reloadLessonPlans]);
 
   // Topic selection handler
   const handleTopicSelect = async (topic: Topic) => {
@@ -2287,8 +2294,13 @@ Please help me understand this topic step by step. Start with an overview of wha
                               {/* Action Button - Fixed at Bottom */}
                               <div className="mt-auto">
                                 <button
-                                  onClick={() => handleLessonClick(lesson)}
-                                  className="w-full bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] text-white font-semibold py-2 px-4 rounded-lg transition-all duration-200 ease-out flex items-center justify-center gap-2 text-sm group-hover:shadow-lg group-hover:shadow-[#2E5BFF]/25 transform hover:scale-[1.01] active:scale-[0.99]"
+                                  onClick={() => {
+                                    // Prevent navigation if locked
+                                    if ((lesson as any).is_locked) return;
+                                    handleLessonClick(lesson);
+                                  }}
+                                  className={`w-full font-semibold py-2 px-4 rounded-lg transition-all duration-200 ease-out flex items-center justify-center gap-2 text-sm group-hover:shadow-lg group-hover:shadow-[#2E5BFF]/25 transform hover:scale-[1.01] active:scale-[0.99] ${ (lesson as any).is_locked ? 'bg-gray-600 text-gray-300 cursor-not-allowed' : 'bg-gradient-to-r from-[#2E5BFF] to-[#1E40AF] hover:from-[#2343C3] hover:to-[#1E3A8A] text-white' }`}
+                                  disabled={Boolean((lesson as any).is_locked)}
                                 >
                                   <MessageSquare className="h-4 w-4" />
                                   Start Learning
