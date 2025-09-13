@@ -64,6 +64,7 @@ export default function DashboardPage() {
       ? Math.round(progress.reduce((sum, p) => sum + (p.progress_percentage || 0), 0) / count)
       : 0);
     const maxStreak = summary?.totals?.best_streak_days ?? progress.reduce((max, p) => Math.max(max, p.current_streak_days || 0), 0);
+    const activeStreak = summary?.totals?.active_streak_days ?? maxStreak;
     const completedCount = summary?.totals?.topics_completed ?? progress.filter(p => (p.progress_percentage || 0) >= 80).length;
 
     return [
@@ -83,7 +84,7 @@ export default function DashboardPage() {
       },
       {
         title: "Active Streak",
-        value: `${maxStreak} days`,
+        value: `${activeStreak} days`,
         change: completedCount > 0 ? `${completedCount} topics ≥ 80%` : "",
         icon: Trophy,
         color: "from-orange-500/20 to-yellow-500/20"
@@ -202,19 +203,41 @@ export default function DashboardPage() {
               <div className="grid grid-cols-2 gap-4 text-sm">
                 {['gemini','together'].map((m) => {
                   const u = (modelCompare.user_model || []).find((x: any) => x.model === m);
+                  const pr = modelCompare?.enhanced_tica?.preference_rates;
+                  const prefPct = typeof pr === 'object'
+                    ? (m === 'gemini' ? pr?.gemini_preference_rate : pr?.together_preference_rate)
+                    : undefined;
                   return (
                     <div key={m} className="space-y-1">
                       <p className="text-gray-400 capitalize">{m}</p>
                       <p className="text-white">Next‑run success: {u?.success1 !== undefined ? Math.round((u.success1 || 0)*100) : 0}%</p>
                       <p className="text-gray-400">TTF: {u?.ttf_min !== undefined && u?.ttf_min !== null ? `${u.ttf_min.toFixed(1)} min` : '—'}</p>
-                      <p className="text-gray-400">Rating: {u?.rating ? u.rating.toFixed(1) : '—'}</p>
+                      <p className="text-gray-400">Rating: {typeof prefPct === 'number' ? `${prefPct}%` : '—'}</p>
                     </div>
                   );
                 })}
                 <div className="col-span-2 pt-2 border-t border-white/10">
-                  <p className="text-xs text-gray-500">
-                    Winner: {modelCompare.winner ? modelCompare.winner.toUpperCase() : 'Tie'}
-                  </p>
+                  {(() => {
+                    const pr = modelCompare?.enhanced_tica?.preference_rates;
+                    if (pr && typeof pr.gemini_preference_rate === 'number' && typeof pr.together_preference_rate === 'number') {
+                      const g = pr.gemini_preference_rate;
+                      const t = pr.together_preference_rate;
+                      let leader = 'Tie';
+                      let pct = '';
+                      if (g > t) { leader = 'Gemini'; pct = `${g}%`; }
+                      else if (t > g) { leader = 'Together'; pct = `${t}%`; }
+                      return (
+                        <p className="text-xs text-gray-300">
+                          Poll Leader: <span className="text-white font-medium">{leader}</span>
+                          {leader !== 'Tie' ? ` • ${pct}` : ''}
+                          {typeof pr.total_choices === 'number' ? ` • n=${pr.total_choices}` : ''}
+                        </p>
+                      );
+                    }
+                    return (
+                      <p className="text-xs text-gray-500">Poll Leader: —</p>
+                    );
+                  })()}
                 </div>
               </div>
             ) : (
@@ -262,8 +285,8 @@ export default function DashboardPage() {
                 <p className="text-sm text-gray-400">Topics Tracked</p>
               </div>
               <div className="space-y-1">
-                <p className="text-2xl font-bold text-white">{summary?.totals?.topics_completed ?? progress.filter(p => p.status === 'completed').length}</p>
-                <p className="text-sm text-gray-400">Topics Completed</p>
+                <p className="text-2xl font-bold text-white">{summary?.totals?.lessons_completed ?? summary?.totals?.topics_completed ?? progress.filter(p => p.status === 'completed').length}</p>
+                <p className="text-sm text-gray-400">Lessons Completed</p>
               </div>
               <div className="space-y-1">
                 <p className="text-2xl font-bold text-white">{summary?.totals?.total_minutes ?? progress.reduce((s, p) => s + (p.time_spent_minutes || 0), 0)}</p>

@@ -12,7 +12,7 @@ export default function ModelsComparisonPage() {
   const [preferenceData, setPreferenceData] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [topics, setTopics] = useState<Array<{id:number; title:string}>>([]);
-  const [filters, setFilters] = useState<{window:string; k_runs:number; lookahead_min:number; topic_id?: number; difficulty?: string; nmin:number; use_attribution_first?: boolean; quiz_pass_percent?: number}>({ window: "30d", k_runs: 3, lookahead_min: 30, nmin: 5, use_attribution_first: true, quiz_pass_percent: 70 });
+  const [filters, setFilters] = useState<{window:string; k_runs:number; lookahead_min:number; topic_id?: number; difficulty?: string; nmin:number; use_attribution_first?: boolean; quiz_pass_percent?: number}>({ window: "30d", k_runs: 3, lookahead_min: 30, nmin: 1, use_attribution_first: true, quiz_pass_percent: 70 });
 
   useEffect(() => {
     let mounted = true;
