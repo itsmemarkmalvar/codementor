@@ -799,7 +799,7 @@ export const getTopicProgress = async (topicId: number) => {
 };
 
 // Lesson Plan related API calls
-export const getLessonPlans = async (topicId?: number) => {
+export const getLessonPlans = async (topicId?: number, opts?: { signal?: AbortSignal }) => {
   try {
     console.log("getLessonPlans called with topicId:", topicId);
     
@@ -808,7 +808,7 @@ export const getLessonPlans = async (topicId?: number) => {
       try {
         console.log("Attempting to fetch all lesson plans via /all-lesson-plans endpoint");
         // First try the debug endpoint
-        const response = await api.get('/all-lesson-plans?include_unpublished=true');
+        const response = await api.get('/all-lesson-plans?include_unpublished=true', { signal: opts?.signal });
         console.log('getLessonPlans (all) API response:', response);
         
         if (response.data && response.data.status !== 'error') {
@@ -820,7 +820,7 @@ export const getLessonPlans = async (topicId?: number) => {
       } catch (err) {
         console.error('Error using debug endpoint, falling back to per-topic fetch:', err);
         // If the debug endpoint fails, fall back to getting all topics and all their lesson plans
-        const topicsResponse = await api.get('/topics');
+        const topicsResponse = await api.get('/topics', { signal: opts?.signal });
         if (!topicsResponse.data || topicsResponse.data.status === 'error') {
           throw new Error('Failed to fetch topics');
         }
@@ -832,7 +832,7 @@ export const getLessonPlans = async (topicId?: number) => {
         for (const topic of topics) {
           try {
             console.log(`Fetching lesson plans for topic ${topic.id} (${topic.title})`);
-            const plansResponse = await api.get(`/topics/${topic.id}/lesson-plans`);
+            const plansResponse = await api.get(`/topics/${topic.id}/lesson-plans`, { signal: opts?.signal });
             if (plansResponse.data && plansResponse.data.status === 'success') {
               console.log(`Found ${plansResponse.data.data.length} lesson plans for topic ${topic.id}`);
               allPlans = [...allPlans, ...plansResponse.data.data];
@@ -851,7 +851,7 @@ export const getLessonPlans = async (topicId?: number) => {
     // If topicId is provided, use the topic-specific endpoint
     console.log(`Fetching lesson plans for specific topic ${topicId}`);
     try {
-      const response = await api.get(`/topics/${topicId}/lesson-plans?include_unpublished=true`, { timeout: 60000 });
+      const response = await api.get(`/topics/${topicId}/lesson-plans?include_unpublished=true`, { timeout: 60000, signal: opts?.signal });
       console.log(`getLessonPlans for topic ${topicId} API response:`, response);
       
       if (!response.data || response.data.status === 'error') {
@@ -862,20 +862,32 @@ export const getLessonPlans = async (topicId?: number) => {
       console.log(`Found ${response.data.data.length} lesson plans for topic ${topicId}`);
       return response.data.data;
     } catch (topicErr) {
+      // Swallow cancellations quietly to avoid noisy overlays during fast tab switches
+      const canceled = (topicErr as any)?.name === 'CanceledError' || (topicErr as any)?.code === 'ERR_CANCELED' || /abort|canceled/i.test(String((topicErr as any)?.message || ''));
+      if (canceled) {
+        return [];
+      }
       console.warn(`Topic endpoint failed or timed out, falling back to all-lesson-plans:`, topicErr);
       try {
-        const all = await api.get('/all-lesson-plans?include_unpublished=true', { timeout: 60000 });
+        const all = await api.get('/all-lesson-plans?include_unpublished=true', { timeout: 60000, signal: opts?.signal });
         const list = Array.isArray(all.data?.data) ? all.data.data : [];
         const filtered = list.filter((p: any) => Number(p?.topic_id) === Number(topicId));
         console.log(`Fallback returned ${filtered.length} plans for topic ${topicId}`);
         return filtered;
       } catch (fallbackErr) {
+        const canceledFb = (fallbackErr as any)?.name === 'CanceledError' || (fallbackErr as any)?.code === 'ERR_CANCELED' || /abort|canceled/i.test(String((fallbackErr as any)?.message || ''));
+        if (canceledFb) {
+          return [];
+        }
         console.error('Fallback fetch failed:', fallbackErr);
         throw fallbackErr;
       }
     }
   } catch (error) {
-    console.error(`Error in getLessonPlans API call:`, error);
+    const canceled = (error as any)?.name === 'CanceledError' || (error as any)?.code === 'ERR_CANCELED' || /abort|canceled/i.test(String((error as any)?.message || ''));
+    if (!canceled) {
+      console.error(`Error in getLessonPlans API call:`, error);
+    }
     return []; // Return empty array instead of throwing to avoid breaking UI
   }
 };

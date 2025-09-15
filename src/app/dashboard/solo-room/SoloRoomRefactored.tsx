@@ -808,15 +808,21 @@ const SoloRoomRefactored = () => {
   }, []); // Empty dependency array - run only once
 
       // Load session data when currentSession changes or when topics are loaded
+  const didHydrateFromMetadataRef = React.useRef<string | null>(null);
     useEffect(() => {
-      console.log('Session data loading effect triggered. currentSession:', currentSession, 'topics.length:', topics.length);      const loadSessionData = async () => {
+      const sessionId = currentSession?.session_identifier || null;
+      console.log('Session data loading effect triggered. sessionId:', sessionId, 'topics.length:', topics.length, 'hydratedFor:', didHydrateFromMetadataRef.current);
+      const loadSessionData = async () => {
         if (currentSession) {
+          if (didHydrateFromMetadataRef.current === sessionId) {
+            return;
+          }
           console.log('Current session:', currentSession);
           const metadata = loadSessionMetadata();
           console.log('Loading session metadata:', metadata);
         
         // Load topic data
-        if (metadata.topic_data && topics.length > 0) {
+        if (!selectedTopic && metadata.topic_data && topics.length > 0) {
           const savedTopic = topics.find(t => t.id === metadata.topic_data.id);
           if (savedTopic) {
             console.log('Loading saved topic from session:', savedTopic.title);
@@ -827,7 +833,7 @@ const SoloRoomRefactored = () => {
         }
         
         // Load lesson data - we need to fetch lesson plans first if topic is available
-        if (metadata.lesson_data && metadata.topic_data) {
+        if (!selectedLesson && metadata.lesson_data && metadata.topic_data) {
           try {
             console.log('Fetching lesson plans for topic:', metadata.topic_data.id);
             // Fetch lesson plans for the topic
@@ -846,33 +852,14 @@ const SoloRoomRefactored = () => {
             console.error('Error loading lesson from session:', error);
           }
         }
+        // mark hydrated for this session to avoid overriding later topic selections
+        didHydrateFromMetadataRef.current = sessionId;
       }
     };
     
     // Load session data when session changes or when topics are available
     if (currentSession && topics.length > 0) {
       loadSessionData();
-    }
-    
-    // Debug: Manually save current topic and lesson to metadata for testing
-    if (currentSession && selectedTopic && selectedLesson) {
-      console.log('Debug: Manually saving current topic and lesson to metadata');
-      const debugMetadata = {
-        topic_data: {
-          id: selectedTopic.id,
-          title: selectedTopic.title,
-          description: selectedTopic.description,
-          difficulty_level: selectedTopic.difficulty_level
-        },
-        lesson_data: {
-          id: selectedLesson.id,
-          title: selectedLesson.title,
-          content: selectedLesson.content,
-          topic_id: selectedLesson.topic_id
-        }
-      };
-      console.log('Debug metadata to save:', debugMetadata);
-      setPendingSessionMetadata(debugMetadata);
     }
   }, [currentSession, topics, loadSessionMetadata, selectedTopic, selectedLesson]);
 
@@ -1036,36 +1023,90 @@ const SoloRoomRefactored = () => {
     ) : null
   );
 
+  // Track in-flight requests and guard against stale responses to prevent flicker
+  const lessonPlansAbortRef = React.useRef<AbortController | null>(null);
+  const lessonPlansReqIdRef = React.useRef(0);
+  const [pendingTopicId, setPendingTopicId] = useState<number | null>(null);
+
+  // Debounced trigger for reloads when the topic changes rapidly
+  const debouncedReloadRef = React.useRef<number | null>(null);
+
   // Fetch lesson plans when a topic is selected and on progress broadcasts (unlocking after completion)
-  const reloadLessonPlans = React.useCallback(async () => {
-    if (!selectedTopic) {
+  const reloadLessonPlans = React.useCallback(async (opts?: { reason?: string; debounceMs?: number }) => {
+    const topicId = selectedTopic?.id;
+    if (!topicId) {
       setLessonPlans([]);
       return;
     }
+
+    // Debounce optional
+    const debounceMs = opts?.debounceMs ?? 0;
+    if (debounceMs > 0) {
+      if (debouncedReloadRef.current) {
+        window.clearTimeout(debouncedReloadRef.current);
+      }
+      debouncedReloadRef.current = window.setTimeout(() => {
+        reloadLessonPlans({ reason: 'debounced' });
+      }, debounceMs);
+      return;
+    }
+
+    // Mark pending topic id (used by UI to avoid clearing list instantly)
+    setPendingTopicId(topicId);
+
+    // Cancel previous request
+    if (lessonPlansAbortRef.current) {
+      try { lessonPlansAbortRef.current.abort(); } catch {}
+    }
+    const controller = new AbortController();
+    lessonPlansAbortRef.current = controller;
+
+    // Sequence guard
+    const reqId = ++lessonPlansReqIdRef.current;
     setIsLoadingLessonPlans(true);
     try {
-      const plans = await getLessonPlans(selectedTopic.id);
+      const plans = await getLessonPlans(topicId, { signal: controller.signal });
+      // Ignore stale responses
+      if (reqId !== lessonPlansReqIdRef.current) return;
       setLessonPlans(plans || []);
-    } catch (error) {
+    } catch (error: any) {
+      // Ignore cancellations
+      if (error?.name === 'CanceledError' || error?.message === 'canceled' || error?.code === 'ERR_CANCELED') {
+        return;
+      }
       console.error('Error fetching lesson plans:', error);
-      setLessonPlans([]);
+      // Keep previous list to avoid flash; surface toast once
       toast.error('Failed to load lessons');
     } finally {
-      setIsLoadingLessonPlans(false);
+      if (reqId === lessonPlansReqIdRef.current) {
+        setIsLoadingLessonPlans(false);
+        setPendingTopicId(null);
+      }
     }
   }, [selectedTopic?.id]);
 
   useEffect(() => {
-    reloadLessonPlans();
+    // Debounce initial load when topic changes to avoid flicker on rapid switches
+    reloadLessonPlans({ debounceMs: 200, reason: 'topic-change' });
+    return () => {
+      if (debouncedReloadRef.current) {
+        window.clearTimeout(debouncedReloadRef.current);
+      }
+    };
   }, [reloadLessonPlans]);
 
   useEffect(() => {
+    // Throttle progress-driven reloads to once per 1500ms, and reload only if we have a topic
+    let lastRun = 0;
     const unsub = progressSync.onProgressUpdate(() => {
-      // Refresh lesson list to reflect newly unlocked lessons after completions are stamped
-      reloadLessonPlans();
+      const now = Date.now();
+      if (!selectedTopic) return;
+      if (now - lastRun < 1500) return;
+      lastRun = now;
+      reloadLessonPlans({ reason: 'progress-update' });
     });
     return () => { unsub(); };
-  }, [reloadLessonPlans]);
+  }, [reloadLessonPlans, selectedTopic?.id]);
 
   // Topic selection handler
   const handleTopicSelect = async (topic: Topic) => {
