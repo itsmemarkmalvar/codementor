@@ -9,6 +9,7 @@ import LessonPlanCard from "@/components/lesson-plans/LessonPlanCard";
 import { getLessonPlans, getTopics, getLessonPlanProgress } from "@/services/api";
 import { progressSync } from "@/utils/crossTabSync";
 import Link from "next/link";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface LessonPlan {
   id: number;
@@ -19,6 +20,9 @@ interface LessonPlan {
   modules_count: number;
   completed_modules: number;
   prerequisites?: string;
+  // Optional fields supplied by backend/UI
+  is_locked?: boolean;
+  progress_effective?: number;
 }
 
 interface Topic {
@@ -209,18 +213,22 @@ export default function LessonPlansPage() {
         </div>
         <div className="flex items-center space-x-2">
           <Filter className="h-5 w-5 text-gray-400" />
-          <select
-            className="h-10 bg-white/5 border border-white/10 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2E5BFF] text-white px-3"
-            value={selectedTopic || ""}
-            onChange={(e) => setSelectedTopic(e.target.value ? parseInt(e.target.value) : null)}
+          <Select
+            value={selectedTopic !== null ? String(selectedTopic) : "all"}
+            onValueChange={(val) => setSelectedTopic(val === "all" ? null : parseInt(val))}
           >
-            <option value="">All Topics</option>
-            {topics.map((topic) => (
-              <option key={topic.id} value={topic.id}>
-                {topic.title}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger className="h-10 bg-white/5 border border-white/10 text-white focus:ring-2 focus:ring-[#2E5BFF]">
+              <SelectValue placeholder="All Topics" />
+            </SelectTrigger>
+            <SelectContent className="bg-[#0A1929] text-white border-white/10">
+              <SelectItem value="all">All Topics</SelectItem>
+              {topics.map((topic) => (
+                <SelectItem key={topic.id} value={String(topic.id)}>
+                  {topic.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       </div>
 
