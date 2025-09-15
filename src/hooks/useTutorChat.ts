@@ -131,6 +131,32 @@ export function useTutorChat(initialMessages: Message[] = []) {
       console.log('useTutorChat: No session available, skipping conversation load');
     }
   }, [currentSession?.session_identifier, loadConversationHistory]);
+
+  // Persist conversation on page visibility change/unload to avoid losing latest responses
+  useEffect(() => {
+    const persist = () => {
+      const allMessages = [
+        ...messagesByModel.together.map(msg => ({ ...msg, _model: 'together' as const })),
+        ...messagesByModel.gemini.map(msg => ({ ...msg, _model: 'gemini' as const }))
+      ];
+      if (allMessages.length > 0) {
+        try {
+          saveConversationHistory(allMessages);
+        } catch {}
+      }
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        persist();
+      }
+    };
+    window.addEventListener('beforeunload', persist);
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('beforeunload', persist);
+    };
+  }, [messagesByModel.gemini, messagesByModel.together, saveConversationHistory]);
   const [isLoading, setIsLoading] = useState(false);
   const [tutorPreferences, setTutorPreferences] = useState<TutorPreferences>({
     responseLength: 'medium',
