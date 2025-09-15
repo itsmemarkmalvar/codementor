@@ -18,6 +18,7 @@ import {
   ChevronDown,
   MessageSquare,
   BarChart3,
+  Brain,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import AuthGuard from "@/components/AuthGuard";
@@ -35,7 +36,7 @@ const navItems = [
   { href: "/dashboard/practice", label: "Practice", icon: GraduationCap },
   { href: "/dashboard/progress", label: "Progress", icon: LineChart },
   { href: "/dashboard/solo-room", label: "AI Tutor Room", icon: Code },
-  { href: "/dashboard/analytics/models", label: "Compare AI Models", icon: LineChart },
+  { href: "/dashboard/analytics/models", label: "Compare AI Models", icon: Brain },
 ];
 
 export default function DashboardLayout({
