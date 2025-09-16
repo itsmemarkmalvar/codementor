@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { Book, FolderOpen, MessageSquare, Lightbulb, ScrollText, Play, Palette, Settings, Monitor, Code2, Zap, Trophy, Clock, Target, Brain, GraduationCap, BookOpen, Timer, Info, ArrowRight, Users } from 'lucide-react';
-import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser, getActivePreservedSessionByLesson, createAIPreferenceLog, getLessonTopicId, getLessonPlanProgress, updateModuleProgress, getLessonPracticeProblems, getThresholdStatus } from '@/services/api';
+import { getTopics, updateProgress as apiUpdateProgress, getLessonPlans, heartbeat, getProgressSummary, getModuleQuizzes, getQuiz, startQuizAttempt, submitQuizAttempt, getLessonModules, getPistonHealth, startSplitScreenSession, getActiveSession, endSession, recordUserChoice, requestClarification, incrementEngagement, getCurrentUser, getActivePreservedSessionByLesson, createAIPreferenceLog, getLessonTopicId, getLessonPlanProgress, updateModuleProgress, getLessonPracticeProblems, getThresholdStatus, getUserSessionHistory, reactivatePreservedSession, getLessonPlanDetails } from '@/services/api';
 import { progressSync } from '@/utils/crossTabSync';
 
 // Compact per-lesson progress bar that fetches backend percentage
@@ -127,6 +127,12 @@ const SoloRoomRefactored = () => {
   const [quizCompletionData, setQuizCompletionData] = useState<any>(null);
   const [practiceCompletionData, setPracticeCompletionData] = useState<any>(null);
   const [pistonHealth, setPistonHealth] = useState<{ok:boolean; latency_ms?: number}|null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [sessionHistory, setSessionHistory] = useState<any[]>([]);
+  const [historyQuery, setHistoryQuery] = useState('');
+  const [historyTopicFilter, setHistoryTopicFilter] = useState<string>('all');
+  const [historyPage, setHistoryPage] = useState(1);
+  const HISTORY_PAGE_SIZE = 10;
   
   // Project state (simplified for demo)
   const [currentProject, setCurrentProject] = useState<any>(null);
@@ -1827,6 +1833,90 @@ Please help me understand this topic step by step. Start with an overview of wha
     }
   }, [pendingConversationHistory, saveConversationHistory]);
 
+  // Load user session history when History tab opens
+  useEffect(() => {
+    (async () => {
+      if (activeTab !== 'sessions') return;
+      const userId = currentSession?.user_id;
+      if (!userId) return;
+      try {
+        setIsLoadingHistory(true);
+        const res = await getUserSessionHistory(String(userId));
+        const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
+        setSessionHistory(list);
+      } catch (e) {
+        console.warn('Failed to load session history', e);
+        setSessionHistory([]);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    })();
+  }, [activeTab, currentSession?.user_id]);
+
+  const handleReactivateHistorySession = async (sessionIdentifier: string) => {
+    try {
+      const res = await reactivatePreservedSession(sessionIdentifier);
+      const preserved = res?.data || res;
+      if (!preserved) throw new Error('No preserved session returned');
+
+      // Load conversation history if available
+      if (Array.isArray(preserved.conversation_history) && preserved.conversation_history.length > 0) {
+        setPendingConversationHistory(preserved.conversation_history);
+      }
+
+      // Try to bind to an active SplitScreenSession for the same lesson
+      const lessonIdFromMeta = preserved?.lesson_id || preserved?.session_metadata?.lesson_data?.id;
+      const topicIdFromMeta = preserved?.topic_id || preserved?.session_metadata?.topic_data?.id;
+      let ss: any = null;
+      if (lessonIdFromMeta) {
+        try {
+          const active = await getActiveSession({ lesson_id: Number(lessonIdFromMeta) });
+          ss = active?.data?.session || active?.session || null;
+        } catch {}
+      }
+      // Fallback: query active session without lesson filter
+      if (!ss) {
+        try {
+          const active = await getActiveSession();
+          ss = active?.data?.session || active?.session || null;
+        } catch {}
+      }
+
+      // If still no split-screen session, start a new one for the preserved lesson
+      if (!ss && lessonIdFromMeta) {
+        try {
+          const newSessionRes = await startSplitScreenSession({
+            topic_id: topicIdFromMeta ? Number(topicIdFromMeta) : undefined,
+            lesson_id: Number(lessonIdFromMeta),
+            session_type: 'comparison',
+            ai_models: ['gemini','together']
+          } as any);
+          ss = newSessionRes?.data?.session || newSessionRes?.session || newSessionRes || null;
+        } catch {}
+      }
+
+      // Update selected topic/lesson in UI if available
+      if (topicIdFromMeta) {
+        const t = topics.find(t => Number(t.id) === Number(topicIdFromMeta));
+        if (t) setSelectedTopic(t as any);
+      }
+      if (lessonIdFromMeta) {
+        try {
+          const lesson = await getLessonPlanDetails(Number(lessonIdFromMeta));
+          if (lesson) setSelectedLesson(lesson as any);
+        } catch {}
+      }
+
+      if (ss) {
+        setSplitScreenSession(ss);
+      }
+
+      setActiveTab('chat');
+    } catch (e) {
+      toast.error('Failed to reactivate session');
+    }
+  };
+
   // Save session metadata when pending metadata is set
   useEffect(() => {
     if (pendingSessionMetadata) {
@@ -2384,25 +2474,103 @@ Please help me understand this topic step by step. Start with an overview of wha
             animate={{ opacity: 1, y: 0 }}
             className="h-full"
           >
-            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-8 h-full flex flex-col items-center justify-center">
-              <div className="w-16 h-16 bg-[#2E5BFF] rounded-2xl flex items-center justify-center mb-6">
-                <Clock className="h-8 w-8 text-white" />
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-3">Learning History</h3>
-              <p className="text-gray-400 text-center max-w-md mb-6">
-                Track your progress and revisit previous learning sessions to reinforce your knowledge.
-              </p>
-              <div className="flex items-center gap-4 text-sm text-gray-500">
+            <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-6 h-full">
+              <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <ScrollText className="h-4 w-4 text-[#2E5BFF]" />
-                  <span>Session Logs</span>
+                  <Clock className="h-5 w-5 text-[#2E5BFF]" />
+                  <h3 className="text-lg font-semibold text-white">Learning History</h3>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-[#2E5BFF]" />
-                  <span>Progress Tracking</span>
-                </div>
+                {isLoadingHistory && <span className="text-xs text-gray-400">Loading…</span>}
               </div>
-          </div>
+
+              {/* Controls */}
+              <div className="flex flex-col md:flex-row gap-3 mb-4">
+                <input
+                  type="text"
+                  placeholder="Search by lesson title or session id..."
+                  className="flex-1 bg-white/5 border border-white/10 rounded px-3 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2E5BFF]"
+                  value={historyQuery}
+                  onChange={(e) => { setHistoryQuery(e.target.value); setHistoryPage(1); }}
+                />
+                <select
+                  className="h-10 bg-white/5 border border-white/10 rounded px-3 text-white"
+                  value={historyTopicFilter}
+                  onChange={(e) => { setHistoryTopicFilter(e.target.value); setHistoryPage(1); }}
+                >
+                  <option value="all">All Topics</option>
+                  {topics.map((t) => (
+                    <option key={t.id} value={String(t.id)}>{t.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              {sessionHistory.length === 0 && !isLoadingHistory ? (
+                <div className="h-full flex items-center justify-center text-gray-400 text-sm">No sessions yet.</div>
+              ) : (
+                <div className="space-y-4 overflow-y-auto max-h-[70vh] pr-2 custom-scrollbar">
+                  {Object.entries(
+                    sessionHistory
+                      .filter((s) => {
+                        const title = s.session_metadata?.lesson_data?.title?.toLowerCase?.() || '';
+                        const sid = String(s.session_identifier || '').toLowerCase();
+                        const matchesQuery = !historyQuery || title.includes(historyQuery.toLowerCase()) || sid.includes(historyQuery.toLowerCase());
+                        const matchesTopic = historyTopicFilter === 'all' || String(s.topic_id || s.session_metadata?.topic_data?.id || '') === historyTopicFilter;
+                        return matchesQuery && matchesTopic;
+                      })
+                      .reduce((acc: Record<string, any[]>, s: any) => {
+                        const key = String(s.lesson_id || 'unknown');
+                        if (!acc[key]) acc[key] = [];
+                        acc[key].push(s);
+                        return acc;
+                      }, {})
+                  ).slice((historyPage-1), (historyPage-1)+HISTORY_PAGE_SIZE).map(([lessonKey, sessions]) => {
+                    const sample = (sessions as any[])[0] || {};
+                    const title = sample?.session_metadata?.lesson_data?.title || (lessonKey !== 'unknown' ? `Lesson #${lessonKey}` : 'Unknown Lesson');
+                    const topicTitle = sample?.session_metadata?.topic_data?.title || topics.find(t => t.id === sample?.topic_id)?.title;
+                    return (
+                      <div key={lessonKey} className="bg-white/5 border border-white/10 rounded-lg">
+                        <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
+                          <div className="text-white font-medium">{title}{topicTitle ? <span className="ml-2 text-xs text-gray-400">· {topicTitle}</span> : null}</div>
+                          <div className="text-xs text-gray-400">{sessions.length} session{sessions.length>1?'s':''}</div>
+                        </div>
+                        <div className="divide-y divide-white/10">
+                          {(sessions as any[]).map((s) => (
+                            <div key={s.session_identifier} className="px-4 py-3 flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-sm text-white truncate">{s.session_identifier}</div>
+                                <div className="text-xs text-gray-400">Last activity: {new Date(s.last_activity).toLocaleString()}</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleReactivateHistorySession(String(s.session_identifier))}
+                                  className="px-3 py-1 rounded bg-[#2E5BFF] hover:bg-[#2343C3] text-white text-xs"
+                                >
+                                  Reactivate
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Pagination */}
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <button
+                  onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                  className="px-3 py-1 rounded bg-white/5 border border-white/10 text-gray-300 text-xs disabled:opacity-50"
+                  disabled={historyPage === 1}
+                >Prev</button>
+                <span className="text-xs text-gray-400">Page {historyPage}</span>
+                <button
+                  onClick={() => setHistoryPage((p) => p + 1)}
+                  className="px-3 py-1 rounded bg-white/5 border border-white/10 text-gray-300 text-xs"
+                >Next</button>
+              </div>
+            </div>
           </motion.div>
         </TabsContent>
         

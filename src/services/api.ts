@@ -1830,8 +1830,27 @@ export const getUserSessionHistory = async (userId: string) => {
 
 export const updateConversationHistory = async (sessionId: string, conversationHistory: any[]) => {
   try {
+    // Normalize payload to match backend validation schema
+    const normalized = (Array.isArray(conversationHistory) ? conversationHistory : []).map((m: any) => {
+      const isUser = String(m?.sender) === 'user';
+      const isGemini = String(m?.sender) === 'gemini' || String(m?._model) === 'gemini' || String(m?.sender) === 'bot';
+      const isTogether = String(m?.sender) === 'together' || String(m?._model) === 'together' || String(m?.sender) === 'ai';
+
+      const obj: any = {
+        id: m?.id != null ? String(m.id) : undefined,
+        text: typeof m?.text === 'string' ? m.text : (typeof m?.content === 'string' ? m.content : ''),
+        // Backend enum: 'user' | 'bot' | 'ai'
+        sender: isUser ? 'user' : (isGemini ? 'bot' : 'ai'),
+        _model: isGemini ? 'gemini' : (isTogether ? 'together' : undefined),
+      };
+      if (m?.timestamp) {
+        obj.timestamp = typeof m.timestamp === 'string' ? m.timestamp : new Date(m.timestamp).toISOString();
+      }
+      return obj;
+    });
+
     const response = await api.put(`/preserved-sessions/${sessionId}/conversation`, {
-      conversation_history: conversationHistory
+      conversation_history: normalized
     });
     return response.data;
   } catch (error: any) {

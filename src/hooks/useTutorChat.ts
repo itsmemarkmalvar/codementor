@@ -67,7 +67,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
           const togetherMessages: Message[] = [];
           const geminiMessages: Message[] = [];
           
-          // Simple approach: separate messages by _model field
+          // Simple approach: separate messages by model; normalize sender for AI
           preservedHistory.forEach((msg: any, index) => {
             console.log(`Processing message ${index}:`, {
               id: msg.id,
@@ -79,7 +79,12 @@ export function useTutorChat(initialMessages: Message[] = []) {
             const message: Message = {
               id: msg.id || Date.now() + Math.random(),
               text: msg.text || msg.content || '',
-              sender: msg.sender || 'user',
+              sender: ((): 'user' | 'bot' | 'ai' => {
+                // Preserve original for branching; will normalize below when placing into arrays
+                if (msg.sender === 'user') return 'user';
+                if (msg.sender === 'bot' || msg.sender === 'ai') return msg.sender;
+                return 'user';
+              })(),
               timestamp: new Date(msg.timestamp || Date.now()),
             };
             
@@ -95,16 +100,28 @@ export function useTutorChat(initialMessages: Message[] = []) {
               console.log(`Added user message to both conversations`);
             }
             // Add AI responses to their respective conversations
-            else if (msg._model === 'gemini') {
+            else if (msg._model === 'gemini' || msg.model === 'gemini') {
+              // Normalize sender so UI filters work without extra mapping
+              (message as any).sender = 'gemini' as any;
               geminiMessages.push(message);
               console.log(`Added Gemini AI response`);
             }
-            else if (msg._model === 'together') {
+            else if (msg._model === 'together' || msg.model === 'together') {
+              (message as any).sender = 'together' as any;
               togetherMessages.push(message);
               console.log(`Added Together AI response`);
             }
             else {
-              console.log(`Skipped message with unknown model: ${msg._model}`);
+              // Fallback to historical convention: 'bot' => gemini, 'ai' => together
+              if (msg.sender === 'bot') {
+                (message as any).sender = 'gemini' as any;
+                geminiMessages.push(message);
+              } else if (msg.sender === 'ai') {
+                (message as any).sender = 'together' as any;
+                togetherMessages.push(message);
+              } else {
+                console.log(`Skipped message with unknown model:`, { _model: msg._model, model: msg.model, sender: msg.sender });
+              }
             }
           });
           
@@ -491,7 +508,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
         text: response.responses.gemini.error 
           ? `Gemini AI Error: ${response.responses.gemini.error}`
           : response.responses.gemini.response || 'Gemini AI: No response received.',
-        sender: 'bot', // Use 'bot' for Gemini to match the expected format
+        sender: 'gemini' as any,
         timestamp: new Date(),
       };
 
@@ -500,7 +517,7 @@ export function useTutorChat(initialMessages: Message[] = []) {
         text: response.responses.together.error 
           ? `Together AI Error: ${response.responses.together.error}`
           : response.responses.together.response || 'Together AI: No response received.',
-        sender: 'ai', // Use 'ai' for Together to match the expected format
+        sender: 'together' as any,
         timestamp: new Date(),
       };
 
