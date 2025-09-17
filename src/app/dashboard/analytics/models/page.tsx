@@ -186,30 +186,33 @@ export default function ModelsComparisonPage() {
                    <>
                      <div className="border-t border-white/10 pt-3 mt-3">
                        <div className="text-xs text-gray-400 mb-2 uppercase tracking-wide">Quiz Performance</div>
-                       <StatRow 
-                         label="Quiz Pass Rate" 
-                         value={(() => {
-                           const quizData = preferenceData.quiz_analysis?.model_performance?.[m] || preferenceData.quiz_analysis?.model_analysis?.[m];
-                           return quizData ? `${quizData.pass_rate}%` : '—';
-                         })()} 
-                         icon={<BookOpen className="h-4 w-4 text-indigo-400"/>} 
-                       />
-                       <StatRow 
-                         label="Avg Quiz Score" 
-                         value={(() => {
-                           const quizData = preferenceData.quiz_analysis?.model_performance?.[m] || preferenceData.quiz_analysis?.model_analysis?.[m];
-                           return quizData ? `${quizData.avg_score}%` : '—';
-                         })()} 
-                         icon={<BarChart3 className="h-4 w-4 text-cyan-400"/>} 
-                       />
-                       <StatRow 
-                         label="Quiz Attempts" 
-                         value={(() => {
-                           const quizData = preferenceData.quiz_analysis?.model_performance?.[m] || preferenceData.quiz_analysis?.model_analysis?.[m];
-                           return quizData ? quizData.total_attempts : '—';
-                         })()} 
-                         icon={<Users className="h-4 w-4 text-pink-400"/>} 
-                       />
+                      <StatRow 
+                        label="Quiz Pass Rate" 
+                        value={(() => {
+                          const quizPref = preferenceData.quiz_analysis?.preference_model_performance?.[m];
+                          const src = quizPref;
+                          return src ? `${src.pass_rate}%` : '—';
+                        })()} 
+                        icon={<BookOpen className="h-4 w-4 text-indigo-400"/>} 
+                      />
+                      <StatRow 
+                        label="Avg Quiz Score" 
+                        value={(() => {
+                          const quizPref = preferenceData.quiz_analysis?.preference_model_performance?.[m];
+                          const src = quizPref;
+                          return src ? `${src.avg_score}%` : '—';
+                        })()} 
+                        icon={<BarChart3 className="h-4 w-4 text-cyan-400"/>} 
+                      />
+                      <StatRow 
+                        label="Quiz Attempts" 
+                        value={(() => {
+                          const quizPref = preferenceData.quiz_analysis?.preference_model_performance?.[m];
+                          const src = quizPref;
+                          return src ? src.total_attempts : '—';
+                        })()} 
+                        icon={<Users className="h-4 w-4 text-pink-400"/>} 
+                      />
                      </div>
                      
                      {/* Practice Performance Metrics */}

@@ -19,11 +19,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [emailError, setEmailError] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError("");
+    setEmailError("");
+    setPasswordError("");
     
     try {
       // Clear any existing user data before login
@@ -72,8 +76,30 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (error: any) {
       console.error("Login error:", error);
-      setError(error.message || "Login failed. Please check your credentials.");
-      toast.error(error.message || "Login failed. Please check your credentials.");
+      // Extract a friendly message from backend/axios response
+      const status = error?.response?.status;
+      const backendMsg = error?.response?.data?.message;
+      const validationErrors = error?.response?.data?.errors;
+
+      if (status === 401) {
+        const msg = "Invalid email or password.";
+        setError(msg);
+        setEmailError(" ");
+        setPasswordError(" ");
+        toast.error(msg);
+      } else if (status === 422 && validationErrors) {
+        const emailMsg = Array.isArray(validationErrors.email) ? validationErrors.email[0] : undefined;
+        const pwdMsg = Array.isArray(validationErrors.password) ? validationErrors.password[0] : undefined;
+        if (emailMsg) setEmailError(emailMsg);
+        if (pwdMsg) setPasswordError(pwdMsg);
+        const msg = emailMsg || pwdMsg || "Validation error. Please check the form.";
+        setError(msg);
+        toast.error(msg);
+      } else {
+        const msg = backendMsg || error.message || "Login failed. Please try again.";
+        setError(msg);
+        toast.error(msg);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -131,9 +157,12 @@ export default function LoginPage() {
                       placeholder="Email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-gray-400 focus:border-[#2E5BFF] focus:ring-[#2E5BFF]"
+                      className={`pl-10 bg-white/5 text-white placeholder:text-gray-400 focus:border-[#2E5BFF] focus:ring-[#2E5BFF] ${emailError ? 'border-red-500/60' : 'border-white/10'}`}
                       required
                     />
+                    {emailError && (
+                      <div className="mt-1 text-xs text-red-400">{emailError}</div>
+                    )}
                   </div>
                 </div>
                 <div className="space-y-2">
@@ -144,9 +173,12 @@ export default function LoginPage() {
                       placeholder="Password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 pr-10 bg-white/5 border-white/10 text-white placeholder:text-gray-400 focus:border-[#2E5BFF] focus:ring-[#2E5BFF]"
+                      className={`pl-10 pr-10 bg-white/5 text-white placeholder:text-gray-400 focus:border-[#2E5BFF] focus:ring-[#2E5BFF] ${passwordError ? 'border-red-500/60' : 'border-white/10'}`}
                       required
                     />
+                    {passwordError && (
+                      <div className="mt-1 text-xs text-red-400">{passwordError}</div>
+                    )}
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
