@@ -1,6 +1,12 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { motion, useScroll, useTransform } from "framer-motion";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
@@ -66,6 +72,7 @@ const ScrollLink = ({ href, children, className = "" }: ScrollLinkProps) => {
 export default function LandingPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("");
+  const [selectedTopic, setSelectedTopic] = useState<string>("all");
   const heroRef = useRef(null);
   const { scrollY } = useScroll();
   
@@ -96,7 +103,10 @@ export default function LandingPage() {
 
   const navLinks = [
     { href: "#features", text: "Features" },
+    { href: "#compare", text: "Compare AI" },
+    { href: "#library", text: "Lesson Library" },
     { href: "#resources", text: "Resources" },
+    { href: "#faq", text: "FAQ" },
     { href: "#about", text: "About" },
   ];
 
@@ -252,21 +262,12 @@ export default function LandingPage() {
             >
               Your AI-Powered Journey from Beginner to Developer. No prior coding experience needed.
             </motion.p>
-            <motion.div 
-              className="flex justify-center space-x-4"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.6 }}
-            >
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button className="bg-[#2E5BFF] hover:bg-blue-600 text-lg px-8 py-6">
-                  Get Started
-                </Button>
-              </motion.div>
-            </motion.div>
+            {/* CTA buttons removed per request */}
           </motion.div>
         </div>
       </motion.div>
+
+      {/* Demo dialog removed */}
 
       {/* Features Section with enhanced cards */}
       <section id="features" className="py-20 relative">
@@ -301,6 +302,101 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Compare AI Teaser */}
+      <section id="compare" className="py-20 relative bg-white/5">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <h2 className="text-4xl font-bold mb-2">Compare AI tutors side‑by‑side</h2>
+            <p className="text-gray-300">Ask once, see answers from two models instantly.</p>
+          </div>
+          <Card className="bg-white/5 border-white/10">
+            <CardHeader>
+              <CardTitle className="text-white">Example prompt: "Explain Java arrays with examples"</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Tabs defaultValue="gemini" className="w-full">
+                <TabsList className="bg-[#0A1929] border border-white/10">
+                  <TabsTrigger value="gemini">Gemini</TabsTrigger>
+                  <TabsTrigger value="together">Together AI</TabsTrigger>
+                </TabsList>
+                <TabsContent value="gemini">
+                  <div className="bg-[#0B1E34] border border-white/10 rounded-lg p-4 space-y-3">
+                    <Badge variant="outline" className="bg-blue-500/10 border-blue-400/30 text-blue-300">Gemini</Badge>
+                    <p className="text-gray-200">Arrays are contiguous collections of elements of the same type. You declare with brackets, allocate with <code>new</code>, and index from 0.</p>
+                    <pre className="bg-black/20 p-3 rounded text-sm"><code>{`int[] nums = new int[3];\nnums[0] = 10;\nint[] other = {1,2,3};`}</code></pre>
+                  </div>
+                </TabsContent>
+                <TabsContent value="together">
+                  <div className="bg-[#0B1E34] border border-white/10 rounded-lg p-4 space-y-3">
+                    <Badge variant="outline" className="bg-emerald-500/10 border-emerald-400/30 text-emerald-300">Together</Badge>
+                    <p className="text-gray-200">Think of an array as a row of lockers—each slot stores one value. Size is fixed at creation, and you iterate with loops.</p>
+                    <pre className="bg-black/20 p-3 rounded text-sm"><code>{`String[] names = {"Ada","Linus"};\nfor (int i=0;i<names.length;i++){ System.out.println(names[i]); }`}</code></pre>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* Lesson Library Preview */}
+      <section id="library" className="py-20 relative">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-4xl font-bold mb-2">Lesson Library</h2>
+              <p className="text-gray-300">Browse topics and track progress</p>
+            </div>
+            <div className="w-56">
+              <Select value={selectedTopic} onValueChange={setSelectedTopic}>
+                <SelectTrigger className="h-10 bg-white/5 border border-white/10 rounded-lg focus:ring-2 focus:ring-[#2E5BFF] text-white px-3">
+                  <SelectValue placeholder="All Topics" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#0A1929] text-white border-white/10">
+                  <SelectItem value="all">All Topics</SelectItem>
+                  <SelectItem value="basics">Java Basics</SelectItem>
+                  <SelectItem value="control">Control Flow</SelectItem>
+                  <SelectItem value="oop">Object‑Oriented</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {[{t:"Java Fundamentals", m:8, p:35},{t:"Control Flow", m:6, p:0, locked:true},{t:"OOP Essentials", m:9, p:0}].map((l,idx)=> (
+              <Card key={idx} className="bg-white/5 border-white/10">
+                <CardHeader className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-white text-lg">{l.t}</CardTitle>
+                    {l.locked ? <Badge variant="outline" className="bg-white/5 border-white/20 text-gray-300">Locked</Badge> : <Badge variant="outline" className="bg-white/5 border-white/20 text-gray-300">{l.m} modules</Badge>}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-sm text-gray-300">
+                      <span>Progress</span>
+                      <span>{l.p}%</span>
+                    </div>
+                    <Progress value={l.p} className="h-2" />
+                    <div className="pt-2">
+                      <Link href="/auth/register">
+                        <Button className="w-full bg-[#2E5BFF] hover:bg-blue-600">Start lesson</Button>
+                      </Link>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <div className="text-center mt-8">
+            <Link href="/dashboard/lesson-plans">
+              <Button variant="outline" className="border-white/20">View full library</Button>
+            </Link>
+          </div>
+        </div>
+      </section>
+
       {/* Resources Section with interactive cards */}
       <section id="resources" className="py-20 relative bg-white/5">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -331,6 +427,34 @@ export default function LandingPage() {
               description="Comprehensive Java documentation and best practices"
             />
           </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="py-20 relative bg-white/5">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-10">
+            <h2 className="text-4xl font-bold mb-2">Frequently asked questions</h2>
+            <p className="text-gray-300">Quick answers before you start</p>
+          </div>
+          <Accordion type="single" collapsible className="bg-transparent">
+            <AccordionItem value="a1">
+              <AccordionTrigger>Is CodeMentor free to start?</AccordionTrigger>
+              <AccordionContent>Yes. You can sign up and try the platform without a credit card.</AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="a2">
+              <AccordionTrigger>Do I need prior programming experience?</AccordionTrigger>
+              <AccordionContent>No. The curriculum starts from the absolute basics.</AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="a3">
+              <AccordionTrigger>How does the Compare AI feature work?</AccordionTrigger>
+              <AccordionContent>You ask once and see answers from two models side‑by‑side, then choose which helped more.</AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="a4">
+              <AccordionTrigger>Can I continue where I left off?</AccordionTrigger>
+              <AccordionContent>Your sessions, progress, and history persist across visits and devices.</AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </div>
       </section>
 
