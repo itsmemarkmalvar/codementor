@@ -1907,9 +1907,21 @@ Please help me understand this topic step by step. Start with an overview of wha
         } catch {}
       }
 
-      if (ss) {
-        setSplitScreenSession(ss);
+      // Ensure the active split-screen session matches the preserved lesson; otherwise, create a correct one
+      if (ss && lessonIdFromMeta && Number(ss.lesson_id) !== Number(lessonIdFromMeta)) {
+        try {
+          const corrected = await startSplitScreenSession({
+            topic_id: topicIdFromMeta ? Number(topicIdFromMeta) : undefined,
+            lesson_id: Number(lessonIdFromMeta),
+            session_type: 'comparison',
+            ai_models: ['gemini','together']
+          } as any);
+          const corr = corrected?.data?.session || corrected?.session || corrected || null;
+          if (corr) ss = corr;
+        } catch {}
       }
+
+      if (ss) setSplitScreenSession(ss);
 
       setActiveTab('chat');
     } catch (e) {

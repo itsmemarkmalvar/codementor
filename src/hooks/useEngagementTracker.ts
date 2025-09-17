@@ -66,14 +66,19 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   // On session change, immediately sync persisted engagement from backend
   // Defined after syncThresholdStatusWithBackend to satisfy linter
 
-  // Load engagement data from session metadata on mount
+  // Load engagement data from session metadata when session context changes
   useEffect(() => {
     if (currentSession) {
       try {
         const metadata = loadSessionMetadata();
         const engagementData = metadata.engagement_data;
         
-        if (engagementData) {
+        // Only hydrate if the stored engagement belongs to the currently active split-screen session
+        if (engagementData && (
+          engagementData.session_id === sessionIdRef.current ||
+          // tolerate string/number mismatch
+          String(engagementData.session_id || '') === String(sessionIdRef.current || '')
+        )) {
           console.log('Loading engagement data from session:', engagementData);
           setEngagementScore(engagementData.score || 0);
           setIsQuizThresholdReached(engagementData.is_quiz_threshold_reached || false);
@@ -191,6 +196,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
 
     try {
       const engagementData = {
+        session_id: sessionIdRef.current,
         score: engagementScore,
         is_quiz_threshold_reached: isQuizThresholdReached,
         is_practice_threshold_reached: isPracticeThresholdReached,
@@ -209,6 +215,22 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       console.error('Error saving engagement data to session metadata:', error);
     }
   }, [currentSession, engagementScore, isQuizThresholdReached, isPracticeThresholdReached, events, triggeredActivity, assessmentSequence, saveSessionMetadata]);
+
+  // When the active split-screen session changes, reset local tracker state
+  useEffect(() => {
+    if (!options.sessionId) return;
+    // Reset local state to avoid carrying engagement across sessions
+    setEngagementScore(0);
+    setIsQuizThresholdReached(false);
+    setIsPracticeThresholdReached(false);
+    setIsPracticeCompleted(false);
+    setEvents([]);
+    setTriggeredActivity(null);
+    setAssessmentSequence(null);
+    lastActivityRef.current = new Date();
+    // Force a fresh backend sync for the new session id
+    setHasThresholdSynced(false);
+  }, [options.sessionId]);
 
   // Save engagement data whenever it changes
   useEffect(() => {
