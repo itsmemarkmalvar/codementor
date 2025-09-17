@@ -154,7 +154,7 @@ export default function LandingPage() {
                   Sign In
                 </Button>
               </Link>
-              <Link href="/auth/register">
+              <Link href="/auth/login">
                 <Button className="bg-[#2E5BFF] hover:bg-blue-600">
                   Get Started
                 </Button>
@@ -199,7 +199,7 @@ export default function LandingPage() {
                     Sign In
                   </Button>
                 </Link>
-                <Link href="/auth/register" className="block">
+                <Link href="/auth/login" className="block">
                   <Button className="w-full bg-[#2E5BFF] hover:bg-blue-600">
                     Get Started
                   </Button>
@@ -529,9 +529,11 @@ export default function LandingPage() {
                 Join thousands of learners who have successfully started their programming career with CodeMentor
               </p>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button className="w-full bg-[#2E5BFF] hover:bg-blue-600 text-lg py-6">
-                  Begin Learning
-                </Button>
+                <Link href="/auth/login">
+                  <Button className="w-full bg-[#2E5BFF] hover:bg-blue-600 text-lg py-6">
+                    Begin Learning
+                  </Button>
+                </Link>
               </motion.div>
             </motion.div>
           </motion.div>
