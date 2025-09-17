@@ -331,6 +331,12 @@ export default function ChallengePage() {
       console.error("Error getting hint:", error);
       if (error.response?.status === 404) {
         toast.info("No more hints available for this problem");
+      } else if (error.response?.status === 401) {
+        toast.error("Please log in to request hints.");
+        // Optional redirect after a brief delay
+        setTimeout(() => {
+          router.push('/auth/login');
+        }, 800);
       } else {
         toast.error("Failed to get hint");
       }
