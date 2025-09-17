@@ -11,6 +11,7 @@ import { motion, useScroll, useTransform } from "framer-motion";
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 import { Menu, X, Code2, BookOpen, Laptop, Brain, Target, Award, BookCheck, Users, Rocket, Coffee, LucideIcon } from "lucide-react";
+import JavaCodeRain from "@/components/visuals/JavaCodeRain";
 
 interface FeatureCardProps {
   icon: LucideIcon;
@@ -210,7 +211,7 @@ export default function LandingPage() {
         )}
       </motion.nav>
 
-      {/* Hero Section with enhanced animations */}
+      {/* Hero Section with enhanced animations + Java code rain */}
       <motion.div 
         ref={heroRef}
         className="relative"
@@ -237,6 +238,9 @@ export default function LandingPage() {
             />
           </div>
         </motion.div>
+
+        {/* Canvas Java code rain */}
+        <JavaCodeRain className="inset-0" opacity={0.16} fontSize={14} />
 
         {/* Content */}
         <div className="relative pt-32 pb-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
