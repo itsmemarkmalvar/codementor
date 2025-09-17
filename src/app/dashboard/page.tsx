@@ -58,46 +58,46 @@ export default function DashboardPage() {
   }, []);
 
   const stats = useMemo(() => {
-    const count = summary?.totals?.topics_tracked ?? progress.length;
+    // Pull canonical values from server summary; fall back to per-topic data
+    const topicsTracked = summary?.totals?.topics_tracked ?? progress.length;
     const totalMinutes = summary?.totals?.total_minutes ?? progress.reduce((sum, p) => sum + (p.time_spent_minutes || 0), 0);
-    const avgCompletion = summary?.totals?.avg_progress ?? (count > 0
-      ? Math.round(progress.reduce((sum, p) => sum + (p.progress_percentage || 0), 0) / count)
+    const completionRate = summary?.totals?.avg_progress ?? (topicsTracked > 0
+      ? Math.round(progress.reduce((sum, p) => sum + (p.progress_percentage || 0), 0) / topicsTracked)
       : 0);
-    const maxStreak = summary?.totals?.best_streak_days ?? progress.reduce((max, p) => Math.max(max, p.current_streak_days || 0), 0);
-    const activeStreak = summary?.totals?.active_streak_days ?? maxStreak;
-    const completedCount = summary?.totals?.topics_completed ?? progress.filter(p => (p.progress_percentage || 0) >= 80).length;
+    const topicsCompleted = summary?.totals?.topics_completed ?? progress.filter(p => (p.progress_percentage || 0) >= 80).length;
+    const bestStreak = summary?.totals?.best_streak_days ?? progress.reduce((max, p) => Math.max(max, p.current_streak_days || 0), 0);
 
     return [
       {
-        title: "Total Study Time",
+        title: "Total Learning Hours",
         value: formatHoursMinutes(totalMinutes),
         change: `${totalMinutes} min total`,
         icon: ClockIcon,
         color: "from-blue-500/20 to-purple-500/20"
       },
       {
-        title: "Avg Completion",
-        value: `${avgCompletion}%`,
-        change: `${count} topics tracked`,
+        title: "Completion Rate",
+        value: `${completionRate}%`,
+        change: `${topicsTracked} topics tracked`,
         icon: LineChart,
         color: "from-emerald-500/20 to-teal-500/20"
       },
       {
-        title: "Active Streak",
-        value: `${activeStreak} days`,
-        change: completedCount > 0 ? `${completedCount} topics ≥ 80%` : "",
+        title: "Topics Completed",
+        value: String(topicsCompleted),
+        change: topicsTracked > 0 ? `of ${topicsTracked}` : "",
         icon: Trophy,
         color: "from-orange-500/20 to-yellow-500/20"
       },
       {
-        title: "Topics",
-        value: String(count),
-        change: "tracked", 
+        title: "Best Streak",
+        value: `${bestStreak}d`,
+        change: "longest active streak",
         icon: Book,
         color: "from-pink-500/20 to-rose-500/20"
       }
     ];
-  }, [progress]);
+  }, [summary, progress]);
 
   const recent = useMemo(() => {
     const items = Array.isArray(summary?.recent_progress) && summary.recent_progress.length > 0

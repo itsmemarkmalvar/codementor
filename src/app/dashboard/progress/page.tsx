@@ -5,39 +5,14 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { Award, Book, Calendar, CheckCircle, Clock, Code, Star, Target, Trophy, TrendingUp } from "lucide-react";
-import { getLessonPlans, getLessonPlanProgress, getTopics, getTopicAggregateProgress, heartbeat, getUserProgress } from "@/services/api";
+import { getLessonPlans, getLessonPlanProgress, getTopics, getTopicAggregateProgress, heartbeat, getUserProgress, getProgressSummary } from "@/services/api";
 
 // dynamic stats
 const achievements: any[] = [];
 
 const recentProgressStatic: any[] = [];
 
-const recentProgress = [
-  {
-    title: "Java Fundamentals",
-    type: "Course",
-    milestone: "Completed Module 5: Exception Handling",
-    time: "2 days ago",
-    icon: Book,
-    color: "bg-[#2E5BFF]/20"
-  },
-  {
-    title: "Algorithm Challenge",
-    type: "Practice",
-    milestone: "Solved: Graph Traversal Problem",
-    time: "3 days ago",
-    icon: Code,
-    color: "bg-[#2E5BFF]/20"
-  },
-  {
-    title: "Gold Badge Earned",
-    type: "Achievement",
-    milestone: "Completed 30 Challenges",
-    time: "1 week ago",
-    icon: Star,
-    color: "bg-[#2E5BFF]/20"
-  }
-];
+// Removed static recent progress cards
 
 export default function ProgressPage() {
   const [topics, setTopics] = useState<Array<any>>([]);
@@ -55,15 +30,32 @@ export default function ProgressPage() {
         const data = await getTopics();
         setTopics(data || []);
         if ((data || []).length > 0) setSelectedTopicId(data[0].id);
-        // derive stats and recent from all user progress
+        // Prefer server summary for canonical stats
+        try {
+          const s = await getProgressSummary();
+          if (s && s.totals) {
+            const totalMinutes = Number(s.totals.total_minutes || 0);
+            const avgProgress = Number(s.totals.avg_progress || 0);
+            const completed = Number(s.totals.topics_completed || 0);
+            const streakMax = Number(s.totals.best_streak_days || 0);
+            setStats([
+              { title: 'Total Learning Hours', value: `${Math.floor(totalMinutes / 60) > 0 ? `${Math.floor(totalMinutes/60)}h ${totalMinutes % 60}m` : `${totalMinutes}m`}`, change: '', icon: Clock, color: 'from-[#2E5BFF]/20 to-purple-500/20' },
+              { title: 'Completion Rate', value: `${avgProgress}%`, change: '', icon: Target, color: 'from-purple-500/20 to-[#2E5BFF]/20' },
+              { title: 'Topics Completed', value: `${completed}`, change: '', icon: Trophy, color: 'from-[#2E5BFF]/20 to-purple-500/20' },
+              { title: 'Best Streak', value: `${streakMax}d`, change: '', icon: Award, color: 'from-purple-500/20 to-[#2E5BFF]/20' },
+            ]);
+          }
+        } catch {}
+
+        // Fallback: derive stats and recent from all user progress if summary not available
         try {
           const up = await getUserProgress();
           const totalMinutes = (up || []).reduce((s: number, p: any) => s + (p.time_spent_minutes || 0), 0);
           const avgProgress = (up || []).length > 0 ? Math.round((up.reduce((s: number, p: any) => s + (p.progress_percentage || 0), 0)) / up.length) : 0;
-          const completed = (up || []).filter((p: any) => (p.progress_percentage || 0) >= 100).length;
+          const completed = (up || []).filter((p: any) => (p.progress_percentage || 0) >= 80 || p.status === 'completed').length;
           const streakMax = Math.max(0, ...((up || []).map((p: any) => p.current_streak_days || 0)));
           setStats([
-            { title: 'Total Learning Hours', value: `${Math.round(totalMinutes / 60)}h`, change: '', icon: Clock, color: 'from-[#2E5BFF]/20 to-purple-500/20' },
+            { title: 'Total Learning Hours', value: `${Math.floor(totalMinutes / 60) > 0 ? `${Math.floor(totalMinutes/60)}h ${totalMinutes % 60}m` : `${totalMinutes}m`}`, change: '', icon: Clock, color: 'from-[#2E5BFF]/20 to-purple-500/20' },
             { title: 'Completion Rate', value: `${avgProgress}%`, change: '', icon: Target, color: 'from-purple-500/20 to-[#2E5BFF]/20' },
             { title: 'Topics Completed', value: `${completed}`, change: '', icon: Trophy, color: 'from-[#2E5BFF]/20 to-purple-500/20' },
             { title: 'Best Streak', value: `${streakMax}d`, change: '', icon: Award, color: 'from-purple-500/20 to-[#2E5BFF]/20' },
@@ -273,38 +265,7 @@ export default function ProgressPage() {
         </div>
       </div>
 
-      {/* Recent Progress */}
-      <div className="space-y-6">
-        <h2 className="text-xl font-semibold text-white">Recent Progress</h2>
-        <div className="space-y-4">
-          {recentProgress.map((item, index) => (
-            <motion.div
-              key={item.title}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
-            >
-              <Card className="relative overflow-hidden border-[#2E5BFF]/20 bg-white/5 backdrop-blur-sm hover:bg-white/10 transition-colors">
-                <div className="p-6">
-                  <div className="flex items-start space-x-4">
-                    <div className={`p-2 rounded-lg ${item.color}`}>
-                      <item.icon className="h-5 w-5 text-[#2E5BFF]" />
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-medium text-white">{item.title}</p>
-                        <span className="text-xs text-gray-400">{item.time}</span>
-                      </div>
-                      <p className="text-xs text-gray-400">{item.type}</p>
-                      <p className="text-sm text-gray-300">{item.milestone}</p>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </motion.div>
-          ))}
-        </div>
-      </div>
+      {/* Static Recent Progress section removed */}
     </div>
   );
 } 
