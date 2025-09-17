@@ -569,7 +569,7 @@ export default function LandingPage() {
       {/* Footer with enhanced quick links */}
       <footer className="bg-[#061320] py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
             <div>
               <h3 className="text-xl font-bold mb-4">CodeMentor</h3>
               <p className="text-gray-400">
@@ -616,10 +616,19 @@ export default function LandingPage() {
               </ul>
             </div>
             <div>
+              <h4 className="text-lg font-semibold mb-4">Developers</h4>
+              <ul className="space-y-2 text-gray-400">
+                <li>Carl Justine Dela Cruz</li>
+                <li>Marin James Gagarin</li>
+                <li>Adrian John Garcia</li>
+                <li>Mark Joseph Malvar</li>
+              </ul>
+            </div>
+            <div>
               <h4 className="text-lg font-semibold mb-4">Contact</h4>
               <ul className="space-y-2">
                 <li className="text-gray-400">Email: support@codementor.com</li>
-                <li className="text-gray-400">Phone: (123) 456-7890</li>
+                <li className="text-gray-400">Phone: (+63)960-312-6756</li>
               </ul>
             </div>
           </div>
