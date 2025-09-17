@@ -1241,10 +1241,12 @@ User Question: ${message}`;
         trackCodeExecution();
         
         // Show AI preference poll for successful code execution
-        // Only show if we have recent AI interactions (within last 5 minutes)
-        const hasRecentAIInteraction = combinedMessages.some(msg => 
-          msg.sender === 'bot' || msg.sender === 'ai'
-        );
+        // Consider any AI message from either model; our sender values can be 'bot'|'ai' (legacy)
+        // or normalized as 'gemini'|'together'.
+        const hasRecentAIInteraction = combinedMessages.some(msg => {
+          const s = String((msg as any)?.sender).toLowerCase();
+          return s === 'bot' || s === 'ai' || s === 'gemini' || s === 'together';
+        });
         
         if (hasRecentAIInteraction) {
           setPreferencePollType('code_execution');
