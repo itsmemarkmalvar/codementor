@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { registerUser } from "@/services/api";
 import { setToken } from "@/lib/auth-utils";
+import JavaCodeRain from "@/components/visuals/JavaCodeRain";
 import { toast } from "sonner";
 
 export default function RegisterPage() {
@@ -81,6 +82,7 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-[#0A1929] flex items-center justify-center p-4">
       {/* Background Effect */}
       <div className="absolute inset-0 overflow-hidden">
+        <JavaCodeRain className="inset-0" opacity={0.14} fontSize={14} />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px]">
           <motion.div
             initial={{ opacity: 0, scale: 0.5 }}

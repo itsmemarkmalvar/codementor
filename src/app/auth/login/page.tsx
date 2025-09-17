@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import { loginUser } from "@/services/api";
 import { toast } from "sonner";
 import { setToken } from "@/lib/auth-utils";
+import JavaCodeRain from "@/components/visuals/JavaCodeRain";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -109,6 +110,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#0A1929] flex items-center justify-center p-4">
       {/* Background Effect */}
       <div className="absolute inset-0 overflow-hidden">
+        <JavaCodeRain className="inset-0" opacity={0.14} fontSize={14} />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px]">
           <motion.div
             initial={{ opacity: 0, scale: 0.5 }}
