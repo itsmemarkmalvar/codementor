@@ -250,6 +250,18 @@ const SoloRoomRefactored = () => {
             ai_models: s.ai_models_used,
             started_at: s.started_at
           });
+          // Ensure UI lesson/topic reflect the bound session's lesson
+          try {
+            const lesson = await getLessonPlanDetails(Number(currentSession.lesson_id));
+            if (lesson) {
+              setSelectedLesson(lesson as any);
+              // Attempt to set topic from cached list
+              if (!selectedTopic && lesson?.topic_id && Array.isArray(topics)) {
+                const t = topics.find(t => Number(t.id) === Number(lesson.topic_id));
+                if (t) setSelectedTopic(t as any);
+              }
+            }
+          } catch {}
           return;
         }
 
@@ -277,6 +289,17 @@ const SoloRoomRefactored = () => {
             ai_models: newSession.data.ai_models,
             started_at: newSession.data.started_at
           });
+          // Align UI selection to preserved lesson
+          try {
+            const lesson = await getLessonPlanDetails(Number(lessonId));
+            if (lesson) {
+              setSelectedLesson(lesson as any);
+              if (!selectedTopic && lesson?.topic_id && Array.isArray(topics)) {
+                const t = topics.find(t => Number(t.id) === Number(lesson.topic_id));
+                if (t) setSelectedTopic(t as any);
+              }
+            }
+          } catch {}
         }
       } catch (e) {
         console.error('Failed to ensure split-screen session from preserved session:', e);

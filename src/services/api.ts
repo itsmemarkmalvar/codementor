@@ -1867,7 +1867,16 @@ export const updateSessionMetadata = async (sessionId: string, metadata: {
 }) => {
   try {
     console.log('updateSessionMetadata API call:', { sessionId, metadata });
-    const response = await api.put(`/preserved-sessions/${sessionId}/metadata`, metadata);
+    // Trim large event buffers to avoid oversized payloads/timeouts
+    const safeMetadata = { ...metadata } as any;
+    if (safeMetadata.engagement_data?.events && Array.isArray(safeMetadata.engagement_data.events)) {
+      const events = safeMetadata.engagement_data.events as any[];
+      const MAX_EVENTS = 100; // keep last 100 events
+      if (events.length > MAX_EVENTS) {
+        safeMetadata.engagement_data.events = events.slice(-MAX_EVENTS);
+      }
+    }
+    const response = await api.put(`/preserved-sessions/${sessionId}/metadata`, safeMetadata, { timeout: 60000 });
     console.log('updateSessionMetadata API response:', response.data);
     return response.data;
   } catch (error: any) {

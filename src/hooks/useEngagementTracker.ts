@@ -228,6 +228,8 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     setIsQuizThresholdReached(false);
     setIsPracticeThresholdReached(false);
     setIsPracticeCompleted(false);
+    setIsCapped(false);
+    capToastShownRef.current = false;
     setEvents([]);
     setTriggeredActivity(null);
     setAssessmentSequence(null);
@@ -283,9 +285,9 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       timestamp: new Date()
     };
 
-    // If already capped, prevent further increments and notify once
-    if (isCapped || engagementScore >= 100) {
-      if (!capToastShownRef.current) {
+    // If already capped (and confirmed by backend), prevent further increments and notify once
+    if ((isCapped && hasThresholdSynced) || engagementScore >= 100) {
+      if (!capToastShownRef.current && hasThresholdSynced) {
         capToastShownRef.current = true;
         toast.info('You have reached the maximum engagement for this session (100).');
       }
