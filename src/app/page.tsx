@@ -505,7 +505,7 @@ export default function LandingPage() {
                 <div>
                   <h3 className="text-xl font-semibold mb-2">Who We Are</h3>
                   <p className="text-gray-400">
-                    A team of passionate developers and educators dedicated to helping others learn
+                    A team of passionate developers from Pamantasan ng Cabuyao that wants to help others learn Java programming.
                   </p>
                 </div>
               </motion.div>
