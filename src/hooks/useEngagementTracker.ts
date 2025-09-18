@@ -36,6 +36,9 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
   const quizAutoTriggeredRef = useRef<boolean>(false);
   const practiceAutoTriggeredRef = useRef<boolean>(false);
   const [hasThresholdSynced, setHasThresholdSynced] = useState<boolean>(false);
+  // Hard cap flag so we stop adding points locally once capped on the server
+  const [isCapped, setIsCapped] = useState<boolean>(false);
+  const capToastShownRef = useRef<boolean>(false);
   
   // Buffer for passive engagement points to persist to backend in small batches
   const pendingPassivePointsRef = useRef<number>(0);
@@ -119,10 +122,11 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
         const { threshold_status } = response.data;
         
         // Update local state with backend data
-        setEngagementScore(threshold_status.current_score);
+        setEngagementScore(Math.min(Number(threshold_status.current_score || 0), 100));
         setIsQuizThresholdReached(threshold_status.quiz_triggered);
         setIsPracticeThresholdReached(threshold_status.practice_triggered);
         setIsPracticeCompleted(!!threshold_status.practice_completed);
+        setIsCapped(!!threshold_status.is_capped);
         
         console.log('Threshold status synced with backend:', threshold_status);
       }
@@ -279,9 +283,26 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       timestamp: new Date()
     };
 
+    // If already capped, prevent further increments and notify once
+    if (isCapped || engagementScore >= 100) {
+      if (!capToastShownRef.current) {
+        capToastShownRef.current = true;
+        toast.info('You have reached the maximum engagement for this session (100).');
+      }
+      return;
+    }
+
     setEvents(prev => [...prev, event]);
     setEngagementScore(prev => {
-      const newScore = prev + points;
+      let newScore = prev + points;
+      if (newScore >= 100) {
+        newScore = 100;
+        setIsCapped(true);
+        if (!capToastShownRef.current) {
+          capToastShownRef.current = true;
+          toast.success('Great job! You hit the max engagement for this session.');
+        }
+      }
       
       console.log(`Engagement tracking: ${type} (+${points}) = ${newScore}/${options.quizThreshold}/${options.practiceThreshold}`);
       
@@ -309,7 +330,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
           lastThresholdTimeRef.current = now;
           
           // Sync with backend
-          if (sessionIdRef.current) {
+          if (sessionIdRef.current && newScore < 100) {
             try {
               await incrementEngagement(sessionIdRef.current, { points });
               console.log('Engagement synced with backend for quiz threshold');
@@ -365,7 +386,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
           lastThresholdTimeRef.current = now;
           
           // Sync with backend
-          if (sessionIdRef.current) {
+          if (sessionIdRef.current && newScore < 100) {
             try {
               await incrementEngagement(sessionIdRef.current, { points });
               console.log('Engagement synced with backend for practice threshold');
@@ -408,7 +429,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     });
 
     // Accumulate passive engagement (not already persisted elsewhere)
-    if (type === 'interaction' || type === 'scroll' || type === 'time') {
+    if (!isCapped && (type === 'interaction' || type === 'scroll' || type === 'time')) {
       pendingPassivePointsRef.current += points;
     }
 
@@ -418,10 +439,10 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     saveEngagementData();
     
     // Sync with backend periodically
-    if (sessionIdRef.current && Math.random() < 0.3) { // 30% chance to sync
+    if (!isCapped && sessionIdRef.current && Math.random() < 0.3) { // 30% chance to sync
       syncThresholdStatusWithBackend();
     }
-  }, [isTracking, options.quizThreshold, options.practiceThreshold, isQuizThresholdReached, isPracticeThresholdReached, options.onQuizTrigger, options.onPracticeTrigger, options.autoTrigger, saveEngagementData, syncThresholdStatusWithBackend]);
+  }, [isTracking, options.quizThreshold, options.practiceThreshold, isQuizThresholdReached, isPracticeThresholdReached, options.onQuizTrigger, options.onPracticeTrigger, options.autoTrigger, saveEngagementData, syncThresholdStatusWithBackend, isCapped, engagementScore]);
 
   // Periodically flush passive points to backend (integer only)
   useEffect(() => {
@@ -429,6 +450,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
     let isCancelled = false;
     const interval = setInterval(async () => {
       if (isCancelled) return;
+      if (isCapped) return;
       const available = Math.floor(pendingPassivePointsRef.current);
       if (!available || available < 1) return;
       if (!sessionIdRef.current) return;
@@ -447,6 +469,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       const toSend = availableRaw >= 1 ? Math.floor(availableRaw) : (availableRaw > 0 ? 1 : 0);
       if (!toSend || toSend < 1) return;
       if (!sessionIdRef.current) return;
+      if (isCapped) return;
       try {
         await incrementEngagement(sessionIdRef.current, { points: toSend });
         pendingPassivePointsRef.current -= toSend;
@@ -462,7 +485,7 @@ export function useEngagementTracker(options: EngagementTrackerOptions) {
       document.removeEventListener('visibilitychange', onHide);
       window.removeEventListener('beforeunload', onHide);
     };
-  }, [options.userId]);
+  }, [options.userId, isCapped]);
 
   // Track message sending
   const trackMessage = useCallback(() => {

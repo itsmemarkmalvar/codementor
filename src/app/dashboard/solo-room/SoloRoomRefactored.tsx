@@ -1876,13 +1876,7 @@ Please help me understand this topic step by step. Start with an overview of wha
           ss = active?.data?.session || active?.session || null;
         } catch {}
       }
-      // Fallback: query active session without lesson filter
-      if (!ss) {
-        try {
-          const active = await getActiveSession();
-          ss = active?.data?.session || active?.session || null;
-        } catch {}
-      }
+      // Removed unscoped fallback to avoid binding to a different lesson's session
 
       // If still no split-screen session, start a new one for the preserved lesson
       if (!ss && lessonIdFromMeta) {
