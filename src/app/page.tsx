@@ -619,7 +619,7 @@ export default function LandingPage() {
               <h4 className="text-lg font-semibold mb-4">Developers</h4>
               <ul className="space-y-2 text-gray-400">
                 <li>Carl Justine Dela Cruz</li>
-                <li>Marin James Gagarin</li>
+                <li>Marvin James Gagarin</li>
                 <li>Adrian John Garcia</li>
                 <li>Mark Joseph Malvar</li>
               </ul>
