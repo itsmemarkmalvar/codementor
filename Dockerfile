@@ -13,7 +13,10 @@ RUN npm ci
 # Copy application code
 COPY . .
 
-# Build the application
+# Build the application with environment variables
+ARG NEXT_PUBLIC_API_URL=https://codementor-java.com/api
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+RUN echo "Build-time NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL"
 RUN npm run build
 
 # Remove dev dependencies but keep TypeScript for runtime

@@ -244,7 +244,7 @@ export default function DashboardLayout({
           {/* Bottom navigation - fixed */}
           <div className="p-6 border-t border-white/10">
             <div className="space-y-2">
-              <Link href="/dashboard/settings">
+              <Link href="/profile">
                 <motion.div
                   className="flex items-center space-x-3 px-4 py-3 rounded-lg text-gray-400 hover:text-white hover:bg-white/5 transition-colors"
                   whileHover={{ x: 5 }}

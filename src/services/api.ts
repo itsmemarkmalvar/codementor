@@ -3,7 +3,19 @@ import { getToken } from '@/lib/auth-utils';
 
 // Export the resolved API base URL so pages/components can rely on a single
 // source of truth with a safe default fallback during development.
-export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+// Normalize API base URL to ALWAYS include trailing /api for local/prod
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://codementor-java.com/api';
+const normalizedApiUrl = (() => {
+  const trimmed = (rawApiUrl || '').trim();
+  if (!trimmed) return 'https://codementor-java.com/api';
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, '');
+  // If it already ends with /api (with or without trailing slash), keep it
+  if (/\/api$/i.test(withoutTrailingSlash)) return withoutTrailingSlash;
+  // Otherwise, append /api
+  return `${withoutTrailingSlash}/api`;
+})();
+
+export const API_URL = normalizedApiUrl;
 
 // Export the shared axios instance to ensure every call uses the same base URL
 // and interceptors (auth headers, logging, etc.).
@@ -124,12 +136,32 @@ api.interceptors.response.use(
 
 // Auth related API calls
 export const registerUser = async (userData: any) => {
-  const response = await api.post('/register', userData);
+  // Convert to form data for compatibility
+  const formData = new URLSearchParams();
+  formData.append('name', userData.name);
+  formData.append('email', userData.email);
+  formData.append('password', userData.password);
+  formData.append('password_confirmation', userData.password_confirmation || userData.password);
+
+  const response = await api.post('/register', formData, {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }
+  });
   return response.data;
 };
 
 export const loginUser = async (credentials: any) => {
-  const response = await api.post('/login', credentials);
+  // Convert to form data for compatibility
+  const formData = new URLSearchParams();
+  formData.append('email', credentials.email);
+  formData.append('password', credentials.password);
+
+  const response = await api.post('/login', formData, {
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }
+  });
   return response.data;
 };
 
